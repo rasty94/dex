@@ -72,7 +72,10 @@
       (`totp_label`, `totp_verify_button`, `totp_invalid`, `invalid_credentials`, `signing_in`, `domain_label`)
 - [x] Iconos SVG añadidos en `login.html` para todos los connectors:
       github, gitlab, google, microsoft, linkedin, bitbucket, gitea, ldap, keystone, saml, oidc, atlassiancrowd
-- [ ] Verificar diseño responsive en móvil para ambos temas
+- [x] Verificar diseño responsive en móvil para ambos temas
+    - `main.css` reescrito mobile-first: `clamp()`, media queries, `100dvh`, tamaños táctiles correctos
+    - `dark/styles.css` y `light/styles.css`: tokens via CSS variables, iconos SVG de connectors
+    - `header.html`: `viewport-fit=cover`, `theme-color` dual (claro/oscuro), `lang`, SEO meta
 
 ### 9. ✅ i18n — Ampliar idiomas
 

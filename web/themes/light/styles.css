@@ -1,15 +1,81 @@
+/* =====================================================
+   Tema LIGHT — sobreescribe las variables de main.css
+   ===================================================== */
+
+:root {
+  --primary-color: #0969da;
+  --primary-hover: #0858c3;
+  --bg-color: #f6f8fa;
+  --card-bg: #ffffff;
+  --text-color: #24292f;
+  --text-muted: #57606a;
+  --border-color: #d0d7de;
+  --box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --error-color: #cf222e;
+  --error-bg: #ffebe9;
+  --input-bg: #ffffff;
+}
+
+/* Asegurar legibilidad de inputs */
+.dex-input {
+  color: var(--text-color);
+  background-color: var(--input-bg);
+  color-scheme: light;
+}
+
+.dex-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Botón primario */
+.dex-btn {
+  background-color: var(--primary-color);
+  color: #ffffff;
+}
+
+.dex-btn:hover,
+.dex-btn:focus-visible {
+  background-color: var(--primary-hover);
+  box-shadow: 0 2px 8px rgba(9, 105, 218, 0.3);
+}
+
+/* Botón de connector: estilo Card con borde */
+.dex-btn-connector {
+  background-color: #ffffff;
+  color: var(--text-color);
+}
+
+.dex-btn-connector:hover,
+.dex-btn-connector:focus-visible {
+  background-color: #f3f4f6;
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(9, 105, 218, 0.12);
+}
+
+/* Focus ring */
+.dex-input:focus {
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.18);
+}
+
+/* Botón secundario */
+.dex-btn-secondary:hover,
+.dex-btn-secondary:focus-visible {
+  background-color: #f6f8fa;
+}
+
+/* ---- Clases de tema legacy (compatibilidad con templates) ---- */
 .theme-body {
-  background-color: #efefef;
-  color: #333;
-  font-family: 'Source Sans Pro', Helvetica, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Inter', 'Source Sans Pro', Helvetica, sans-serif;
 }
 
 .theme-navbar {
-  background-color: #fff;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-  color: #333;
+  background-color: var(--card-bg);
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.12);
+  color: var(--text-color);
   font-size: 13px;
-  font-weight: 100;
   height: 46px;
   overflow: hidden;
   padding: 0 10px;
@@ -20,7 +86,7 @@
   height: 100%;
   overflow: hidden;
   padding: 10px 15px;
-  width: 300px;
+  max-width: 300px;
 }
 
 .theme-navbar__logo {
@@ -29,85 +95,55 @@
 }
 
 .theme-heading {
-  font-size: 20px;
-  font-weight: 500;
-  margin-bottom: 10px;
-  margin-top: 0;
+  font-size: clamp(1.1rem, 3vw, 1.4rem);
+  font-weight: 600;
+  color: var(--text-color);
 }
 
 .theme-panel {
-  background-color: #fff;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+  background-color: var(--card-bg);
+  box-shadow: var(--box-shadow);
   padding: 30px;
-}
-
-.theme-btn-provider {
-  background-color: #fff;
-  color: #333;
-  min-width: 250px;
-}
-
-.theme-btn-provider:hover {
-  color: #999;
-}
-
-.theme-btn--primary {
-  background-color: #333;
-  border: none;
-  color: #fff;
-  min-width: 200px;
-  padding: 6px 12px;
-}
-
-.theme-btn--primary:hover {
-  background-color: #666;
-  color: #fff;
-}
-
-.theme-btn--success {
-  background-color: #2FC98E;
-  color: #fff;
-  width: 250px;
-}
-
-.theme-btn--success:hover {
-  background-color: #49E3A8;
 }
 
 .theme-form-row {
   display: block;
-  margin: 20px auto;
+  margin: 16px auto;
 }
 
 .theme-form-input {
-  border-radius: 4px;
-  border: 1px solid #CCC;
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-  color: #666;
+  border-radius: 6px;
+  border: 1.5px solid var(--border-color);
+  color: var(--text-color);
+  background-color: var(--input-bg);
   display: block;
   font-size: 14px;
-  height: 36px;
-  line-height: 1.42857143;
+  height: 40px;
+  line-height: 1.5;
   margin: auto;
   padding: 6px 12px;
-  width: 250px;
+  width: 100%;
+  max-width: 280px;
+  color-scheme: light;
 }
 
-.theme-form-input:focus,
-.theme-form-input:active {
-  border-color: #66AFE9;
+.theme-form-input:focus {
+  border-color: var(--primary-color);
   outline: none;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.18);
 }
 
 .theme-form-label {
   font-size: 13px;
   font-weight: 600;
   margin: 4px auto;
-  position: relative;
   text-align: left;
-  width: 250px;
+  width: 100%;
+  max-width: 280px;
+  color: var(--text-color);
 }
 
 .theme-link-back {
-  margin-top: 4px;
+  margin-top: 8px;
+  font-size: 0.875rem;
 }
