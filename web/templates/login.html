@@ -5,9 +5,31 @@
 
 <div class="dex-connector-list">
   {{ range $c := .Connectors }}
-    <a href="{{ $c.URL }}" class="dex-btn">
+    <a href="{{ $c.URL }}" class="dex-btn dex-btn-connector">
       {{ if eq $c.Type "github" }}
-        <!-- GitHub Icon could go here -->
+        <img src="../static/img/github-icon.svg" class="dex-connector-icon" alt="GitHub" />
+      {{ else if eq $c.Type "gitlab" }}
+        <img src="../static/img/gitlab-icon.svg" class="dex-connector-icon" alt="GitLab" />
+      {{ else if eq $c.Type "google" }}
+        <img src="../static/img/google-icon.svg" class="dex-connector-icon" alt="Google" />
+      {{ else if eq $c.Type "microsoft" }}
+        <img src="../static/img/microsoft-icon.svg" class="dex-connector-icon" alt="Microsoft" />
+      {{ else if eq $c.Type "linkedin" }}
+        <img src="../static/img/linkedin-icon.svg" class="dex-connector-icon" alt="LinkedIn" />
+      {{ else if eq $c.Type "bitbucketcloud" }}
+        <img src="../static/img/bitbucket-icon.svg" class="dex-connector-icon" alt="Bitbucket" />
+      {{ else if eq $c.Type "gitea" }}
+        <img src="../static/img/gitea-icon.svg" class="dex-connector-icon" alt="Gitea" />
+      {{ else if eq $c.Type "ldap" }}
+        <img src="../static/img/ldap-icon.svg" class="dex-connector-icon" alt="LDAP" />
+      {{ else if eq $c.Type "keystone" }}
+        <img src="../static/img/keystone-icon.svg" class="dex-connector-icon" alt="Keystone" />
+      {{ else if eq $c.Type "saml" }}
+        <img src="../static/img/saml-icon.svg" class="dex-connector-icon" alt="SAML" />
+      {{ else if eq $c.Type "oidc" }}
+        <img src="../static/img/oidc-icon.svg" class="dex-connector-icon" alt="OIDC" />
+      {{ else if eq $c.Type "atlassiancrowd" }}
+        <img src="../static/img/atlassian-crowd-icon.svg" class="dex-connector-icon" alt="Atlassian Crowd" />
       {{ end }}
       {{ $c.Name }}
     </a>

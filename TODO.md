@@ -56,24 +56,30 @@
 
 ---
 
-## 🟠 Pendiente — Prioridad Media
+## 🟠 Completado — Prioridad Media
 
-### 7. CI/CD — Publicación automática a GHCR
+### 7. ✅ CI/CD — Publicación automática a GHCR
 
-- [ ] Crear workflow `.github/workflows/ghcr-publish.yaml` que construya y publique en cada push a `master`
-- [ ] Usar `docker/build-push-action` con `GITHUB_TOKEN` para login a GHCR
-- [ ] Tags automáticos: `latest`, SHA corto del commit, y `vX.Y.Z` en releases
-- [ ] Opcional: build multi-arquitectura (`linux/amd64`, `linux/arm64`)
+- [x] Workflow `.github/workflows/ghcr-publish.yaml` creado
+- [x] Login a GHCR con `GITHUB_TOKEN` nativo (sin secretos extra)
+- [x] Tags automáticos: `latest`, `sha-<short>`, `vX.Y.Z`, `vX.Y`, `vX`
+- [x] Build multi-arquitectura: `linux/amd64` + `linux/arm64`
+- [x] Caché de build con GitHub Actions Cache
 
-### 8. UI — Pulir plantillas HTML
+### 8. ✅ UI — Pulir plantillas HTML
 
-- [ ] Traducir strings hardcoded en `password.html`: `"TOTP / App Code"`, `"Verify"`, `"Invalid TOTP code."`, `"Invalid credentials."`, `"Signing in..."`
-- [ ] Añadir iconos SVG reales para los connectors en `login.html` (actualmente solo texto)
+- [x] Todos los strings hardcoded en `password.html` sustituidos por claves i18n
+      (`totp_label`, `totp_verify_button`, `totp_invalid`, `invalid_credentials`, `signing_in`, `domain_label`)
+- [x] Iconos SVG añadidos en `login.html` para todos los connectors:
+      github, gitlab, google, microsoft, linkedin, bitbucket, gitea, ldap, keystone, saml, oidc, atlassiancrowd
 - [ ] Verificar diseño responsive en móvil para ambos temas
 
-### 9. i18n — Ampliar idiomas
+### 9. ✅ i18n — Ampliar idiomas
 
-- [ ] Añadir traducciones para: `fr`, `pt`, `de`
+- [x] Añadidos 3 idiomas: `fr` (francés), `de` (alemán), `pt` (portugués)
+- [x] Nuevas claves TOTP (`totp_label`, `totp_verify_button`, `totp_invalid`, `signing_in`) en los 5 idiomas
+- [x] `domain_label` añadida en todos los idiomas
+- [x] Mejorado parsing de `Accept-Language` (soporta cabeceras completas: `es-ES,es;q=0.9,en;q=0.8`)
 - [ ] Evaluar externalizar traducciones a YAML/JSON en lugar de Go hardcodeado
 
 ---
@@ -117,23 +123,25 @@
 
 ## 📋 Resumen de Estado
 
-| Área                                    | Estado | Notas                                  |
-| --------------------------------------- | :----: | -------------------------------------- |
-| `.gitignore`                            |   ✅   | `dex_mod` ignorado                     |
-| `.dockerignore`                         |   ✅   | Excluye artefactos innecesarios        |
-| Imagen Docker GHCR                      |   ✅   | `ghcr.io/rasty94/dex:latest` publicada |
-| Templates HTML (UI)                     |   ✅   | Actualizados con TOTP y i18n           |
-| CSS y themes                            |   ✅   | Estilos dark/light limpios             |
-| i18n (EN + ES)                          |   ✅   | `server/i18n.go`, wired en templates   |
-| Keystone TOTP/MFA                       |   ✅   | `ErrTOTPRequired`, flujo 2 pasos       |
-| Keystone `TokenIdentity`                |   ✅   | Self-validation de tokens              |
-| Keystone `UserIDKey` (email/username)   |   ✅   | UUID SHA1 derivado                     |
-| Refactor `CallbackConnector`            |   ✅   | Todos los connectors actualizados      |
-| Tests Keystone (`key_test`, `validate`) |   ✅   | Añadidos                               |
-| Documentación Keystone/permisos         |   ✅   | En `documentacion/`                    |
-| Dependabot                              |   ✅   | Go + Docker + Actions configurado      |
-| CI/CD automático GHCR                   |   ❌   | Pendiente                              |
-| Strings TOTP hardcoded en templates     |   ❌   | Pendiente traducción                   |
-| Tests TOTP unitarios con mocks          |   ❌   | Pendiente                              |
-| CHANGELOG.md                            |   ❌   | Pendiente                              |
-| README.md actualizado                   |   ❌   | Pendiente                              |
+| Área                                        | Estado | Notas                                     |
+| ------------------------------------------- | :----: | ----------------------------------------- |
+| `.gitignore`                                |   ✅   | `dex_mod` ignorado                        |
+| `.dockerignore`                             |   ✅   | Excluye artefactos innecesarios           |
+| Imagen Docker GHCR                          |   ✅   | `ghcr.io/rasty94/dex:latest` publicada    |
+| Templates HTML (UI)                         |   ✅   | Actualizados con TOTP y i18n              |
+| CSS y themes                                |   ✅   | Estilos dark/light limpios                |
+| i18n (EN + ES)                              |   ✅   | `server/i18n.go`, wired en templates      |
+| Keystone TOTP/MFA                           |   ✅   | `ErrTOTPRequired`, flujo 2 pasos          |
+| Keystone `TokenIdentity`                    |   ✅   | Self-validation de tokens                 |
+| Keystone `UserIDKey` (email/username)       |   ✅   | UUID SHA1 derivado                        |
+| Refactor `CallbackConnector`                |   ✅   | Todos los connectors actualizados         |
+| Tests Keystone (`key_test`, `validate`)     |   ✅   | Añadidos                                  |
+| Documentación Keystone/permisos             |   ✅   | En `documentacion/`                       |
+| Dependabot                                  |   ✅   | Go + Docker + Actions configurado         |
+| CI/CD automático GHCR (`ghcr-publish.yaml`) |   ✅   | multi-arch amd64+arm64, semver + SHA tags |
+| Strings TOTP hardcoded en templates         |   ✅   | Traducidos vía i18n (5 idiomas)           |
+| i18n ampliado (FR, DE, PT)                  |   ✅   | 5 idiomas: EN, ES, FR, DE, PT             |
+| Iconos SVG en `login.html`                  |   ✅   | 12 connectors con icono SVG               |
+| Tests TOTP unitarios con mocks              |   ❌   | Pendiente                                 |
+| CHANGELOG.md                                |   ❌   | Pendiente                                 |
+| README.md actualizado                       |   ❌   | Pendiente                                 |
