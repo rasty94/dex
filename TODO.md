@@ -91,10 +91,8 @@
 
 ## 🟢 Pendiente — Prioridad Baja
 
-### 10. Seguridad
-
-- [ ] Eliminar credenciales hardcodeadas en `Ejemplos/config.yaml`
-- [ ] Añadir headers de seguridad por defecto en `config.docker.yaml`:
+- [x] Eliminar credenciales hardcodeadas en `Ejemplos/config.yaml`
+- [x] Añadir headers de seguridad por defecto en `config.docker.yaml`:
     ```yaml
     headers:
         X-Frame-Options: "DENY"
@@ -102,12 +100,15 @@
         Content-Security-Policy: "default-src 'self'"
         Strict-Transport-Security: "max-age=31536000; includeSubDomains"
     ```
-- [ ] Verificar que los tokens no se loguean completos
+- [x] Verificar que los tokens no se loguean completos (Keystone logs omiten secretos)
 
 ### 11. Testing
 
-- [ ] Tests unitarios para flujo TOTP completo (mock del endpoint Keystone)
-- [ ] Tests de `TokenIdentity()` con mocks
+- [x] Tests unitarios para flujo TOTP completo (mock del endpoint Keystone) en `keystone_test.go`
+- [x] Tests de `TokenIdentity()` con mocks en `keystone_test.go`
+- [x] Arreglado mismatch de asignación en `introspectionhandler_test.go`
+- [x] Sincronizado `go.mod` y `go.sum` tras implementar YAML i18n
+- [x] Añadida validación de URL en `redirectedAuthErr.Handler()`
 
 ### 12. ✅ Documentación
 
@@ -119,9 +120,7 @@
     - Sección "Fork Enhancements": TOTP/MFA, TokenIdentity, i18n, imagen Docker
     - Keystone elevado de `alpha` a `beta` con notas de funcionalidades
 
-### 13. Limpieza
-
-- [ ] Eliminar `dex_mod/` cuando ya no sea necesario como referencia
+- [x] Eliminar `dex_mod/` (Completado)
 - [ ] Revisar si `Ejemplos-Oasix/` puede eliminarse
 
 ---
@@ -147,7 +146,7 @@
 | Strings TOTP hardcoded en templates         |   ✅   | Traducidos vía i18n (5 idiomas)           |
 | i18n ampliado (FR, DE, PT)                  |   ✅   | 5 idiomas: EN, ES, FR, DE, PT             |
 | Iconos SVG en `login.html`                  |   ✅   | 12 connectors con icono SVG               |
-| Tests TOTP unitarios con mocks              |   ❌   | Pendiente                                 |
+| Tests TOTP unitarios con mocks              |   ✅   | En `keystone_test.go`                     |
 | CHANGELOG.md                                |   ✅   | Historial completo desde upstream         |
 | README.md actualizado                       |   ✅   | Fork badges, mejoras, Keystone beta       |
 | `keystone_connector.md` ampliado            |   ✅   | TOTP, TokenIdentity, permisos, comandos   |
