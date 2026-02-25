@@ -26,16 +26,12 @@ documentacion/
 
 # Example configs and scripts (not needed in image)
 Ejemplos/
-Ejemplos-Oasix/
 examples/
 scripts/
 
 # Test files
 **/*_test.go
 test_output*.txt
-
-# Modified source (reference only)
-dex_mod/
 
 # OS artifacts
 .DS_Store

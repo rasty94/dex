@@ -121,7 +121,7 @@
     - Keystone elevado de `alpha` a `beta` con notas de funcionalidades
 
 - [x] Eliminar `dex_mod/` (Completado)
-- [ ] Revisar si `Ejemplos-Oasix/` puede eliminarse
+- [x] Eliminar `Ejemplos-Oasix/` (Completado)
 
 ---
 
@@ -129,8 +129,8 @@
 
 | Área                                        | Estado | Notas                                     |
 | ------------------------------------------- | :----: | ----------------------------------------- |
-| `.gitignore`                                |   ✅   | `dex_mod` ignorado                        |
-| `.dockerignore`                             |   ✅   | Excluye artefactos innecesarios           |
+| `.gitignore`                                |   ✅   | -                                         |
+| `.dockerignore`                             |   ✅   | Limpiado (dex_mod, Oasix eliminados)      |
 | Imagen Docker GHCR                          |   ✅   | `ghcr.io/rasty94/dex:latest` publicada    |
 | Templates HTML (UI)                         |   ✅   | Actualizados con TOTP y i18n              |
 | CSS y themes                                |   ✅   | Estilos dark/light limpios                |
