@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/google/uuid"
 
 	"github.com/dexidp/dex/connector"
 	"github.com/dexidp/dex/server/internal"
@@ -64,25 +65,13 @@ func (err *redirectedAuthErr) Handler() http.Handler {
 		if err.Description != "" {
 			v.Add("error_description", err.Description)
 		}
-
-		// Parse the redirect URI to ensure it's valid before redirecting
-		u, parseErr := url.Parse(err.RedirectURI)
-		if parseErr != nil {
-			// If URI parsing fails, respond with an error instead of redirecting
-			http.Error(w, "Invalid redirect URI", http.StatusBadRequest)
-			return
+		var redirectURI string
+		if strings.Contains(err.RedirectURI, "?") {
+			redirectURI = err.RedirectURI + "&" + v.Encode()
+		} else {
+			redirectURI = err.RedirectURI + "?" + v.Encode()
 		}
-
-		// Add error parameters to the URL
-		query := u.Query()
-		for key, values := range v {
-			for _, value := range values {
-				query.Add(key, value)
-			}
-		}
-		u.RawQuery = query.Encode()
-
-		http.Redirect(w, r, u.String(), http.StatusSeeOther)
+		http.Redirect(w, r, redirectURI, http.StatusSeeOther)
 	}
 	return http.HandlerFunc(hf)
 }
@@ -257,6 +246,12 @@ type idTokenClaims struct {
 	Name              string `json:"name,omitempty"`
 	PreferredUsername string `json:"preferred_username,omitempty"`
 
+	// Keycloak compatibility fields
+	JTI       string `json:"jti,omitempty"`
+	Type      string `json:"typ,omitempty"`
+	SessionID string `json:"sid,omitempty"`
+	ACR       string `json:"acr,omitempty"`
+
 	FederatedIDClaims *federatedIDClaims `json:"federated_claims,omitempty"`
 }
 
@@ -265,7 +260,7 @@ type federatedIDClaims struct {
 	UserID      string `json:"user_id,omitempty"`
 }
 
-func (s *Server) newAccessToken(ctx context.Context, clientID string, claims storage.Claims, scopes []string, nonce, connID string) (accessToken string, expiry time.Time, err error) {
+func (s *Server) newAccessToken(ctx context.Context, clientID string, claims storage.Claims, scopes []string, nonce, connID string) (accessToken, sessionID string, expiry time.Time, err error) {
 	return s.newIDToken(ctx, clientID, claims, scopes, nonce, storage.NewID(), "", connID)
 }
 
@@ -312,36 +307,36 @@ func genSubject(userID string, connID string) (string, error) {
 	return internal.Marshal(sub)
 }
 
-func (s *Server) newIDToken(ctx context.Context, clientID string, claims storage.Claims, scopes []string, nonce, accessToken, code, connID string) (idToken string, expiry time.Time, err error) {
+func (s *Server) newIDToken(ctx context.Context, clientID string, claims storage.Claims, scopes []string, nonce, accessToken, code, connID string) (idToken, sessionID string, expiry time.Time, err error) {
 	issuedAt := s.now()
 	expiry = issuedAt.Add(s.idTokensValidFor)
 
-	subjectString, err := genSubject(claims.UserID, connID)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to marshal offline session ID", "err", err)
-		return "", expiry, fmt.Errorf("failed to marshal offline session ID: %v", err)
-	}
-
+	sessionID = uuid.New().String()
 	tok := idTokenClaims{
-		Issuer:   s.issuerURL.String(),
-		Subject:  subjectString,
-		Nonce:    nonce,
-		Expiry:   expiry.Unix(),
-		IssuedAt: issuedAt.Unix(),
+		Issuer:    s.issuerURL.String(),
+		Subject:   claims.UserID, // Use UserID directly, no base64
+		Nonce:     nonce,
+		Expiry:    expiry.Unix(),
+		IssuedAt:  issuedAt.Unix(),
+		JTI:       uuid.New().String(),
+		Type:      "ID",
+		SessionID: sessionID,
+		ACR:       "1",
 	}
 
+	// Determine signing algorithm from signer
 	// Determine signing algorithm from signer
 	signingAlg, err := s.signer.Algorithm(ctx)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to get signing algorithm", "err", err)
-		return "", expiry, fmt.Errorf("failed to get signing algorithm: %v", err)
+		return "", "", expiry, fmt.Errorf("failed to get signing algorithm: %v", err)
 	}
 
 	if accessToken != "" {
 		atHash, err := accessTokenHash(signingAlg, accessToken)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "error computing at_hash", "err", err)
-			return "", expiry, fmt.Errorf("error computing at_hash: %v", err)
+			return "", "", expiry, fmt.Errorf("error computing at_hash: %v", err)
 		}
 		tok.AccessTokenHash = atHash
 	}
@@ -350,7 +345,7 @@ func (s *Server) newIDToken(ctx context.Context, clientID string, claims storage
 		cHash, err := accessTokenHash(signingAlg, code)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "error computing c_hash", "err", err)
-			return "", expiry, fmt.Errorf("error computing c_hash: #{err}")
+			return "", "", expiry, fmt.Errorf("error computing c_hash: #{err}")
 		}
 		tok.CodeHash = cHash
 	}
@@ -379,30 +374,27 @@ func (s *Server) newIDToken(ctx context.Context, clientID string, claims storage
 			}
 			isTrusted, err := s.validateCrossClientTrust(ctx, clientID, peerID)
 			if err != nil {
-				return "", expiry, err
+				return "", "", expiry, err
 			}
 			if !isTrusted {
 				// TODO(ericchiang): propagate this error to the client.
-				return "", expiry, fmt.Errorf("peer (%s) does not trust client", peerID)
+				return "", "", expiry, fmt.Errorf("peer (%s) does not trust client", peerID)
 			}
 		}
 	}
 
 	tok.Audience = getAudience(clientID, scopes)
-	if len(tok.Audience) > 1 {
-		// The current client becomes the authorizing party.
-		tok.AuthorizingParty = clientID
-	}
+	tok.AuthorizingParty = clientID
 
 	payload, err := json.Marshal(tok)
 	if err != nil {
-		return "", expiry, fmt.Errorf("could not serialize claims: %v", err)
+		return "", "", expiry, fmt.Errorf("could not serialize claims: %v", err)
 	}
 
 	if idToken, err = s.signer.Sign(ctx, payload); err != nil {
-		return "", expiry, fmt.Errorf("failed to sign payload: %v", err)
+		return "", "", expiry, fmt.Errorf("failed to sign payload: %v", err)
 	}
-	return idToken, expiry, nil
+	return idToken, sessionID, expiry, nil
 }
 
 // parse the initial request from the OAuth2 client.
@@ -474,7 +466,7 @@ func (s *Server) parseAuthorizationRequest(r *http.Request) (*storage.AuthReques
 
 	if codeChallengeMethod != codeChallengeMethodS256 && codeChallengeMethod != codeChallengeMethodPlain {
 		description := fmt.Sprintf("Unsupported PKCE challenge method (%q).", codeChallengeMethod)
-		return nil, newRedirectedErr(errInvalidRequest, description)
+		return nil, newRedirectedErr(errInvalidRequest, "%s", description)
 	}
 
 	var (
@@ -558,7 +550,7 @@ func (s *Server) parseAuthorizationRequest(r *http.Request) (*storage.AuthReques
 	if rt.token {
 		if redirectURI == redirectURIOOB {
 			err := fmt.Sprintf("Cannot use response type 'token' with redirect_uri '%s'.", redirectURIOOB)
-			return nil, newRedirectedErr(errInvalidRequest, err)
+			return nil, newRedirectedErr(errInvalidRequest, "%s", err)
 		}
 	}
 

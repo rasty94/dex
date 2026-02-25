@@ -112,6 +112,7 @@ func (v *vaultSigner) Sign(ctx context.Context, payload []byte) (string, error) 
 	header := map[string]interface{}{
 		"alg": signingJWK.Algorithm,
 		"kid": signingJWK.KeyID,
+		"typ": "JWT",
 	}
 
 	headerBytes, err := json.Marshal(header)

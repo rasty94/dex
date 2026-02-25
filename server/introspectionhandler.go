@@ -215,24 +215,19 @@ func (s *Server) introspectRefreshToken(ctx context.Context, token string) (*Int
 		return nil, newIntrospectInternalServerError()
 	}
 
-	subjectString, sErr := genSubject(rCtx.storageToken.Claims.UserID, rCtx.storageToken.ConnectorID)
-	if sErr != nil {
-		s.logger.ErrorContext(ctx, "failed to marshal offline session ID", "err", err)
-		return nil, newIntrospectInternalServerError()
-	}
-
 	return &Introspection{
 		Active:    true,
 		ClientID:  rCtx.storageToken.ClientID,
 		IssuedAt:  rCtx.storageToken.CreatedAt.Unix(),
 		NotBefore: rCtx.storageToken.CreatedAt.Unix(),
 		Expiry:    rCtx.storageToken.CreatedAt.Add(s.refreshTokenPolicy.absoluteLifetime).Unix(),
-		Subject:   subjectString,
+		Subject:   rCtx.storageToken.Claims.UserID,
 		Username:  rCtx.storageToken.Claims.PreferredUsername,
 		Audience:  getAudience(rCtx.storageToken.ClientID, rCtx.scopes),
 		Issuer:    s.issuerURL.String(),
 
 		Extra: IntrospectionExtra{
+			AuthorizingParty:  rCtx.storageToken.ClientID,
 			Email:             rCtx.storageToken.Claims.Email,
 			EmailVerified:     &rCtx.storageToken.Claims.EmailVerified,
 			Groups:            rCtx.storageToken.Claims.Groups,

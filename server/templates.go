@@ -270,7 +270,8 @@ func (t *templates) device(r *http.Request, w http.ResponseWriter, postURL strin
 		UserCode string
 		Invalid  bool
 		ReqPath  string
-	}{postURL, userCode, lastWasInvalid, r.URL.Path}
+		Tr       map[string]string
+	}{postURL, userCode, lastWasInvalid, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
 	return renderTemplate(w, t.deviceTmpl, data)
 }
 
@@ -278,7 +279,8 @@ func (t *templates) deviceSuccess(r *http.Request, w http.ResponseWriter, client
 	data := struct {
 		ClientName string
 		ReqPath    string
-	}{clientName, r.URL.Path}
+		Tr         map[string]string
+	}{clientName, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
 	return renderTemplate(w, t.deviceSuccessTmpl, data)
 }
 
@@ -287,11 +289,12 @@ func (t *templates) login(r *http.Request, w http.ResponseWriter, connectors []c
 	data := struct {
 		Connectors []connectorInfo
 		ReqPath    string
-	}{connectors, r.URL.Path}
+		Tr         map[string]string
+	}{connectors, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
 	return renderTemplate(w, t.loginTmpl, data)
 }
 
-func (t *templates) password(r *http.Request, w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid bool, backLink string) error {
+func (t *templates) password(r *http.Request, w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid bool, backLink string, showDomain bool, domain string, requireTOTP bool, receipt string, lastPassword string) error {
 	if lastWasInvalid {
 		w.WriteHeader(http.StatusUnauthorized)
 	}
@@ -302,7 +305,13 @@ func (t *templates) password(r *http.Request, w http.ResponseWriter, postURL, la
 		UsernamePrompt string
 		Invalid        bool
 		ReqPath        string
-	}{postURL, backLink, lastUsername, usernamePrompt, lastWasInvalid, r.URL.Path}
+		ShowDomain     bool
+		Domain         string
+		RequireTOTP    bool
+		Receipt        string
+		Password       string
+		Tr             map[string]string
+	}{postURL, backLink, lastUsername, usernamePrompt, lastWasInvalid, r.URL.Path, showDomain, domain, requireTOTP, receipt, lastPassword, GetTranslations(r.Header.Get("Accept-Language"))}
 	return renderTemplate(w, t.passwordTmpl, data)
 }
 
@@ -321,7 +330,8 @@ func (t *templates) approval(r *http.Request, w http.ResponseWriter, authReqID, 
 		AuthReqID string
 		Scopes    []string
 		ReqPath   string
-	}{username, clientName, authReqID, accesses, r.URL.Path}
+		Tr        map[string]string
+	}{username, clientName, authReqID, accesses, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
 	return renderTemplate(w, t.approvalTmpl, data)
 }
 
@@ -329,7 +339,8 @@ func (t *templates) oob(r *http.Request, w http.ResponseWriter, code string) err
 	data := struct {
 		Code    string
 		ReqPath string
-	}{code, r.URL.Path}
+		Tr      map[string]string
+	}{code, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
 	return renderTemplate(w, t.oobTmpl, data)
 }
 
@@ -339,7 +350,8 @@ func (t *templates) err(r *http.Request, w http.ResponseWriter, errCode int, err
 		ErrType string
 		ErrMsg  string
 		ReqPath string
-	}{http.StatusText(errCode), errMsg, r.URL.Path}
+		Tr      map[string]string
+	}{http.StatusText(errCode), errMsg, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
 	if err := t.errorTmpl.Execute(w, data); err != nil {
 		return fmt.Errorf("rendering template %s failed: %s", t.errorTmpl.Name(), err)
 	}

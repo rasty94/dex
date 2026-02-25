@@ -46,7 +46,8 @@ func signatureAlgorithm(jwk *jose.JSONWebKey) (alg jose.SignatureAlgorithm, err 
 func signPayload(key *jose.JSONWebKey, alg jose.SignatureAlgorithm, payload []byte) (jws string, err error) {
 	signingKey := jose.SigningKey{Key: key, Algorithm: alg}
 
-	signer, err := jose.NewSigner(signingKey, &jose.SignerOptions{})
+	opts := (&jose.SignerOptions{}).WithType("JWT")
+	signer, err := jose.NewSigner(signingKey, opts)
 	if err != nil {
 		return "", fmt.Errorf("new signer: %v", err)
 	}
