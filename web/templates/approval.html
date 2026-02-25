@@ -1,44 +1,25 @@
 {{ template "header.html" . }}
 
-<div class="theme-panel">
-  <h2 class="theme-heading">Grant Access</h2>
+<h1 class="dex-title">{{ .Tr.approval_title }}</h1>
+<p class="dex-subtitle">{{ .Tr.approval_client }}: <strong>{{ .Client }}</strong></p>
 
-  <hr class="dex-separator">
-  <div>
-    {{ if .Scopes }}
-    <div class="dex-subtle-text">{{ .Client }} would like to:</div>
-    <ul class="dex-list">
-      {{ range $scope := .Scopes }}
-      <li>{{ $scope }}</li>
-      {{ end }}
-    </ul>
-    {{ else }}
-    <div class="dex-subtle-text">{{ .Client }} has not requested any personal information</div>
+<p>{{ .Tr.approval_permissions }}:</p>
+<ul class="dex-connector-list">
+    {{ range $scope := .Scopes }}
+    <li class="dex-connector-item">&bull; {{ $scope }}</li>
     {{ end }}
-  </div>
-  <hr class="dex-separator">
+</ul>
 
-  <div>
-    <div class="theme-form-row">
-      <form method="post">
-        <input type="hidden" name="req" value="{{ .AuthReqID }}"/>
-        <input type="hidden" name="approval" value="approve">
-        <button type="submit" class="dex-btn theme-btn--success">
-            <span class="dex-btn-text">Grant Access</span>
-        </button>
-      </form>
-    </div>
-    <div class="theme-form-row">
-      <form method="post">
-        <input type="hidden" name="req" value="{{ .AuthReqID }}"/>
-        <input type="hidden" name="approval" value="rejected">
-        <button type="submit" class="dex-btn theme-btn-provider">
-            <span class="dex-btn-text">Cancel</span>
-        </button>
-      </form>
-    </div>
-  </div>
+<form method="post" style="margin-top: 20px;">
+    <input type="hidden" name="req" value="{{ .AuthReqID }}"/>
+    <input type="hidden" name="approval" value="approve">
+    <button type="submit" class="dex-btn">{{ .Tr.approval_approve }}</button>
+</form>
 
-</div>
+<form method="post">
+    <input type="hidden" name="req" value="{{ .AuthReqID }}"/>
+    <input type="hidden" name="approval" value="rejected">
+    <button type="submit" class="dex-btn dex-btn-secondary">{{ .Tr.approval_reject }}</button>
+</form>
 
 {{ template "footer.html" . }}

@@ -1,8 +1,6 @@
 {{ template "header.html" . }}
 
-<div class="theme-panel">
-  <h2 class="theme-heading">Login Successful for {{ .ClientName }}</h2>
-  <p>Return to your device to continue</p>
-</div>
+<h1 class="dex-title" style="color: var(--success-color);">{{ .Tr.device_success_title }}</h1>
+<p class="dex-subtitle">{{ .Tr.device_success_msg }}</p>
 
 {{ template "footer.html" . }}

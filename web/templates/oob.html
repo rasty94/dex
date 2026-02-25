@@ -1,9 +1,10 @@
 {{ template "header.html" . }}
 
-<div class="theme-panel">
-  <h2 class="theme-heading">Login Successful</h2>
-  <p>Please copy this code, switch to your application and paste it there:</p>
-  <input type="text" class="theme-form-input" value="{{ .Code }}" />
+<h1 class="dex-title" style="color: var(--success-color);">{{ .Tr.oob_title }}</h1>
+<p class="dex-subtitle">{{ .Tr.oob_instructions }}</p>
+
+<div class="dex-input-group">
+    <input type="text" class="dex-input" value="{{ .Code }}" readonly onclick="this.select();" style="text-align: center; letter-spacing: 2px; font-family: monospace; font-size: 20px;"/>
 </div>
 
 {{ template "footer.html" . }}

@@ -1,23 +1,20 @@
 {{ template "header.html" . }}
 
-<div class="theme-panel">
-  <h2 class="theme-heading">Enter User Code</h2>
-  <form method="post" action="{{ .PostURL }}">
-    <div class="theme-form-row">
-      {{ if( .UserCode  )}}
-      <input tabindex="2" required id="user_code" name="user_code" type="text" class="theme-form-input" autocomplete="off" value="{{.UserCode}}" {{ if .Invalid }} autofocus {{ end }}/>
-      {{ else }}
-      <input tabindex="2" required id="user_code" name="user_code" type="text" class="theme-form-input" placeholder="XXXX-XXXX" autocomplete="off"  {{ if .Invalid }} autofocus {{ end }}/>
-      {{ end }}
+<h1 class="dex-title">{{ .Tr.device_title }}</h1>
+<p class="dex-subtitle">{{ .Tr.device_instructions }}</p>
+
+<form method="post" action="{{ .PostURL }}">
+    <div class="dex-input-group">
+        <input required id="user_code" name="user_code" type="text" class="dex-input" placeholder="XXXX-XXXX" autocomplete="off" {{ if .UserCode }} value="{{.UserCode}}" {{ end }} {{ if .Invalid }} autofocus {{ end }} style="text-align: center; letter-spacing: 2px; font-family: monospace; font-size: 20px;"/>
     </div>
 
     {{ if .Invalid }}
-    <div id="login-error" class="dex-error-box">
-      Invalid or Expired User Code
+    <div class="dex-error">
+        Invalid or Expired User Code
     </div>
     {{ end }}
-    <button tabindex="3" id="submit-login" type="submit" class="dex-btn theme-btn--primary">Submit</button>
-  </form>
-</div>
+
+    <button type="submit" class="dex-btn">{{ .Tr.login_button }}</button>
+</form>
 
 {{ template "footer.html" . }}

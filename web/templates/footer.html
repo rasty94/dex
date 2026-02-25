@@ -1,3 +1,10 @@
+      <div class="theme-footer">
+        {{ if .Tr.footer_copyright }}
+          {{ .Tr.footer_copyright }}
+        {{ else }}
+          &copy; Dex IdP
+        {{ end }}
+      </div>
     </div>
   </body>
 </html>
