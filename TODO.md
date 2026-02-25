@@ -80,7 +80,9 @@
 - [x] Nuevas claves TOTP (`totp_label`, `totp_verify_button`, `totp_invalid`, `signing_in`) en los 5 idiomas
 - [x] `domain_label` añadida en todos los idiomas
 - [x] Mejorado parsing de `Accept-Language` (soporta cabeceras completas: `es-ES,es;q=0.9,en;q=0.8`)
-- [ ] Evaluar externalizar traducciones a YAML/JSON en lugar de Go hardcodeado
+- [x] Evaluar externalizar traducciones a YAML/JSON en lugar de Go hardcodeado
+    - Implementado: `server/i18n/*.yaml` embebidos con `//go:embed`
+    - Añadir idioma = soltar un `.yaml` y recompilar, sin tocar Go
 
 ---
 
