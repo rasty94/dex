@@ -1419,7 +1419,7 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request, cli
 		s.tokenErrHelper(w, errInvalidRequest, "Missing subject_token", http.StatusBadRequest)
 		return
 	}
-	//REVISAR#
+	// REVISAR#
 	conn, err := s.getConnector(ctx, connID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "failed to get connector", "err", err)
@@ -1445,7 +1445,7 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request, cli
 		userID = fmt.Sprintf("%s-%s-%s-%s-%s", userID[0:8], userID[8:12], userID[12:16], userID[16:20], userID[20:])
 	}
 
-	//REVISAR#
+	// REVISAR#
 	claims := storage.Claims{
 		UserID:            userID,
 		Username:          identity.Username,

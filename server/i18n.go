@@ -19,6 +19,7 @@ var i18nFS embed.FS
 // translations holds the loaded translation maps, keyed by language code (e.g. "en", "es").
 var translations map[string]map[string]string
 
+//nolint:gochecknoinits
 func init() {
 	translations = make(map[string]map[string]string)
 

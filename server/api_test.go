@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"net"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -29,7 +30,7 @@ type apiClient struct {
 }
 
 func newLogger(t *testing.T) *slog.Logger {
-	return slog.New(slog.NewTextHandler(t.Output(), &slog.HandlerOptions{Level: slog.LevelDebug}))
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
 // newAPI constructs a gRCP client connected to a backing server.
