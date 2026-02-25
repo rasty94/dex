@@ -409,7 +409,13 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 				}
 				return
 			}
-			s.logger.ErrorContext(r.Context(), "failed to login user", "err", err)
+
+			ip := r.Header.Get("X-Forwarded-For")
+			if ip == "" {
+				ip = r.RemoteAddr
+			}
+
+			s.logger.ErrorContext(r.Context(), "failed to login user", "err", err, "ip", ip, "user", username)
 			s.renderError(r, w, http.StatusInternalServerError, ErrMsgLoginError)
 			return
 		}
@@ -418,7 +424,13 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			if err := s.templates.password(r, w, r.URL.String(), username, usernamePrompt(pwConn), true, backLink, showDomain, r.FormValue("domain"), totpWasRequired, r.FormValue("receipt"), password); err != nil {
 				s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 			}
-			s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username)
+
+			ip := r.Header.Get("X-Forwarded-For")
+			if ip == "" {
+				ip = r.RemoteAddr
+			}
+
+			s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username, "ip", ip)
 			return
 		}
 		redirectURL, canSkipApproval, err := s.finalizeLogin(r.Context(), identity, authReq, conn.Connector)
@@ -1231,11 +1243,20 @@ func (s *Server) handlePasswordGrant(w http.ResponseWriter, r *http.Request, cli
 	password := q.Get("password")
 	identity, ok, err := passwordConnector.Login(ctx, parseScopes(scopes), username, password)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "failed to login user", "err", err)
+		ip := r.Header.Get("X-Forwarded-For")
+		if ip == "" {
+			ip = r.RemoteAddr
+		}
+		s.logger.ErrorContext(r.Context(), "failed to login user", "err", err, "ip", ip, "user", username)
 		s.tokenErrHelper(w, errInvalidRequest, "Could not login user", http.StatusBadRequest)
 		return
 	}
 	if !ok {
+		ip := r.Header.Get("X-Forwarded-For")
+		if ip == "" {
+			ip = r.RemoteAddr
+		}
+		s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username, "ip", ip)
 		s.tokenErrHelper(w, errAccessDenied, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}

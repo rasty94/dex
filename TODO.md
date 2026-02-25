@@ -140,17 +140,17 @@
 - [x] Soporte de caché local para tokens de Keystone (reducir llamadas a `GET /v3/auth/tokens` mediante Redis o memoria en caché LRU con TTL adaptativo).
 - [x] Mapeo dinámico de Grupos: Permitir mapear roles específicos de un proyecto (tenant) de OpenStack a grupos de Dex en lugar de devolver solo los grupos nativos del usuario.
 
-### 16. 🛡️ Seguridad y DevSecOps
+### 16. ✅ Seguridad y DevSecOps
 
-- [ ] Escaneo de dependencias en cada release con Trivy o SonarQube.
-- [ ] Análisis estático de código de seguridad (SAST) usando Gosec en las Actions.
-- [ ] Auditoría de logs estructurados: Guardar eventos de auditoría (ej. IP del intento de login fallido).
+- [x] Escaneo de dependencias en cada release con Trivy o SonarQube.
+- [x] Análisis estático de código de seguridad (SAST) usando Gosec en las Actions.
+- [x] Auditoría de logs estructurados: Guardar eventos de auditoría (ej. IP del intento de login fallido).
 
 ### 17. 🎨 UI / UX
 
 - [ ] **Tematización Dinámica por Cliente**: Permitir que un `client_id` inyecte su propio Logo o color principal en la pantalla de login (Feature nativa de Dex pero mejorable en las plantillas).
 - [ ] Añadir un checkbox de "Recordar este dispositivo durante 30 días" (MFA Trust) para evitar pedir el TOTP todos los días en IPs conocidas.
-- [ ] Botón de "Mostrar Contraseña" (ojo) en el input de password.
+- [x] Botón de "Mostrar Contraseña" (ojo) en el input de password.
 
 ---
 
