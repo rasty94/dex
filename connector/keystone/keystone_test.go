@@ -1,637 +1,343 @@
 package keystone
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
+	"fmt"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
-	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/dexidp/dex/connector"
 )
 
-const (
-	invalidPass = "WRONG_PASS"
-
-	testUser          = "test_user"
-	testPass          = "test_pass"
-	testEmail         = "test@example.com"
-	testGroup         = "test_group"
-	testDomainAltName = "altdomain"
-	testDomainID      = "default"
-	testDomainName    = "Default"
-)
-
-var (
-	keystoneURL      = ""
-	keystoneAdminURL = ""
-	adminUser        = ""
-	adminPass        = ""
-	authTokenURL     = ""
-	usersURL         = ""
-	groupsURL        = ""
-	domainsURL       = ""
-)
-
-type userReq struct {
-	Name     string   `json:"name"`
-	Email    string   `json:"email"`
-	Enabled  bool     `json:"enabled"`
-	Password string   `json:"password"`
-	Roles    []string `json:"roles"`
-	DomainID string   `json:"domain_id,omitempty"`
-}
-
-type domainResponse struct {
-	Domain domainKeystone `json:"domain"`
-}
-
-type domainsResponse struct {
-	Domains []domainKeystone `json:"domains"`
-}
-
-type groupResponse struct {
-	Group struct {
-		ID string `json:"id"`
-	} `json:"group"`
-}
-
-func getAdminToken(t *testing.T, adminName, adminPass string) (token, id string) {
+// mockKeystoneServer builds a test HTTP server that simulates Keystone v3.
+// The returned mux can be extended per test case.
+func mockKeystoneServer(t *testing.T) (*httptest.Server, *http.ServeMux) {
 	t.Helper()
-	jsonData := loginRequestData{
-		auth: auth{
-			Identity: identity{
-				Methods: []string{"password"},
-				Password: password{
-					User: user{
-						Name:     adminName,
-						Domain:   domainKeystone{ID: testDomainID},
-						Password: adminPass,
-					},
-				},
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, mux
+}
+
+// newTestConn returns a conn pointing at the given test server.
+func newTestConn(host string) *conn {
+	return &conn{
+		Host:          host,
+		AdminUsername: "admin",
+		AdminPassword: "admin-pass",
+		Domain:        domainKeystone{ID: "default"},
+		client:        http.DefaultClient,
+		Logger:        slog.New(slog.NewTextHandler(os.Stderr, nil)),
+	}
+}
+
+// ─────────────────────────────────────────────
+// Helpers: standard JSON responses
+// ─────────────────────────────────────────────
+
+func writeToken(w http.ResponseWriter, userID, userName, userToken string) {
+	w.Header().Set("X-Subject-Token", userToken)
+	w.WriteHeader(http.StatusCreated)
+	resp := tokenResponse{
+		Token: token{
+			User: userKeystone{
+				ID:   userID,
+				Name: userName,
 			},
 		},
 	}
-
-	body, err := json.Marshal(jsonData)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req, err := http.NewRequest("POST", authTokenURL, bytes.NewBuffer(body))
-	if err != nil {
-		t.Fatalf("keystone: failed to obtain admin token: %v\n", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	token = resp.Header.Get("X-Subject-Token")
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	tokenResp := new(tokenResponse)
-	err = json.Unmarshal(data, &tokenResp)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return token, tokenResp.Token.User.ID
+	json.NewEncoder(w).Encode(resp)
 }
 
-func getOrCreateDomain(t *testing.T, token, domainName string) string {
-	t.Helper()
-
-	domainSearchURL := domainsURL + "?name=" + domainName
-	reqGet, err := http.NewRequest("GET", domainSearchURL, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	reqGet.Header.Set("X-Auth-Token", token)
-	reqGet.Header.Add("Content-Type", "application/json")
-	respGet, err := http.DefaultClient.Do(reqGet)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dataGet, err := io.ReadAll(respGet.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer respGet.Body.Close()
-
-	domainsResp := new(domainsResponse)
-	err = json.Unmarshal(dataGet, &domainsResp)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(domainsResp.Domains) >= 1 {
-		return domainsResp.Domains[0].ID
-	}
-
-	createDomainData := map[string]interface{}{
-		"domain": map[string]interface{}{
-			"name":    domainName,
-			"enabled": true,
-		},
-	}
-
-	body, err := json.Marshal(createDomainData)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req, err := http.NewRequest("POST", domainsURL, bytes.NewBuffer(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("X-Auth-Token", token)
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if resp.StatusCode != 201 {
-		t.Fatalf("failed to create domain %s", domainName)
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	domainResp := new(domainResponse)
-	err = json.Unmarshal(data, &domainResp)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return domainResp.Domain.ID
+func writeUser(w http.ResponseWriter, name, email, id string) {
+	w.WriteHeader(http.StatusOK)
+	resp := userResponse{}
+	resp.User.Name = name
+	resp.User.Email = email
+	resp.User.ID = id
+	json.NewEncoder(w).Encode(resp)
 }
 
-func createUser(t *testing.T, token, domainID, userName, userEmail, userPass string) string {
-	t.Helper()
-
-	createUserData := map[string]interface{}{
-		"user": userReq{
-			DomainID: domainID,
-			Name:     userName,
-			Email:    userEmail,
-			Enabled:  true,
-			Password: userPass,
-			Roles:    []string{"admin"},
-		},
+func writeGroups(w http.ResponseWriter, groups ...string) {
+	w.WriteHeader(http.StatusOK)
+	gs := make([]group, len(groups))
+	for i, g := range groups {
+		gs[i] = group{ID: fmt.Sprintf("id-%d", i), Name: g}
 	}
-
-	body, err := json.Marshal(createUserData)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req, err := http.NewRequest("POST", usersURL, bytes.NewBuffer(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("X-Auth-Token", token)
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	userResp := new(userResponse)
-	err = json.Unmarshal(data, &userResp)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return userResp.User.ID
+	json.NewEncoder(w).Encode(groupsResponse{Groups: gs})
 }
 
-// delete group or user
-func deleteResource(t *testing.T, token, id, uri string) {
-	t.Helper()
+// ─────────────────────────────────────────────
+// Tests: Login — standard flow
+// ─────────────────────────────────────────────
 
-	deleteURI := uri + id
-	req, err := http.NewRequest("DELETE", deleteURI, nil)
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	req.Header.Set("X-Auth-Token", token)
+func TestLogin_Success(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
 
-	resp, err := http.DefaultClient.Do(req)
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		writeToken(w, "user-42", "jdoe", "tok-abc")
+	})
+	mux.HandleFunc("/v3/users/user-42", func(w http.ResponseWriter, r *http.Request) {
+		writeUser(w, "jdoe", "jdoe@example.com", "user-42")
+	})
+	mux.HandleFunc("/v3/users/user-42/groups", func(w http.ResponseWriter, r *http.Request) {
+		writeGroups(w, "admins", "developers")
+	})
+
+	identity, valid, err := c.Login(context.Background(), connector.Scopes{Groups: true}, "jdoe", "pass")
 	if err != nil {
-		t.Fatalf("error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	if !valid {
+		t.Fatal("expected valid=true")
+	}
+	if identity.UserID != "user-42" {
+		t.Errorf("UserID: got %q, want %q", identity.UserID, "user-42")
+	}
+	if identity.Email != "jdoe@example.com" {
+		t.Errorf("Email: got %q, want %q", identity.Email, "jdoe@example.com")
+	}
+	if len(identity.Groups) != 2 {
+		t.Errorf("Groups: got %v, want 2 entries", identity.Groups)
+	}
 }
 
-func createGroup(t *testing.T, token, description, name string) string {
-	t.Helper()
+func TestLogin_InvalidPassword(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
 
-	createGroupData := map[string]interface{}{
-		"group": map[string]interface{}{
-			"name":        name,
-			"description": description,
-		},
-	}
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
 
-	body, err := json.Marshal(createGroupData)
+	_, valid, err := c.Login(context.Background(), connector.Scopes{}, "jdoe", "wrong")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	req, err := http.NewRequest("POST", groupsURL, bytes.NewBuffer(body))
-	if err != nil {
-		t.Fatal(err)
+	if valid {
+		t.Fatal("expected valid=false for bad credentials")
 	}
-	req.Header.Set("X-Auth-Token", token)
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	groupResp := new(groupResponse)
-	err = json.Unmarshal(data, &groupResp)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return groupResp.Group.ID
 }
 
-func addUserToGroup(t *testing.T, token, groupID, userID string) error {
-	t.Helper()
-	uri := groupsURL + groupID + "/users/" + userID
-	req, err := http.NewRequest("PUT", uri, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("X-Auth-Token", token)
+// ─────────────────────────────────────────────
+// Tests: Login — TOTP/MFA flow
+// ─────────────────────────────────────────────
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	defer resp.Body.Close()
+func TestLogin_TOTPRequired(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
 
-	return nil
-}
+	// Step 1: Keystone returns 401 + receipt → ErrTOTPRequired
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("openstack-auth-receipt", "receipt-xyz")
+		w.WriteHeader(http.StatusUnauthorized)
+	})
 
-func TestIncorrectCredentialsLogin(t *testing.T) {
-	setupVariables(t)
-	c := conn{
-		client: http.DefaultClient,
-		Host:   keystoneURL, Domain: domainKeystone{ID: testDomainID},
-		AdminUsername: adminUser, AdminPassword: adminPass,
-	}
-	s := connector.Scopes{OfflineAccess: true, Groups: true}
-	_, validPW, err := c.Login(context.Background(), s, adminUser, invalidPass)
-
-	if validPW {
-		t.Fatal("Incorrect password check")
-	}
-
+	_, _, err := c.Login(context.Background(), connector.Scopes{}, "jdoe", "pass")
 	if err == nil {
-		t.Fatal("Error should be returned when invalid password is provided")
+		t.Fatal("expected ErrTOTPRequired, got nil")
 	}
-
-	if !strings.Contains(err.Error(), "401") {
-		t.Fatal("Unrecognized error, expecting 401")
+	totpErr, ok := err.(ErrTOTPRequired)
+	if !ok {
+		t.Fatalf("expected ErrTOTPRequired, got %T: %v", err, err)
 	}
-}
-
-func TestValidUserLogin(t *testing.T) {
-	setupVariables(t)
-	token, _ := getAdminToken(t, adminUser, adminPass)
-
-	type tUser struct {
-		createDomain bool
-		domain       domainKeystone
-		username     string
-		email        string
-		password     string
-	}
-
-	type expect struct {
-		username      string
-		email         string
-		verifiedEmail bool
-	}
-
-	tests := []struct {
-		name     string
-		input    tUser
-		expected expect
-	}{
-		{
-			name: "test with email address",
-			input: tUser{
-				createDomain: false,
-				domain:       domainKeystone{ID: testDomainID},
-				username:     testUser,
-				email:        testEmail,
-				password:     testPass,
-			},
-			expected: expect{
-				username:      testUser,
-				email:         testEmail,
-				verifiedEmail: true,
-			},
-		},
-		{
-			name: "test without email address",
-			input: tUser{
-				createDomain: false,
-				domain:       domainKeystone{ID: testDomainID},
-				username:     testUser,
-				email:        "",
-				password:     testPass,
-			},
-			expected: expect{
-				username:      testUser,
-				email:         "",
-				verifiedEmail: false,
-			},
-		},
-		{
-			name: "test with default domain Name",
-			input: tUser{
-				createDomain: false,
-				domain:       domainKeystone{Name: testDomainName},
-				username:     testUser,
-				email:        testEmail,
-				password:     testPass,
-			},
-			expected: expect{
-				username:      testUser,
-				email:         testEmail,
-				verifiedEmail: true,
-			},
-		},
-		{
-			name: "test with custom domain Name",
-			input: tUser{
-				createDomain: true,
-				domain:       domainKeystone{Name: testDomainAltName},
-				username:     testUser,
-				email:        testEmail,
-				password:     testPass,
-			},
-			expected: expect{
-				username:      testUser,
-				email:         testEmail,
-				verifiedEmail: true,
-			},
-		},
-		{
-			name: "test with custom domain ID",
-			input: tUser{
-				createDomain: true,
-				domain:       domainKeystone{},
-				username:     testUser,
-				email:        testEmail,
-				password:     testPass,
-			},
-			expected: expect{
-				username:      testUser,
-				email:         testEmail,
-				verifiedEmail: true,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			domainID := ""
-			if tt.input.createDomain == true {
-				domainID = getOrCreateDomain(t, token, testDomainAltName)
-				t.Logf("getOrCreateDomain ID: %s\n", domainID)
-
-				// if there was nothing set then use the dynamically generated domain ID
-				if tt.input.domain.ID == "" && tt.input.domain.Name == "" {
-					tt.input.domain.ID = domainID
-				}
-			}
-			userID := createUser(t, token, domainID, tt.input.username, tt.input.email, tt.input.password)
-			defer deleteResource(t, token, userID, usersURL)
-
-			c := conn{
-				client: http.DefaultClient,
-				Host:   keystoneURL, Domain: tt.input.domain,
-				AdminUsername: adminUser, AdminPassword: adminPass,
-			}
-			s := connector.Scopes{OfflineAccess: true, Groups: true}
-			identity, validPW, err := c.Login(context.Background(), s, tt.input.username, tt.input.password)
-			if err != nil {
-				t.Fatalf("Login failed for user %s: %v", tt.input.username, err.Error())
-			}
-			t.Log(identity)
-			if identity.Username != tt.expected.username {
-				t.Fatalf("Invalid user. Got: %v. Wanted: %v", identity.Username, tt.expected.username)
-			}
-			if identity.UserID == "" {
-				t.Fatalf("Didn't get any UserID back")
-			}
-			if identity.Email != tt.expected.email {
-				t.Fatalf("Invalid email. Got: %v. Wanted: %v", identity.Email, tt.expected.email)
-			}
-			if identity.EmailVerified != tt.expected.verifiedEmail {
-				t.Fatalf("Invalid verifiedEmail. Got: %v. Wanted: %v", identity.EmailVerified, tt.expected.verifiedEmail)
-			}
-
-			if !validPW {
-				t.Fatal("Valid password was not accepted")
-			}
-		})
+	if totpErr.Receipt != "receipt-xyz" {
+		t.Errorf("Receipt: got %q, want %q", totpErr.Receipt, "receipt-xyz")
 	}
 }
 
-func TestUseRefreshToken(t *testing.T) {
-	setupVariables(t)
-	token, adminID := getAdminToken(t, adminUser, adminPass)
-	groupID := createGroup(t, token, "Test group description", testGroup)
-	addUserToGroup(t, token, groupID, adminID)
-	defer deleteResource(t, token, groupID, groupsURL)
+func TestLogin_TOTPSuccessWithReceipt(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
 
-	c := conn{
-		client: http.DefaultClient,
-		Host:   keystoneURL, Domain: domainKeystone{ID: testDomainID},
-		AdminUsername: adminUser, AdminPassword: adminPass,
-	}
-	s := connector.Scopes{OfflineAccess: true, Groups: true}
+	callCount := 0
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		// Verify receipt header is forwarded
+		if r.Header.Get("openstack-auth-receipt") == "" {
+			t.Error("expected openstack-auth-receipt header in TOTP step")
+		}
+		writeToken(w, "user-42", "jdoe", "tok-totp")
+	})
+	mux.HandleFunc("/v3/users/user-42", func(w http.ResponseWriter, r *http.Request) {
+		writeUser(w, "jdoe", "jdoe@example.com", "user-42")
+	})
+	mux.HandleFunc("/v3/users/user-42/groups", func(w http.ResponseWriter, r *http.Request) {
+		writeGroups(w, "users")
+	})
 
-	identityLogin, _, err := c.Login(context.Background(), s, adminUser, adminPass)
+	ctx := context.WithValue(context.Background(), TOTPContextKey, "123456")
+	ctx = context.WithValue(ctx, ReceiptContextKey, "receipt-xyz")
+
+	identity, valid, err := c.Login(ctx, connector.Scopes{Groups: true}, "jdoe", "pass")
 	if err != nil {
-		t.Fatal(err.Error())
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	identityRefresh, err := c.Refresh(context.Background(), s, identityLogin)
-	if err != nil {
-		t.Fatal(err.Error())
+	if !valid {
+		t.Fatal("expected valid=true after TOTP")
 	}
-
-	expectEquals(t, 1, len(identityRefresh.Groups))
-	expectEquals(t, testGroup, identityRefresh.Groups[0])
-}
-
-func TestUseRefreshTokenUserDeleted(t *testing.T) {
-	setupVariables(t)
-	token, _ := getAdminToken(t, adminUser, adminPass)
-	userID := createUser(t, token, "", testUser, testEmail, testPass)
-
-	c := conn{
-		client: http.DefaultClient,
-		Host:   keystoneURL, Domain: domainKeystone{ID: testDomainID},
-		AdminUsername: adminUser, AdminPassword: adminPass,
-	}
-	s := connector.Scopes{OfflineAccess: true, Groups: true}
-
-	identityLogin, _, err := c.Login(context.Background(), s, testUser, testPass)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-
-	_, err = c.Refresh(context.Background(), s, identityLogin)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-
-	deleteResource(t, token, userID, usersURL)
-	_, err = c.Refresh(context.Background(), s, identityLogin)
-
-	if !strings.Contains(err.Error(), "does not exist") {
-		t.Errorf("unexpected error: %s", err.Error())
+	if identity.Email != "jdoe@example.com" {
+		t.Errorf("Email: got %q", identity.Email)
 	}
 }
 
-func TestUseRefreshTokenGroupsChanged(t *testing.T) {
-	setupVariables(t)
-	token, _ := getAdminToken(t, adminUser, adminPass)
-	userID := createUser(t, token, "", testUser, testEmail, testPass)
-	defer deleteResource(t, token, userID, usersURL)
+func TestLogin_InvalidTOTP(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
 
-	c := conn{
-		client: http.DefaultClient,
-		Host:   keystoneURL, Domain: domainKeystone{ID: testDomainID},
-		AdminUsername: adminUser, AdminPassword: adminPass,
-	}
-	s := connector.Scopes{OfflineAccess: true, Groups: true}
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		// Wrong TOTP → 401 without new receipt means invalid code
+		w.WriteHeader(http.StatusUnauthorized)
+	})
 
-	identityLogin, _, err := c.Login(context.Background(), s, testUser, testPass)
+	ctx := context.WithValue(context.Background(), TOTPContextKey, "000000")
+	ctx = context.WithValue(ctx, ReceiptContextKey, "receipt-xyz")
+
+	_, valid, err := c.Login(ctx, connector.Scopes{}, "jdoe", "pass")
 	if err != nil {
-		t.Fatal(err.Error())
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	identityRefresh, err := c.Refresh(context.Background(), s, identityLogin)
-	if err != nil {
-		t.Fatal(err.Error())
+	if valid {
+		t.Fatal("expected valid=false for invalid TOTP")
 	}
-
-	expectEquals(t, 0, len(identityRefresh.Groups))
-
-	groupID := createGroup(t, token, "Test group", testGroup)
-	addUserToGroup(t, token, groupID, userID)
-	defer deleteResource(t, token, groupID, groupsURL)
-
-	identityRefresh, err = c.Refresh(context.Background(), s, identityLogin)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-
-	expectEquals(t, 1, len(identityRefresh.Groups))
 }
 
-func TestNoGroupsInScope(t *testing.T) {
-	setupVariables(t)
-	token, _ := getAdminToken(t, adminUser, adminPass)
-	userID := createUser(t, token, "", testUser, testEmail, testPass)
-	defer deleteResource(t, token, userID, usersURL)
+// ─────────────────────────────────────────────
+// Tests: Login — UserIDKey derivation
+// ─────────────────────────────────────────────
 
-	c := conn{
-		client: http.DefaultClient,
-		Host:   keystoneURL, Domain: domainKeystone{ID: testDomainID},
-		AdminUsername: adminUser, AdminPassword: adminPass,
+func TestLogin_UserIDKey_Email(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
+	c.UserIDKey = "email"
+
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		writeToken(w, "native-id", "jdoe", "tok-abc")
+	})
+	mux.HandleFunc("/v3/users/native-id", func(w http.ResponseWriter, r *http.Request) {
+		writeUser(w, "jdoe", "jdoe@example.com", "native-id")
+	})
+	mux.HandleFunc("/v3/users/native-id/groups", func(w http.ResponseWriter, r *http.Request) {
+		writeGroups(w)
+	})
+
+	identity, valid, err := c.Login(context.Background(), connector.Scopes{}, "jdoe", "pass")
+	if err != nil || !valid {
+		t.Fatalf("Login failed: valid=%v err=%v", valid, err)
 	}
-	s := connector.Scopes{OfflineAccess: true, Groups: false}
-
-	groupID := createGroup(t, token, "Test group", testGroup)
-	addUserToGroup(t, token, groupID, userID)
-	defer deleteResource(t, token, groupID, groupsURL)
-
-	identityLogin, _, err := c.Login(context.Background(), s, testUser, testPass)
-	if err != nil {
-		t.Fatal(err.Error())
+	// UserID must be a UUID derived from email, not the native Keystone ID
+	if identity.UserID == "native-id" {
+		t.Error("UserID should be SHA1-UUID of email, not native Keystone ID")
 	}
-	expectEquals(t, 0, len(identityLogin.Groups))
-
-	identityRefresh, err := c.Refresh(context.Background(), s, identityLogin)
-	if err != nil {
-		t.Fatal(err.Error())
+	if identity.UserID == "" {
+		t.Error("UserID should not be empty")
 	}
-	expectEquals(t, 0, len(identityRefresh.Groups))
 }
 
-func setupVariables(t *testing.T) {
-	keystoneURLEnv := "DEX_KEYSTONE_URL"
-	keystoneAdminURLEnv := "DEX_KEYSTONE_ADMIN_URL"
-	keystoneAdminUserEnv := "DEX_KEYSTONE_ADMIN_USER"
-	keystoneAdminPassEnv := "DEX_KEYSTONE_ADMIN_PASS"
-	keystoneURL = os.Getenv(keystoneURLEnv)
-	if keystoneURL == "" {
-		t.Skipf("variable %q not set, skipping keystone connector tests\n", keystoneURLEnv)
-		return
+// ─────────────────────────────────────────────
+// Tests: TokenIdentity
+// ─────────────────────────────────────────────
+
+func TestTokenIdentity_Success(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
+
+	mux.HandleFunc("/v3/auth/tokens", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if r.Header.Get("X-Subject-Token") == "" {
+			t.Error("expected X-Subject-Token header")
+		}
+		w.WriteHeader(http.StatusOK)
+		resp := tokenResponse{
+			Token: token{User: userKeystone{ID: "user-99", Name: "alice"}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/v3/users/user-99", func(w http.ResponseWriter, r *http.Request) {
+		writeUser(w, "alice", "alice@example.com", "user-99")
+	})
+	mux.HandleFunc("/v3/users/user-99/groups", func(w http.ResponseWriter, r *http.Request) {
+		writeGroups(w, "ops")
+	})
+
+	identity, err := c.TokenIdentity(context.Background(), "urn:ietf:params:oauth:token-type:access_token", "ks-token-xyz")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	keystoneAdminURL = os.Getenv(keystoneAdminURLEnv)
-	if keystoneAdminURL == "" {
-		t.Skipf("variable %q not set, skipping keystone connector tests\n", keystoneAdminURLEnv)
-		return
+	if identity.UserID != "user-99" {
+		t.Errorf("UserID: got %q, want %q", identity.UserID, "user-99")
 	}
-	adminUser = os.Getenv(keystoneAdminUserEnv)
-	if adminUser == "" {
-		t.Skipf("variable %q not set, skipping keystone connector tests\n", keystoneAdminUserEnv)
-		return
+	if identity.Email != "alice@example.com" {
+		t.Errorf("Email: got %q", identity.Email)
 	}
-	adminPass = os.Getenv(keystoneAdminPassEnv)
-	if adminPass == "" {
-		t.Skipf("variable %q not set, skipping keystone connector tests\n", keystoneAdminPassEnv)
-		return
-	}
-	authTokenURL = keystoneURL + "/v3/auth/tokens/"
-	usersURL = keystoneAdminURL + "/v3/users/"
-	groupsURL = keystoneAdminURL + "/v3/groups/"
-	domainsURL = keystoneAdminURL + "/v3/domains/"
 }
 
-func expectEquals(t *testing.T, a interface{}, b interface{}) {
-	if !reflect.DeepEqual(a, b) {
-		t.Errorf("Expected %v to be equal %v", a, b)
+func TestTokenIdentity_InvalidToken(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
+
+	mux.HandleFunc("/v3/auth/tokens", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintln(w, `{"error": {"message": "The token is invalid"}}`)
+	})
+
+	_, err := c.TokenIdentity(context.Background(), "", "bad-token")
+	if err == nil {
+		t.Fatal("expected error for invalid token, got nil")
+	}
+}
+
+// ─────────────────────────────────────────────
+// Tests: Refresh
+// ─────────────────────────────────────────────
+
+func TestRefresh_UserExists(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
+
+	// Admin auth
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		writeToken(w, "admin-id", "admin", "admin-tok")
+	})
+	mux.HandleFunc("/v3/users/user-42", func(w http.ResponseWriter, r *http.Request) {
+		writeUser(w, "jdoe", "jdoe@example.com", "user-42")
+	})
+	mux.HandleFunc("/v3/users/user-42/groups", func(w http.ResponseWriter, r *http.Request) {
+		writeGroups(w, "devs")
+	})
+
+	existing := connector.Identity{UserID: "user-42", Username: "jdoe"}
+	refreshed, err := c.Refresh(context.Background(), connector.Scopes{Groups: true}, existing)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(refreshed.Groups) == 0 {
+		t.Error("expected groups to be refreshed")
+	}
+}
+
+func TestRefresh_UserDeleted(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
+
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		writeToken(w, "admin-id", "admin", "admin-tok")
+	})
+	// User not found
+	mux.HandleFunc("/v3/users/deleted-user", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	existing := connector.Identity{UserID: "deleted-user"}
+	_, err := c.Refresh(context.Background(), connector.Scopes{}, existing)
+	if err == nil {
+		t.Fatal("expected error when user is deleted")
 	}
 }

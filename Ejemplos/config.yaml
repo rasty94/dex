@@ -160,9 +160,12 @@ connectors:
           keystoneHost: https://keystone-federadolab.frikiteam.es:5000
           # Required, admin user credentials to connect to keystone.
           domain: default
+          # ⚠️  Use environment variable — do NOT commit real passwords:
+          #     export KEYSTONE_PASSWORD=<your-password>
           keystoneUsername: admin
-          keystonePassword: 5ZiNcCMGSKMma6GcFqhFvt1QIN9szl6bn3Rkf0+
+          keystonePassword: $KEYSTONE_PASSWORD
           userIDKey: email
+
 # - type: mockCallback
 #  id: mock
 #  name: Example

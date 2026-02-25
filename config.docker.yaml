@@ -14,6 +14,13 @@ web:
   tlsCert: {{ getenv "DEX_WEB_TLS_CERT" | required "$DEX_WEB_TLS_CERT in case of web.https is enabled" }}
 {{- end }}
   http: {{ getenv "DEX_WEB_HTTP" "0.0.0.0:5556" }}
+  headers:
+    X-Frame-Options: "DENY"
+    X-Content-Type-Options: "nosniff"
+    X-XSS-Protection: "1; mode=block"
+    Content-Security-Policy: "default-src 'self'"
+    Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+
 
 {{- if getenv "DEX_TELEMETRY_HTTP" }}
 telemetry:
