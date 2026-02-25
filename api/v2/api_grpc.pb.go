@@ -37,6 +37,7 @@ const (
 	Dex_ListRefresh_FullMethodName     = "/api.Dex/ListRefresh"
 	Dex_RevokeRefresh_FullMethodName   = "/api.Dex/RevokeRefresh"
 	Dex_VerifyPassword_FullMethodName  = "/api.Dex/VerifyPassword"
+	Dex_ReloadConfig_FullMethodName    = "/api.Dex/ReloadConfig"
 )
 
 // DexClient is the client API for Dex service.
@@ -83,6 +84,8 @@ type DexClient interface {
 	RevokeRefresh(ctx context.Context, in *RevokeRefreshReq, opts ...grpc.CallOption) (*RevokeRefreshResp, error)
 	// VerifyPassword returns whether a password matches a hash for a specific email or not.
 	VerifyPassword(ctx context.Context, in *VerifyPasswordReq, opts ...grpc.CallOption) (*VerifyPasswordResp, error)
+	// ReloadConfig reloads the server configuration from the configuration file without restarting.
+	ReloadConfig(ctx context.Context, in *ReloadConfigReq, opts ...grpc.CallOption) (*ReloadConfigResp, error)
 }
 
 type dexClient struct {
@@ -273,6 +276,16 @@ func (c *dexClient) VerifyPassword(ctx context.Context, in *VerifyPasswordReq, o
 	return out, nil
 }
 
+func (c *dexClient) ReloadConfig(ctx context.Context, in *ReloadConfigReq, opts ...grpc.CallOption) (*ReloadConfigResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReloadConfigResp)
+	err := c.cc.Invoke(ctx, Dex_ReloadConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DexServer is the server API for Dex service.
 // All implementations must embed UnimplementedDexServer
 // for forward compatibility.
@@ -317,6 +330,8 @@ type DexServer interface {
 	RevokeRefresh(context.Context, *RevokeRefreshReq) (*RevokeRefreshResp, error)
 	// VerifyPassword returns whether a password matches a hash for a specific email or not.
 	VerifyPassword(context.Context, *VerifyPasswordReq) (*VerifyPasswordResp, error)
+	// ReloadConfig reloads the server configuration from the configuration file without restarting.
+	ReloadConfig(context.Context, *ReloadConfigReq) (*ReloadConfigResp, error)
 	mustEmbedUnimplementedDexServer()
 }
 
@@ -380,6 +395,9 @@ func (UnimplementedDexServer) RevokeRefresh(context.Context, *RevokeRefreshReq) 
 }
 func (UnimplementedDexServer) VerifyPassword(context.Context, *VerifyPasswordReq) (*VerifyPasswordResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VerifyPassword not implemented")
+}
+func (UnimplementedDexServer) ReloadConfig(context.Context, *ReloadConfigReq) (*ReloadConfigResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReloadConfig not implemented")
 }
 func (UnimplementedDexServer) mustEmbedUnimplementedDexServer() {}
 func (UnimplementedDexServer) testEmbeddedByValue()             {}
@@ -726,6 +744,24 @@ func _Dex_VerifyPassword_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Dex_ReloadConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReloadConfigReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DexServer).ReloadConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Dex_ReloadConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DexServer).ReloadConfig(ctx, req.(*ReloadConfigReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Dex_ServiceDesc is the grpc.ServiceDesc for Dex service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -804,6 +840,10 @@ var Dex_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VerifyPassword",
 			Handler:    _Dex_VerifyPassword_Handler,
+		},
+		{
+			MethodName: "ReloadConfig",
+			Handler:    _Dex_ReloadConfig_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -31,8 +31,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	"github.com/dexidp/dex/api/v2"
 	"github.com/dexidp/dex/pkg/featureflags"
@@ -166,6 +169,9 @@ func runServe(options serveOptions) error {
 		"1.3": tls.VersionTLS13,
 	}
 
+	var unaryInterceptors []grpc.UnaryServerInterceptor
+	var streamInterceptors []grpc.StreamServerInterceptor
+
 	if c.GRPC.TLSCert != "" {
 		tlsMinVersion := tls.VersionTLS12
 		if c.GRPC.TLSMinVersion != "" {
@@ -189,13 +195,23 @@ func runServe(options serveOptions) error {
 
 		if c.GRPC.TLSClientCA != "" {
 			// Only add metrics if client auth is enabled
-			grpcOptions = append(grpcOptions,
-				grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()),
-				grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()),
-			)
+			streamInterceptors = append(streamInterceptors, grpcMetrics.StreamServerInterceptor())
+			unaryInterceptors = append(unaryInterceptors, grpcMetrics.UnaryServerInterceptor())
 		}
 
 		grpcOptions = append(grpcOptions, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	}
+
+	if c.GRPC.Token != "" {
+		logger.Info("gRPC API authentication enabled with token")
+		unaryInterceptors = append(unaryInterceptors, newAuthInterceptor(c.GRPC.Token))
+	}
+
+	if len(unaryInterceptors) > 0 {
+		grpcOptions = append(grpcOptions, grpc.ChainUnaryInterceptor(unaryInterceptors...))
+	}
+	if len(streamInterceptors) > 0 {
+		grpcOptions = append(grpcOptions, grpc.ChainStreamInterceptor(streamInterceptors...))
 	}
 
 	s, err := c.Storage.Config.Open(logger)
@@ -205,6 +221,8 @@ func runServe(options serveOptions) error {
 	defer s.Close()
 
 	logger.Info("config storage", "storage_type", c.Storage.Type)
+
+	var updateStaticClients func([]storage.Client)
 
 	if len(c.StaticClients) > 0 {
 		for i, client := range c.StaticClients {
@@ -231,7 +249,7 @@ func runServe(options serveOptions) error {
 			}
 			logger.Info("config static client", "client_name", client.Name)
 		}
-		s = storage.WithStaticClients(s, c.StaticClients)
+		s, updateStaticClients = storage.WithStaticClients(s, c.StaticClients)
 	}
 	if len(c.StaticPasswords) > 0 {
 		passwords := make([]storage.Password, len(c.StaticPasswords))
@@ -256,19 +274,24 @@ func runServe(options serveOptions) error {
 		if err != nil {
 			return fmt.Errorf("failed to initialize storage connectors: %v", err)
 		}
+		// Set a ResourceVersion so that dynamic reloading correctly identifies changes
+		// and forces Server.OpenConnector to be triggered.
+		conn.ResourceVersion = fmt.Sprintf("static-%d", time.Now().UnixNano())
 		storageConnectors[i] = conn
 	}
 
 	if c.EnablePasswordDB {
 		storageConnectors = append(storageConnectors, storage.Connector{
-			ID:   server.LocalConnector,
-			Name: "Email",
-			Type: server.LocalConnector,
+			ID:              server.LocalConnector,
+			Name:            "Email",
+			Type:            server.LocalConnector,
+			ResourceVersion: fmt.Sprintf("static-%d", time.Now().UnixNano()),
 		})
 		logger.Info("config connector: local passwords enabled")
 	}
 
-	s = storage.WithStaticConnectors(s, storageConnectors)
+	var updateStaticConnectors func([]storage.Connector)
+	s, updateStaticConnectors = storage.WithStaticConnectors(s, storageConnectors)
 
 	if len(c.OAuth2.ResponseTypes) > 0 {
 		logger.Info("config response types accepted", "response_types", c.OAuth2.ResponseTypes)
@@ -559,8 +582,68 @@ func runServe(options serveOptions) error {
 			return fmt.Errorf("listening (grcp) on %s: %w", c.GRPC.Addr, err)
 		}
 
+		reloadFunc := func(ctx context.Context) error {
+			// Read the file and parse config
+			logger.Info("gRPC config reload callback triggered, reloading configuration from file", "configFile", configFile)
+			reloadConfigData, err := os.ReadFile(configFile)
+			if err != nil {
+				return fmt.Errorf("failed to read config file %s for reload: %w", configFile, err)
+			}
+
+			var reloadConfig Config
+			if err := yaml.Unmarshal(reloadConfigData, &reloadConfig); err != nil {
+				return fmt.Errorf("error parse config file %s during reload: %w", configFile, err)
+			}
+			applyConfigOverrides(options, &reloadConfig)
+
+			if err := reloadConfig.Validate(); err != nil {
+				return fmt.Errorf("invalid configuration: %w", err)
+			}
+
+			// Actually apply the changes gracefully to the backend
+			if updateStaticClients != nil {
+				for i, client := range reloadConfig.StaticClients {
+					if client.IDEnv != "" {
+						reloadConfig.StaticClients[i].ID = os.Getenv(client.IDEnv)
+					}
+					if client.SecretEnv != "" {
+						reloadConfig.StaticClients[i].Secret = os.Getenv(client.SecretEnv)
+					}
+				}
+				updateStaticClients(reloadConfig.StaticClients)
+				logger.Info("StaticClients successfully reloaded in storage")
+			}
+
+			if updateStaticConnectors != nil {
+				newStorageConnectors := make([]storage.Connector, len(reloadConfig.StaticConnectors))
+				for i, rc := range reloadConfig.StaticConnectors {
+					conn, err := ToStorageConnector(rc)
+					if err != nil {
+						return fmt.Errorf("failed to initialize updated static connector %q: %w", rc.ID, err)
+					}
+					// Unique version to trigger reopen on the next request
+					conn.ResourceVersion = fmt.Sprintf("static-reloaded-%d", time.Now().UnixNano())
+					newStorageConnectors[i] = conn
+				}
+				if reloadConfig.EnablePasswordDB {
+					newStorageConnectors = append(newStorageConnectors, storage.Connector{
+						ID:              server.LocalConnector,
+						Name:            "Email",
+						Type:            server.LocalConnector,
+						ResourceVersion: fmt.Sprintf("static-reloaded-%d", time.Now().UnixNano()),
+					})
+				}
+				updateStaticConnectors(newStorageConnectors)
+				logger.Info("StaticConnectors successfully reloaded in storage")
+			}
+
+			logger.Info("Reload callback completed cleanly")
+
+			return nil
+		}
+
 		grpcSrv := grpc.NewServer(grpcOptions...)
-		api.RegisterDexServer(grpcSrv, server.NewAPI(serverConfig.Storage, logger, version, serv))
+		api.RegisterDexServer(grpcSrv, server.NewAPI(serverConfig.Storage, logger, version, serv, reloadFunc))
 
 		grpcMetrics.InitializeMetrics(grpcSrv)
 		if c.GRPC.Reflection {
@@ -740,4 +823,34 @@ func loadTLSConfig(certFile, keyFile, caFile string, baseConfig *tls.Config) (*t
 // recordBuildInfo publishes information about Dex version and runtime info through an info metric (gauge).
 func recordBuildInfo() {
 	buildInfo.WithLabelValues(version, runtime.Version(), fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)).Set(1)
+}
+
+func newAuthInterceptor(token string) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return nil, status.Errorf(codes.Unauthenticated, "metadata is not provided")
+		}
+		values := md["authorization"]
+		if len(values) == 0 {
+			values = md["bearer"] // fallback for simple clients
+			if len(values) == 0 {
+				return nil, status.Errorf(codes.Unauthenticated, "authorization token is not provided")
+			}
+		}
+
+		authHeader := values[0]
+		var providedToken string
+		if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			providedToken = authHeader[7:]
+		} else {
+			providedToken = authHeader
+		}
+
+		if providedToken != token {
+			return nil, status.Errorf(codes.Unauthenticated, "invalid authorization token")
+		}
+
+		return handler(ctx, req)
+	}
 }

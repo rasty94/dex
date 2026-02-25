@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 )
 
 // Tests for this code are in the "memory" package, since this package doesn't
@@ -16,34 +17,54 @@ import (
 type staticClientsStorage struct {
 	Storage
 
+	mu sync.RWMutex
 	// A read-only set of clients.
 	clients     []Client
 	clientsByID map[string]Client
 }
 
 // WithStaticClients adds a read-only set of clients to the underlying storages.
-func WithStaticClients(s Storage, staticClients []Client) Storage {
+// It returns the wrapped storage and a function to update the static clients dynamically.
+func WithStaticClients(s Storage, staticClients []Client) (Storage, func([]Client)) {
 	clientsByID := make(map[string]Client, len(staticClients))
 	for _, client := range staticClients {
 		clientsByID[client.ID] = client
 	}
 
-	return staticClientsStorage{s, staticClients, clientsByID}
+	storage := &staticClientsStorage{Storage: s, clients: staticClients, clientsByID: clientsByID}
+
+	updater := func(newClients []Client) {
+		newByID := make(map[string]Client, len(newClients))
+		for _, client := range newClients {
+			newByID[client.ID] = client
+		}
+		storage.mu.Lock()
+		storage.clients = newClients
+		storage.clientsByID = newByID
+		storage.mu.Unlock()
+	}
+
+	return storage, updater
 }
 
-func (s staticClientsStorage) GetClient(ctx context.Context, id string) (Client, error) {
-	if client, ok := s.clientsByID[id]; ok {
+func (s *staticClientsStorage) GetClient(ctx context.Context, id string) (Client, error) {
+	s.mu.RLock()
+	client, ok := s.clientsByID[id]
+	s.mu.RUnlock()
+	if ok {
 		return client, nil
 	}
 	return s.Storage.GetClient(ctx, id)
 }
 
-func (s staticClientsStorage) isStatic(id string) bool {
+func (s *staticClientsStorage) isStatic(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	_, ok := s.clientsByID[id]
 	return ok
 }
 
-func (s staticClientsStorage) ListClients(ctx context.Context) ([]Client, error) {
+func (s *staticClientsStorage) ListClients(ctx context.Context) ([]Client, error) {
 	clients, err := s.Storage.ListClients(ctx)
 	if err != nil {
 		return nil, err
@@ -57,24 +78,29 @@ func (s staticClientsStorage) ListClients(ctx context.Context) ([]Client, error)
 			n++
 		}
 	}
-	return append(clients[:n], s.clients...), nil
+
+	s.mu.RLock()
+	staticClients := s.clients
+	s.mu.RUnlock()
+
+	return append(clients[:n], staticClients...), nil
 }
 
-func (s staticClientsStorage) CreateClient(ctx context.Context, c Client) error {
+func (s *staticClientsStorage) CreateClient(ctx context.Context, c Client) error {
 	if s.isStatic(c.ID) {
 		return errors.New("static clients: read-only cannot create client")
 	}
 	return s.Storage.CreateClient(ctx, c)
 }
 
-func (s staticClientsStorage) DeleteClient(ctx context.Context, id string) error {
+func (s *staticClientsStorage) DeleteClient(ctx context.Context, id string) error {
 	if s.isStatic(id) {
 		return errors.New("static clients: read-only cannot delete client")
 	}
 	return s.Storage.DeleteClient(ctx, id)
 }
 
-func (s staticClientsStorage) UpdateClient(ctx context.Context, id string, updater func(old Client) (Client, error)) error {
+func (s *staticClientsStorage) UpdateClient(ctx context.Context, id string, updater func(old Client) (Client, error)) error {
 	if s.isStatic(id) {
 		return errors.New("static clients: read-only cannot update client")
 	}
@@ -165,34 +191,54 @@ func (s staticPasswordsStorage) UpdatePassword(ctx context.Context, email string
 type staticConnectorsStorage struct {
 	Storage
 
+	mu sync.RWMutex
 	// A read-only set of connectors.
 	connectors     []Connector
 	connectorsByID map[string]Connector
 }
 
-// WithStaticConnectors returns a storage with a read-only set of Connectors. Write actions,
+// WithStaticConnectors returns a storage with a read-only set of Connectors and an updater function. Write actions,
 // such as updating existing Connectors, will fail.
-func WithStaticConnectors(s Storage, staticConnectors []Connector) Storage {
+func WithStaticConnectors(s Storage, staticConnectors []Connector) (Storage, func([]Connector)) {
 	connectorsByID := make(map[string]Connector, len(staticConnectors))
 	for _, c := range staticConnectors {
 		connectorsByID[c.ID] = c
 	}
-	return staticConnectorsStorage{s, staticConnectors, connectorsByID}
+
+	storage := &staticConnectorsStorage{Storage: s, connectors: staticConnectors, connectorsByID: connectorsByID}
+
+	updater := func(newConnectors []Connector) {
+		newByID := make(map[string]Connector, len(newConnectors))
+		for _, c := range newConnectors {
+			newByID[c.ID] = c
+		}
+		storage.mu.Lock()
+		storage.connectors = newConnectors
+		storage.connectorsByID = newByID
+		storage.mu.Unlock()
+	}
+
+	return storage, updater
 }
 
-func (s staticConnectorsStorage) isStatic(id string) bool {
+func (s *staticConnectorsStorage) isStatic(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	_, ok := s.connectorsByID[id]
 	return ok
 }
 
-func (s staticConnectorsStorage) GetConnector(ctx context.Context, id string) (Connector, error) {
-	if connector, ok := s.connectorsByID[id]; ok {
+func (s *staticConnectorsStorage) GetConnector(ctx context.Context, id string) (Connector, error) {
+	s.mu.RLock()
+	connector, ok := s.connectorsByID[id]
+	s.mu.RUnlock()
+	if ok {
 		return connector, nil
 	}
 	return s.Storage.GetConnector(ctx, id)
 }
 
-func (s staticConnectorsStorage) ListConnectors(ctx context.Context) ([]Connector, error) {
+func (s *staticConnectorsStorage) ListConnectors(ctx context.Context) ([]Connector, error) {
 	connectors, err := s.Storage.ListConnectors(ctx)
 	if err != nil {
 		return nil, err
@@ -207,24 +253,28 @@ func (s staticConnectorsStorage) ListConnectors(ctx context.Context) ([]Connecto
 			n++
 		}
 	}
-	return append(connectors[:n], s.connectors...), nil
+
+	s.mu.RLock()
+	staticConnectors := s.connectors
+	s.mu.RUnlock()
+	return append(connectors[:n], staticConnectors...), nil
 }
 
-func (s staticConnectorsStorage) CreateConnector(ctx context.Context, c Connector) error {
+func (s *staticConnectorsStorage) CreateConnector(ctx context.Context, c Connector) error {
 	if s.isStatic(c.ID) {
 		return errors.New("static connectors: read-only cannot create connector")
 	}
 	return s.Storage.CreateConnector(ctx, c)
 }
 
-func (s staticConnectorsStorage) DeleteConnector(ctx context.Context, id string) error {
+func (s *staticConnectorsStorage) DeleteConnector(ctx context.Context, id string) error {
 	if s.isStatic(id) {
 		return errors.New("static connectors: read-only cannot delete connector")
 	}
 	return s.Storage.DeleteConnector(ctx, id)
 }
 
-func (s staticConnectorsStorage) UpdateConnector(ctx context.Context, id string, updater func(old Connector) (Connector, error)) error {
+func (s *staticConnectorsStorage) UpdateConnector(ctx context.Context, id string, updater func(old Connector) (Connector, error)) error {
 	if s.isStatic(id) {
 		return errors.New("static connectors: read-only cannot update connector")
 	}

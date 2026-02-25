@@ -167,6 +167,12 @@
 - [ ] WebAuthn / Passkeys: Empezar a sentar las bases para la autenticación sin contraseña (Passwordless) en Keystone, como segundo factor apoyándose en WebAuthn o llaves físicas FIDO2 (Yubikey).
 - [ ] Políticas Condicionales: Permitir bloquear el login basado en roles o dominios específicos de OpenStack directamente en el Connector antes de emitir claims JWT.
 
+### 21. 🛠️ API de Gestión gRPC (con Autenticación)
+
+- [x] Extender la API gRPC existente para permitir cambios de configuración en tiempo real sin reiniciar.
+- [x] Añadir capa de autenticación y autorización al servidor gRPC (interceptor/middlewares).
+- [x] Definir los protobufs necesarios para administrar clientes y configuraciones.
+
 ---
 
 ## 📋 Resumen de Estado

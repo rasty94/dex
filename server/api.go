@@ -32,22 +32,24 @@ const (
 )
 
 // NewAPI returns a server which implements the gRPC API interface.
-func NewAPI(s storage.Storage, logger *slog.Logger, version string, server *Server) api.DexServer {
+func NewAPI(s storage.Storage, logger *slog.Logger, version string, server *Server, reloadFunc func(context.Context) error) api.DexServer {
 	return dexAPI{
-		s:       s,
-		logger:  logger.With("component", "api"),
-		version: version,
-		server:  server,
+		s:          s,
+		logger:     logger.With("component", "api"),
+		version:    version,
+		server:     server,
+		reloadFunc: reloadFunc,
 	}
 }
 
 type dexAPI struct {
 	api.UnimplementedDexServer
 
-	s       storage.Storage
-	logger  *slog.Logger
-	version string
-	server  *Server
+	s          storage.Storage
+	logger     *slog.Logger
+	version    string
+	server     *Server
+	reloadFunc func(context.Context) error
 }
 
 func (d dexAPI) GetClient(ctx context.Context, req *api.GetClientReq) (*api.GetClientResp, error) {
@@ -565,6 +567,30 @@ func (d dexAPI) ListConnectors(ctx context.Context, req *api.ListConnectorReq) (
 
 	return &api.ListConnectorResp{
 		Connectors: connectors,
+	}, nil
+}
+
+func (d dexAPI) ReloadConfig(ctx context.Context, req *api.ReloadConfigReq) (*api.ReloadConfigResp, error) {
+	d.logger.Info("ReloadConfig called via gRPC API")
+
+	if d.reloadFunc == nil {
+		return &api.ReloadConfigResp{
+			Success: false,
+			Error:   "Reload function not configured",
+		}, nil
+	}
+
+	if err := d.reloadFunc(ctx); err != nil {
+		d.logger.Error("Failed to reload configuration", "err", err)
+		return &api.ReloadConfigResp{
+			Success: false,
+			Error:   fmt.Sprintf("Reload failed: %v", err),
+		}, nil
+	}
+
+	return &api.ReloadConfigResp{
+		Success: true,
+		Error:   "",
 	}, nil
 }
 

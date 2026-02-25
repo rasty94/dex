@@ -325,7 +325,7 @@ func TestParseAuthorizationRequest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			httpServer, server := newTestServerMultipleConnectors(t, func(c *Config) {
 				c.SupportedResponseTypes = tc.supportedResponseTypes
-				c.Storage = storage.WithStaticClients(c.Storage, tc.clients)
+				c.Storage, _ = storage.WithStaticClients(c.Storage, tc.clients)
 			})
 			defer httpServer.Close()
 

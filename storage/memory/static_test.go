@@ -20,7 +20,7 @@ func TestStaticClients(t *testing.T) {
 	c3 := storage.Client{ID: "spam", Secret: "spam_secret"}
 
 	backing.CreateClient(ctx, c1)
-	s := storage.WithStaticClients(backing, []storage.Client{c2})
+	s, _ := storage.WithStaticClients(backing, []storage.Client{c2})
 
 	tests := []struct {
 		name    string
@@ -217,7 +217,7 @@ func TestStaticConnectors(t *testing.T) {
 	c3 := storage.Connector{ID: storage.NewID(), Type: "saml", Name: "saml", ResourceVersion: "1", Config: config3}
 
 	backing.CreateConnector(ctx, c1)
-	s := storage.WithStaticConnectors(backing, []storage.Connector{c2})
+	s, _ := storage.WithStaticConnectors(backing, []storage.Connector{c2})
 
 	tests := []struct {
 		name    string
