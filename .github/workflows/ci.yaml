@@ -177,7 +177,7 @@ jobs:
     name: Artifacts
     uses: ./.github/workflows/artifacts.yaml
     with:
-      publish: ${{ github.event_name == 'push' }}
+      publish: false
     permissions:
       attestations: write
       contents: read
