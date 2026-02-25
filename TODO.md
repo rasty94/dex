@@ -89,7 +89,7 @@
 
 ---
 
-## 🟢 Pendiente — Prioridad Baja
+### 10. ✅ Seguridad
 
 - [x] Eliminar credenciales hardcodeadas en `Ejemplos/config.yaml`
 - [x] Añadir headers de seguridad por defecto en `config.docker.yaml`:
@@ -102,7 +102,7 @@
     ```
 - [x] Verificar que los tokens no se loguean completos (Keystone logs omiten secretos)
 
-### 11. Testing
+### 11. ✅ Testing
 
 - [x] Tests unitarios para flujo TOTP completo (mock del endpoint Keystone) en `keystone_test.go`
 - [x] Tests de `TokenIdentity()` con mocks en `keystone_test.go`
@@ -122,6 +122,35 @@
 
 - [x] Eliminar `dex_mod/` (Completado)
 - [x] Eliminar `Ejemplos-Oasix/` (Completado)
+
+---
+
+## 🚀 Futuras Mejoras (Propuestas)
+
+### 14. 📊 Métrica y Telemetría
+
+- [ ] Exportar métricas en `/metrics` (Prometheus) específicas del conector Keystone.
+    - Contadores: `keystone_totp_success`, `keystone_totp_failures`, `keystone_login_success`.
+    - Histogramas: Latencia de validación de tokens contra la API de Keystone.
+- [ ] Trazabilidad distribuida (OpenTelemetry) para peticiones hacia OpenStack.
+
+### 15. 🔑 Mejoras en Keystone Connector
+
+- [ ] **Application Credentials**: Permitir autenticación mediante `application_credential_id` y `application_credential_secret` como método alternativo a contraseñas o TOTP.
+- [ ] Soporte de caché local para tokens de Keystone (reducir llamadas a `GET /v3/auth/tokens` mediante Redis o memoria en caché LRU con TTL adaptativo).
+- [ ] Mapeo dinámico de Grupos: Permitir mapear roles específicos de un proyecto (tenant) de OpenStack a grupos de Dex en lugar de devolver solo los grupos nativos del usuario.
+
+### 16. 🛡️ Seguridad y DevSecOps
+
+- [ ] Escaneo de dependencias en cada release con Trivy o SonarQube.
+- [ ] Análisis estático de código de seguridad (SAST) usando Gosec en las Actions.
+- [ ] Auditoría de logs estructurados: Guardar eventos de auditoría (ej. IP del intento de login fallido).
+
+### 17. 🎨 UI / UX
+
+- [ ] **Tematización Dinámica por Cliente**: Permitir que un `client_id` inyecte su propio Logo o color principal en la pantalla de login (Feature nativa de Dex pero mejorable en las plantillas).
+- [ ] Añadir un checkbox de "Recordar este dispositivo durante 30 días" (MFA Trust) para evitar pedir el TOTP todos los días en IPs conocidas.
+- [ ] Botón de "Mostrar Contraseña" (ojo) en el input de password.
 
 ---
 
