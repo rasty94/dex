@@ -9,7 +9,7 @@
 
 Las siguientes mejoras están implementadas en la carpeta `dex_mod/` pero **aún no se han integrado** en el código fuente principal. Son las pendientes más críticas.
 
-### 1. Integrar mejoras del Keystone Connector (TOTP / MFA)
+### 1. ✅ Integrar mejoras del Keystone Connector (TOTP / MFA)
 
 - [ ] Añadir soporte para **TOTP (Multi-Factor Authentication)** en `connector/keystone/keystone.go`
     - Nuevos tipos: `totp`, `userTOTP`, `ErrTOTPRequired`
@@ -23,7 +23,7 @@ Las siguientes mejoras están implementadas en la carpeta `dex_mod/` pero **aún
 - [ ] Añadir campo `UserIDKey` a `Config` para permitir usar `email` o `username` como ID (con UUID derivado via SHA1)
 - [ ] Copiar tests nuevos: `key_test.go` y `validate_test.go` desde `dex_mod/connector/keystone/`
 
-### 2. Integrar i18n en el backend (templates.go)
+### 2. ✅ Integrar i18n en el backend (templates.go)
 
 - [ ] Modificar las funciones de renderizado en `server/templates.go` para inyectar traducciones (`GetTranslations`) via `Accept-Language` header
     - `device()` → añadir campo `Tr`
@@ -35,11 +35,11 @@ Las siguientes mejoras están implementadas en la carpeta `dex_mod/` pero **aún
     - `err()` → añadir campo `Tr`
 - [ ] Verificar que `server/i18n.go` (ya copiado) está correctamente importado y utilizado
 
-### 3. Adaptar `server/handlers.go` para TOTP
+### 3. ✅ Adaptar `server/handlers.go` para TOTP
 
-- [ ] Modificar `handlePasswordLogin()` para detectar `ErrTOTPRequired` y re-renderizar el formulario en modo TOTP
-- [ ] Pasar los nuevos campos (`showDomain`, `domain`, `requireTOTP`, `receipt`, `lastPassword`) a `templates.password()`
-- [ ] Implementar lectura del campo `totp` y `receipt` del formulario POST y pasarlos via context al connector
+- [x] Modificar `handlePasswordLogin()` para detectar `ErrTOTPRequired` y re-renderizar el formulario en modo TOTP
+- [x] Pasar los nuevos campos (`showDomain`, `domain`, `requireTOTP`, `receipt`, `lastPassword`) a `templates.password()`
+- [x] Implementar lectura del campo `totp` y `receipt` del formulario POST y pasarlos via context al connector
 
 ---
 
