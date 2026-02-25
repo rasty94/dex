@@ -59,6 +59,11 @@ func (err *redirectedAuthErr) Error() string {
 
 func (err *redirectedAuthErr) Handler() http.Handler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
+		if _, err := url.Parse(err.RedirectURI); err != nil {
+			http.Error(w, "Invalid redirect URI", http.StatusBadRequest)
+			return
+		}
+
 		v := url.Values{}
 		v.Add("state", err.State)
 		v.Add("error", err.Type)

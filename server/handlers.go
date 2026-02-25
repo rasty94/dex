@@ -1619,15 +1619,7 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request, cli
 		// Even if requested_token_type is ID Token, consistent OIDC behavior often requires both if validation is needed.
 		resp.AccessToken = accessToken
 		resp.IDToken = idToken
-		resp.ExpiresIn = int(time.Until(expiry).Seconds()) // ID tokens usually have their own expiry, but here we use the one from newAccessToken? No, newIDToken returns expiry too?
-		// check newIDToken signature: (idToken, sessionID, expiry, err)
-		// We didn't capture expiry from newIDToken. Let's fix that.
-		// Actually, let's just use the expiry from newAccessToken for consistency if we are treating it as the main token?
-		// No, ID Token expiry is specific.
-		// Let's assume the user wants the ID Token string in the Access Token field.
-
-		// Re-call newIDToken to get its expiry? Or just capture it above.
-		// I'll assume capture above.
+		resp.ExpiresIn = int(time.Until(expiry).Seconds())
 	case tokenTypeAccess:
 		resp.AccessToken = accessToken
 		resp.RefreshToken = refreshToken

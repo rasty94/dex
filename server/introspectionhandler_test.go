@@ -107,12 +107,12 @@ func mockTestStorage(t *testing.T, s storage.Storage) {
 	require.NoError(t, err)
 }
 
-func getIntrospectionValue(issuerURL url.URL, issuedAt time.Time, expiry time.Time, tokenUse string) *Introspection {
+func getIntrospectionValue(issuerURL url.URL, issuedAt time.Time, expiry time.Time, tokenUse string, subject string, azp string) *Introspection {
 	trueValue := true
 	return &Introspection{
 		Active:    true,
 		ClientID:  "test",
-		Subject:   "CgExEgR0ZXN0",
+		Subject:   subject,
 		Expiry:    expiry.Unix(),
 		IssuedAt:  issuedAt.Unix(),
 		NotBefore: issuedAt.Unix(),
@@ -123,8 +123,9 @@ func getIntrospectionValue(issuerURL url.URL, issuedAt time.Time, expiry time.Ti
 		TokenType: "Bearer",
 		TokenUse:  tokenUse,
 		Extra: IntrospectionExtra{
-			Email:         "jane.doe@example.com",
-			EmailVerified: &trueValue,
+			AuthorizingParty: azp,
+			Email:            "jane.doe@example.com",
+			EmailVerified:    &trueValue,
 			Groups: []string{
 				"a",
 				"b",
@@ -149,7 +150,7 @@ func TestGetTokenFromRequestSuccess(t *testing.T) {
 	mockTestStorage(t, s.storage)
 
 	// Generate a valid RS256-signed access token
-	accessToken, _, err := s.newIDToken(ctx, "test", storage.Claims{
+	accessToken, _, _, err := s.newIDToken(ctx, "test", storage.Claims{
 		UserID:   "1",
 		Username: "jane",
 	}, []string{"openid"}, "nonce", "", "", "test")
@@ -264,7 +265,7 @@ func TestHandleIntrospect(t *testing.T) {
 
 	mockTestStorage(t, s.storage)
 
-	activeAccessToken, expiry, err := s.newIDToken(ctx, "test", storage.Claims{
+	activeAccessToken, _, expiry, err := s.newIDToken(ctx, "test", storage.Claims{
 		UserID:        "1",
 		Username:      "jane",
 		Email:         "jane.doe@example.com",
@@ -298,7 +299,7 @@ func TestHandleIntrospect(t *testing.T) {
 		{
 			testName:           "Access Token: active",
 			token:              activeAccessToken,
-			response:           toJSON(getIntrospectionValue(s.issuerURL, time.Now(), expiry, "access_token")),
+			response:           toJSON(getIntrospectionValue(s.issuerURL, time.Now(), expiry, "access_token", "1", "test")),
 			responseStatusCode: 200,
 		},
 		{
@@ -311,7 +312,7 @@ func TestHandleIntrospect(t *testing.T) {
 		{
 			testName:           "Refresh Token: active",
 			token:              activeRefreshToken,
-			response:           toJSON(getIntrospectionValue(s.issuerURL, time.Now(), time.Now().Add(s.refreshTokenPolicy.absoluteLifetime), "refresh_token")),
+			response:           toJSON(getIntrospectionValue(s.issuerURL, time.Now(), time.Now().Add(s.refreshTokenPolicy.absoluteLifetime), "refresh_token", "1", "test")),
 			responseStatusCode: 200,
 		},
 		{
