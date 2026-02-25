@@ -152,6 +152,21 @@
 - [ ] Añadir un checkbox de "Recordar este dispositivo durante 30 días" (MFA Trust) para evitar pedir el TOTP todos los días en IPs conocidas.
 - [x] Botón de "Mostrar Contraseña" (ojo) en el input de password.
 
+### 18. 🚀 Rendimiento y Alta Disponibilidad (HA)
+
+- [ ] Cache Distribuida: Expandir la actual caché nativa en RAM de Keystone para soportar Redis de backend, permitiendo despliegues de Dex multi-réplica compartir estado de validación de tokens.
+- [ ] Rate Limiting en Backend: Prevenir ataques de fuerza bruta en nivel aplicativo contra el endpoint de Keystone, controlando el número de intentos por usuario/IP antes de llamar a la API externa.
+
+### 19. ☁️ Ecosistema Cloud Native e Integraciones
+
+- [ ] Provider para HashiCorp Vault: Leer el `adminPassword` y los app-credentials nativamente de Vault sin exponerlos en el `config.yaml`.
+- [ ] Helm Chart u Operator Kubernetes Mejorado: Adaptar configuraciones del Fork directamente en los values nativos del chart oficial de la comunidad.
+
+### 20. 🔐 Autenticación Avanzada (Beyond TOTP)
+
+- [ ] WebAuthn / Passkeys: Empezar a sentar las bases para la autenticación sin contraseña (Passwordless) en Keystone, como segundo factor apoyándose en WebAuthn o llaves físicas FIDO2 (Yubikey).
+- [ ] Políticas Condicionales: Permitir bloquear el login basado en roles o dominios específicos de OpenStack directamente en el Connector antes de emitir claims JWT.
+
 ---
 
 ## 📋 Resumen de Estado
