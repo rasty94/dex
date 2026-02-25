@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  dex:
+#    image: ghcr.io/dexidp/dex:latest
+    image: ghcr.io/rasty94/dex:latest
+    container_name: dex
+    ports:
+      - "5554:5554"
+      - "5556:5556"
+      - "5558:5558"
+      - "5557:5557"
+    volumes:
+      - ./config.yaml:/etc/dex/config.yaml:ro
+      - ./server-cert.pem:/etc/dex/server-cert.pem:ro
+      - ./server-key.pem:/etc/dex/server-key.pem:ro
+      - dex-data:/var/dex
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    restart: unless-stopped
+    environment:
+     - DEX_API_CONNECTORS_CRUD=true
+    networks:
+      - dex-network
+
+volumes:
+  dex-data:
+
+networks:
+  dex-network:
+    driver: bridge
