@@ -58,7 +58,7 @@ func testDB(t *testing.T, o opener, withTransactions bool) {
 	}
 
 	newStorage := func(t *testing.T) storage.Storage {
-		logger := slog.New(slog.NewTextHandler(t.Output(), &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		conn, err := o.open(logger)
 		if err != nil {
 			fatal(err)

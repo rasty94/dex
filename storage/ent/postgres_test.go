@@ -36,7 +36,7 @@ func postgresTestConfig(host string, port uint64) *Postgres {
 }
 
 func newPostgresStorage(t *testing.T, host string, port uint64) storage.Storage {
-	logger := slog.New(slog.NewTextHandler(t.Output(), &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	cfg := postgresTestConfig(host, port)
 	s, err := cfg.Open(logger)

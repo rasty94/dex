@@ -2,6 +2,7 @@ package ent
 
 import (
 	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/dexidp/dex/storage"
@@ -9,7 +10,7 @@ import (
 )
 
 func newSQLiteStorage(t *testing.T) storage.Storage {
-	logger := slog.New(slog.NewTextHandler(t.Output(), &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	cfg := SQLite3{File: ":memory:"}
 	s, err := cfg.Open(logger)

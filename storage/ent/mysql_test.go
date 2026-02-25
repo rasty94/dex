@@ -41,7 +41,7 @@ func mysqlTestConfig(host string, port uint64) *MySQL {
 }
 
 func newMySQLStorage(t *testing.T, host string, port uint64) storage.Storage {
-	logger := slog.New(slog.NewTextHandler(t.Output(), &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	cfg := mysqlTestConfig(host, port)
 	s, err := cfg.Open(logger)

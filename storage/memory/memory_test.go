@@ -2,6 +2,7 @@ package memory
 
 import (
 	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/dexidp/dex/storage"
@@ -10,7 +11,7 @@ import (
 
 func TestStorage(t *testing.T) {
 	newStorage := func(t *testing.T) storage.Storage {
-		logger := slog.New(slog.NewTextHandler(t.Output(), &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 		return New(logger)
 	}

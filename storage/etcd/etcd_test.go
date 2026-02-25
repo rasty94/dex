@@ -68,7 +68,7 @@ func TestEtcd(t *testing.T) {
 		s := &Etcd{
 			Endpoints: endpoints,
 		}
-		logger := slog.New(slog.NewTextHandler(t.Output(), &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		conn, err := s.open(logger)
 		if err != nil {
 			fmt.Fprintln(os.Stdout, err)
