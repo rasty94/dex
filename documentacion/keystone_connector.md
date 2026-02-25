@@ -1,107 +1,173 @@
 # Análisis del Conector Keystone en Dex
 
+> Versión de este fork: `ghcr.io/rasty94/dex:latest`
+> Actualizado: 2026-02-25
+
+---
+
 ## Integración
 
 El conector de Keystone está implementado en `connector/keystone/keystone.go`.
-Funciona como un "PasswordConnector" y "RefreshConnector", lo que significa que puede manejar autenticación con usuario/contraseña y refresco de tokens.
+Funciona como `PasswordConnector`, `RefreshConnector` y `TokenIdentityConnector`, lo que significa que puede:
+
+- Autenticar con usuario/contraseña (con soporte opcional de **TOTP/MFA**)
+- Refrescar tokens
+- **Validar tokens Keystone existentes** (Token Exchange / TokenIdentity)
 
 La integración se realiza a través de la API v3 de Keystone.
 
-### Flujo de Autenticación
+---
 
-1.  **Inicio de Sesión (Login):**
-    - Cuando un usuario intenta iniciar sesión, Dex recibe el nombre de usuario y contraseña.
-    - Dex realiza una petición `POST` a `/v3/auth/tokens` con las credenciales del usuario para obtener un token.
-    - Si la autenticación es exitosa, Dex obtiene el ID del usuario del token.
-    - Posteriormente, usa las credenciales de **admin** (configuradas en el conector) para obtener detalles adicionales del usuario (email) y sus grupos.
+## Flujos de Autenticación
 
-2.  **Validación de Token (TokenIdentity):**
-    - Permite validar un token existente.
-    - Primero, obtiene un token de admin.
-    - Luego, valida el token del usuario usando `GET /v3/auth/tokens` pasando el token del usuario en el header `X-Subject-Token` y el token de admin en `X-Auth-Token`.
+### 1. Login con usuario/contraseña (sin MFA)
+
+```
+Cliente → Dex → POST /v3/auth/tokens (user+pass) → Keystone
+Keystone → 201 Created + X-Subject-Token
+Dex → GET /v3/users/{id} (con admin token) → obtiene email
+Dex → GET /v3/users/{id}/groups → obtiene grupos
+Dex → ID Token JWT firmado → Cliente
+```
+
+### 2. Login con TOTP/MFA (flujo en dos pasos)
+
+Cuando Keystone tiene MFA habilitado para el usuario:
+
+```
+Paso 1 — Credenciales:
+  Cliente → Dex → POST /v3/auth/tokens (user+pass)
+  Keystone → 401 + header "Openstack-Auth-Receipt: <receipt>"
+  Dex → renderiza formulario TOTP al usuario
+
+Paso 2 — Código TOTP:
+  Usuario introduce código de su app autenticadora
+  Cliente → Dex → POST (totp_code + receipt)
+  Dex → POST /v3/auth/tokens (methods:[totp], receipt: <receipt>)
+  Keystone → 201 Created + X-Subject-Token
+  Dex → obtiene email y grupos → ID Token JWT → Cliente
+```
+
+**El `receipt` es el identificador de sesión MFA** emitido por Keystone en el primer paso. Dex lo guarda en un campo oculto del formulario y lo reenvía en el segundo paso.
+
+### 3. Validación de Token Existente (TokenIdentity)
+
+Permite que un cliente presente un token Keystone válido directamente a Dex (útil para Token Exchange):
+
+```
+Cliente → Dex (subjectToken=<keystoneToken>)
+Dex → GET /v3/auth/tokens (X-Auth-Token: adminToken, X-Subject-Token: userToken)
+Keystone → 200 OK + datos del usuario
+Dex → ID Token JWT → Cliente
+```
+
+### 4. Refresco de Token (Refresh)
+
+```
+Cliente → Dex (refresh_token)
+Dex → admin_token → GET /v3/users/{id} (verifica que el usuario sigue existiendo)
+Dex → nuevo ID Token → Cliente
+```
+
+---
+
+## Parámetros de Configuración
+
+```yaml
+connectors:
+    - type: keystone
+      id: keystone
+      name: Keystone
+      config:
+          # URL base de Keystone (sin /v3)
+          keystoneHost: https://keystone.example.com:5000
+
+          # Dominio: puede ser el UUID del dominio, "default", o el nombre del dominio
+          domain: default
+
+          # Credenciales del usuario de servicio (admin/reader con system scope)
+          keystoneUsername: dex-service
+          keystonePassword: <contraseña-segura>
+
+          # [Opcional] Cómo derivar el UserID del token Keystone.
+          # Valores: "email" (por defecto: UUID SHA1 del email) o "name" (UUID SHA1 del username)
+          # Si no se especifica, se usa el ID nativo de Keystone.
+          userIDKey: email
+
+          # [Opcional] Dominio multi-tenant: si se activa, el campo "domain"
+          # se muestra en el formulario de login y el usuario puede introducir el suyo.
+          # showDomain: true
+```
+
+### Parámetros opcionales de TOTP
+
+No hay configuración adicional para activar TOTP. El conector detecta automáticamente si Keystone responde con un `401 + Openstack-Auth-Receipt`. En ese caso:
+
+1. Muestra el formulario de TOTP al usuario
+2. El usuario introduce el código de su app autenticadora (Google Authenticator, FreeOTP, etc.)
+3. Dex completa la autenticación con el receipt
+
+---
 
 ## Permisos Requeridos en OpenStack
 
-Para que el conector funcione correctamente, se necesitan unas credenciales de servicio (Service Account) con permisos suficientes para realizar las operaciones de validación e inspección de usuarios.
+Para que el conector funcione correctamente se necesita un **usuario de servicio** con los siguientes permisos sobre la API v3 de Keystone:
 
-En la configuración se definen:
+| Operación                 | Endpoint                    | Policy key                      |
+| ------------------------- | --------------------------- | ------------------------------- |
+| Autenticarse (self)       | `POST /v3/auth/tokens`      | `identity:create_token`         |
+| Validar token de usuario  | `GET /v3/auth/tokens`       | `identity:validate_token`       |
+| Leer detalles del usuario | `GET /v3/users/{id}`        | `identity:get_user`             |
+| Listar grupos del usuario | `GET /v3/users/{id}/groups` | `identity:list_groups_for_user` |
 
-- `keystoneHost`: URL de Keystone.
-- `domain`: Dominio del usuario de servicio.
-- `keystoneUsername`: Usuario de servicio (Admin).
-- `keystonePassword`: Contraseña.
+### Opción A — Menor privilegio (recomendada)
 
-### Operaciones y Permisos
+```bash
+# Crear usuario de servicio
+openstack user create dex-service --password <pass> --domain default
 
-Basado en la lista de políticas (`policy.json` o `policy.yaml`) y los requerimientos funcionales para la integración con Dex, aquí están las reglas exactas que aplican a cada operación:
+# Asignar rol "reader" con scope de sistema
+openstack role add --user dex-service --system all reader
+```
 
-#### 1. Autenticación (Self)
+Con `reader` + `system_scope:all` se satisfacen las operaciones 2, 3 y 4.
 
-**Operación:** `POST /v3/auth/tokens`
-El usuario de servicio necesita obtener un token para sí mismo.
+> ⚠️ El endpoint `POST /v3/auth/tokens` no suele requerir privilegios especiales para autenticación propia — está fuera de las políticas regulares en la mayoría de deployments Keystone.
 
-- **Permiso relacionado:** `identity:get_access_token`
-- **Regla configurada:**
-    ```json
-    "identity:get_access_token": "rule:admin_required"
-    ```
+### Opción B — Admin (más permisivo)
 
-    - **Observación:** Esta regla es muy restrictiva en la configuración actual. Requiere que el usuario sea `admin` incluso para obtener su propio token, a menos que el endpoint de autenticación pública (`issue_token`) esté exento de validación de políticas en la versión de Keystone.
+```bash
+openstack role add --user dex-service --system all admin
+```
 
-#### 2. Validar tokens de otros usuarios
+Satisface todas las operaciones sin restricciones. Usar solo si Opción A no funciona en tu versión de Keystone.
 
-**Operación:** `GET /v3/auth/tokens` (Introspección/Validación)
-Dex recibe un token de un usuario y pregunta a Keystone si es válido.
+### ⚠️ Advertencia sobre el rol `service`
 
-- **Permiso relacionado:** `identity:validate_token`
-- **Regla configurada:**
-    ```json
-    "identity:validate_token": "rule:admin_required or (role:reader and system_scope:all) or rule:service_role or rule:token_subject"
-    ```
+Si solo se asigna el rol `service` al usuario de Dex, **fallarán** las llamadas `GET /v3/users/{id}` y `GET /v3/users/{id}/groups` porque `rule:service_role` no está incluido en las políticas `identity:get_user` ni `identity:list_groups_for_user` en la mayoría de configuraciones estándar.
 
-    - **Análisis:** Esta es la regla crítica para integraciones. La configuración permite explícitamente `rule:service_role`.
-    - **Requisito para Dex:** El usuario de Dex debe tener el rol `service` (definido como `"service_role": "role:service"`).
+---
 
-#### 3. Obtener detalles de usuarios
+## Activar TOTP en OpenStack
 
-**Operación:** `GET /v3/users/{user_id}`
-Dex necesita leer la información (email, nombre) del usuario que se está autenticando.
+Para activar TOTP para un usuario en Keystone:
 
-- **Permiso relacionado:** `identity:get_user`
-- **Regla configurada:**
-    ```json
-    "identity:get_user": "(rule:admin_required) or (role:reader and system_scope:all) or (role:reader and token.domain.id:%(target.user.domain_id)s) or user_id:%(target.user.id)s"
-    ```
+```bash
+# 1. Activar el método TOTP en Keystone (keystone.conf)
+# [auth]
+# methods = password,token,totp
 
-    - **Análisis:** Aquí **NO** está incluido `rule:service_role`.
-    - **Requisito para Dex:** Dado que Dex está consultando un usuario ajeno (target != self), el usuario de servicio de Dex necesitará ser `admin` O tener el rol `reader` con `system_scope:all`. El rol `service` por sí solo **no será suficiente**.
+# 2. Crear credencial TOTP para el usuario
+openstack credential create <user_id> totp --blob '{"seed": "<base32_secret>"}'
 
-#### 4. Listar grupos de un usuario
+# 3. El usuario configura su app con el QR o seed
+```
 
-**Operación:** `GET /v3/users/{user_id}/groups`
-Dex necesita saber a qué grupos pertenece el usuario.
+Una vez configurado, Keystone empezará a devolver `401 + Openstack-Auth-Receipt` si el usuario intenta autenticarse solo con contraseña. Dex lo detecta automáticamente.
 
-- **Permiso relacionado:** `identity:list_groups_for_user`
-- **Regla configurada:**
-    ```json
-    "identity:list_groups_for_user": "(rule:admin_required) or (role:reader and system_scope:all) or (role:reader and domain_id:%(target.user.domain_id)s) or user_id:%(user_id)s"
-    ```
+---
 
-    - **Análisis:** Igual que el punto anterior. No incluye `service_role`.
-    - **Requisito para Dex:** Requiere `admin` o `reader` (system scoped).
+## Policy de Keystone Ajustada para Dex
 
-### Resumen de Configuración para el Usuario Dex
-
-Para cumplir con los 4 requisitos con **esta lista de políticas exacta**, el usuario de servicio que se configure en Dex debe tener asignados los siguientes roles/scopes:
-
-1.  **Opción A (Recomendada/Menor Privilegio):**
-    - Rol: `reader`
-    - Scope: `system` (all)
-    - _Nota:_ Esto satisface los puntos 2, 3 y 4.
-
-2.  **Opción B (Permisiva):**
-    - Rol: `admin`
-    - Scope: `project` o `system`
-    - _Nota:_ Esto satisface todo, incluido el punto 1 si se aplica estrictamente.
-
-**Advertencia:** Si solo se asigna el rol `service` al usuario de Dex, fallarán las llamadas 3 y 4 (`get_user` y `list_groups_for_user`) porque `rule:service_role` no está presente en esas líneas de la política.
+Ver `documentacion/policy_modificado.yml` para la política completa ajustada.
+Ver `documentacion/Permisos base keystone.md` para el análisis detallado de reglas.

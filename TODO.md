@@ -106,15 +106,15 @@
 - [ ] Tests unitarios para flujo TOTP completo (mock del endpoint Keystone)
 - [ ] Tests de `TokenIdentity()` con mocks
 
-### 12. Documentación
+### 12. ✅ Documentación
 
-- [ ] Ampliar `keystone_connector.md` con la configuración de TOTP/MFA
-- [ ] Guía de despliegue con docker-compose + certificados TLS
-- [ ] Añadir `CHANGELOG.md` para versiones del fork
-- [ ] Actualizar `README.md`:
-    - Imagen Docker: `ghcr.io/rasty94/dex`
-    - Nuevas funcionalidades: TOTP, i18n, TokenIdentity
-    - Elevar el conector Keystone de `alpha` a `beta`
+- [x] Ampliar `keystone_connector.md` con flujo TOTP/MFA, `TokenIdentity`, `UserIDKey`, `showDomain` y guia de permisos OpenStack
+- [x] Guía de despliegue en `documentacion/despliegue-docker-tls.md`: TLS (autofirmado, CA, Let's Encrypt), docker-compose con healthcheck, config.yaml anotada, troubleshooting
+- [x] `CHANGELOG.md` creado con historial completo desde el upstream
+- [x] `README.md` actualizado:
+    - Badges del fork (CI + imagen Docker GHCR)
+    - Sección "Fork Enhancements": TOTP/MFA, TokenIdentity, i18n, imagen Docker
+    - Keystone elevado de `alpha` a `beta` con notas de funcionalidades
 
 ### 13. Limpieza
 
@@ -145,5 +145,7 @@
 | i18n ampliado (FR, DE, PT)                  |   ✅   | 5 idiomas: EN, ES, FR, DE, PT             |
 | Iconos SVG en `login.html`                  |   ✅   | 12 connectors con icono SVG               |
 | Tests TOTP unitarios con mocks              |   ❌   | Pendiente                                 |
-| CHANGELOG.md                                |   ❌   | Pendiente                                 |
-| README.md actualizado                       |   ❌   | Pendiente                                 |
+| CHANGELOG.md                                |   ✅   | Historial completo desde upstream         |
+| README.md actualizado                       |   ✅   | Fork badges, mejoras, Keystone beta       |
+| `keystone_connector.md` ampliado            |   ✅   | TOTP, TokenIdentity, permisos, comandos   |
+| Guía despliegue TLS                         |   ✅   | `despliegue-docker-tls.md`                |

@@ -1,15 +1,43 @@
 # dex - A federated OpenID Connect provider
 
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/dexidp/dex/ci.yaml?style=flat-square&branch=master)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/dexidp/dex/badge?style=flat-square)](https://api.securityscorecards.dev/projects/github.com/dexidp/dex)
+> **🔱 Fork: [rasty94/dex](https://github.com/rasty94/dex)** — Fork de [dexidp/dex](https://github.com/dexidp/dex) con mejoras para OpenStack Keystone: TOTP/MFA, i18n y Token Exchange.
+
+[![CI](https://img.shields.io/github/actions/workflow/status/rasty94/dex/ghcr-publish.yaml?style=flat-square&branch=master&label=Build+%26+Push)](https://github.com/rasty94/dex/actions/workflows/ghcr-publish.yaml)
+[![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Frasty94%2Fdex-blue?style=flat-square&logo=docker)](https://ghcr.io/rasty94/dex)
 [![Go Report Card](https://goreportcard.com/badge/github.com/dexidp/dex?style=flat-square)](https://goreportcard.com/report/github.com/dexidp/dex)
-[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod&style=flat-square)](https://gitpod.io/#https://github.com/dexidp/dex)
 
 ![logo](docs/logos/dex-horizontal-color.png)
 
 Dex is an identity service that uses [OpenID Connect][openid-connect] to drive authentication for other apps.
 
 Dex acts as a portal to other identity providers through ["connectors."](#connectors) This lets dex defer authentication to LDAP servers, SAML providers, or established identity providers like GitHub, Google, and Active Directory. Clients write their authentication logic once to talk to dex, then dex handles the protocols for a given backend.
+
+## Fork Enhancements
+
+This fork adds the following features on top of the upstream dexidp/dex:
+
+### 🔐 OpenStack Keystone — TOTP/MFA
+
+Full two-factor authentication support using **TOTP** (RFC 6238). Dex automatically detects when Keystone requires MFA, shows a TOTP form, and completes the `openstack-auth-receipt` handshake transparently.
+
+### 🔗 Keystone Token Exchange (`TokenIdentity`)
+
+Clients can present an existing Keystone token directly to Dex for validation. Dex verifies it against Keystone's `GET /v3/auth/tokens` and issues an OIDC ID Token.
+
+### 🌍 Internationalization (i18n)
+
+All UI strings are fully translated. Supported languages: **English, Spanish, French, German, Portuguese**. Language auto-detected from `Accept-Language` header. Adding a new language requires only a YAML file — no Go code changes.
+
+### 📦 Docker image
+
+```bash
+docker pull ghcr.io/rasty94/dex:latest
+```
+
+Auto-published on every push to `master`. Multi-arch: `linux/amd64` + `linux/arm64`.
+See [documentacion/despliegue-docker-tls.md](documentacion/despliegue-docker-tls.md) for the full deployment guide with TLS.
+
+---
 
 ## ID Tokens
 
@@ -23,26 +51,23 @@ ID Tokens contains standard claims assert which client app logged the user in, w
 
 ```json
 {
-  "iss": "http://127.0.0.1:5556/dex",
-  "sub": "CgcyMzQyNzQ5EgZnaXRodWI",
-  "aud": "example-app",
-  "exp": 1492882042,
-  "iat": 1492795642,
-  "at_hash": "bi96gOXZShvlWYtal9Eqiw",
-  "email": "jane.doe@coreos.com",
-  "email_verified": true,
-  "groups": [
-    "admins",
-    "developers"
-  ],
-  "name": "Jane Doe"
+    "iss": "http://127.0.0.1:5556/dex",
+    "sub": "CgcyMzQyNzQ5EgZnaXRodWI",
+    "aud": "example-app",
+    "exp": 1492882042,
+    "iat": 1492795642,
+    "at_hash": "bi96gOXZShvlWYtal9Eqiw",
+    "email": "jane.doe@coreos.com",
+    "email_verified": true,
+    "groups": ["admins", "developers"],
+    "name": "Jane Doe"
 }
 ```
 
 Because these tokens are signed by dex and [contain standard-based claims][standard-claims] other services can consume them as service-to-service credentials. Systems that can already consume OpenID Connect ID Tokens issued by dex include:
 
-* [Kubernetes][kubernetes]
-* [AWS STS][aws-sts]
+- [Kubernetes][kubernetes]
+- [AWS STS][aws-sts]
 
 For details on how to request or validate an ID Token, see [_"Writing apps that use dex"_][using-dex].
 
@@ -50,8 +75,8 @@ For details on how to request or validate an ID Token, see [_"Writing apps that 
 
 Dex runs natively on top of any Kubernetes cluster using Custom Resource Definitions and can drive API server authentication through the OpenID Connect plugin. Clients, such as the [`kubernetes-dashboard`](https://github.com/kubernetes/dashboard) and `kubectl`, can act on behalf of users who can login to the cluster through any identity provider dex supports.
 
-* More docs for running dex as a Kubernetes authenticator can be found [here](https://dexidp.io/docs/guides/kubernetes/).
-* You can find more about companies and projects which use dex, [here](./ADOPTERS.md).
+- More docs for running dex as a Kubernetes authenticator can be found [here](https://dexidp.io/docs/guides/kubernetes/).
+- You can find more about companies and projects which use dex, [here](./ADOPTERS.md).
 
 ## Connectors
 
@@ -65,44 +90,44 @@ Depending on the connectors limitations in protocols can prevent dex from issuin
 
 Dex implements the following connectors:
 
-| Name | supports refresh tokens | supports groups claim | supports preferred_username claim | status | notes |
-| ---- | ----------------------- | --------------------- | --------------------------------- | ------ | ----- |
-| [LDAP](https://dexidp.io/docs/connectors/ldap/) | yes | yes | yes | stable | |
-| [GitHub](https://dexidp.io/docs/connectors/github/) | yes | yes | yes | stable | |
-| [SAML 2.0](https://dexidp.io/docs/connectors/saml/) | no | yes | no | stable | WARNING: Unmaintained and likely vulnerable to auth bypasses ([#1884](https://github.com/dexidp/dex/discussions/1884)) |
-| [GitLab](https://dexidp.io/docs/connectors/gitlab/) | yes | yes | yes | beta | |
-| [OpenID Connect](https://dexidp.io/docs/connectors/oidc/) | yes | yes | yes | beta | Includes Salesforce, Azure, etc. |
-| [OAuth 2.0](https://dexidp.io/docs/connectors/oauth/) | no | yes | yes | alpha | |
-| [Google](https://dexidp.io/docs/connectors/google/) | yes | yes | yes | alpha | |
-| [LinkedIn](https://dexidp.io/docs/connectors/linkedin/) | yes | no | no | beta | |
-| [Microsoft](https://dexidp.io/docs/connectors/microsoft/) | yes | yes | no | beta | |
-| [AuthProxy](https://dexidp.io/docs/connectors/authproxy/) | no | yes | no | alpha | Authentication proxies such as Apache2 mod_auth, etc. |
-| [Bitbucket Cloud](https://dexidp.io/docs/connectors/bitbucketcloud/) | yes | yes | no | alpha | |
-| [OpenShift](https://dexidp.io/docs/connectors/openshift/) | yes | yes | no | alpha | |
-| [Atlassian Crowd](https://dexidp.io/docs/connectors/atlassian-crowd/) | yes | yes | yes * | beta | preferred_username claim must be configured through config |
-| [Gitea](https://dexidp.io/docs/connectors/gitea/) | yes | no | yes | beta | |
-| [OpenStack Keystone](https://dexidp.io/docs/connectors/keystone/) | yes | yes | no | alpha | |
+| Name                                                                  | supports refresh tokens | supports groups claim | supports preferred_username claim | status   | notes                                                                                                                  |
+| --------------------------------------------------------------------- | ----------------------- | --------------------- | --------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [LDAP](https://dexidp.io/docs/connectors/ldap/)                       | yes                     | yes                   | yes                               | stable   |                                                                                                                        |
+| [GitHub](https://dexidp.io/docs/connectors/github/)                   | yes                     | yes                   | yes                               | stable   |                                                                                                                        |
+| [SAML 2.0](https://dexidp.io/docs/connectors/saml/)                   | no                      | yes                   | no                                | stable   | WARNING: Unmaintained and likely vulnerable to auth bypasses ([#1884](https://github.com/dexidp/dex/discussions/1884)) |
+| [GitLab](https://dexidp.io/docs/connectors/gitlab/)                   | yes                     | yes                   | yes                               | beta     |                                                                                                                        |
+| [OpenID Connect](https://dexidp.io/docs/connectors/oidc/)             | yes                     | yes                   | yes                               | beta     | Includes Salesforce, Azure, etc.                                                                                       |
+| [OAuth 2.0](https://dexidp.io/docs/connectors/oauth/)                 | no                      | yes                   | yes                               | alpha    |                                                                                                                        |
+| [Google](https://dexidp.io/docs/connectors/google/)                   | yes                     | yes                   | yes                               | alpha    |                                                                                                                        |
+| [LinkedIn](https://dexidp.io/docs/connectors/linkedin/)               | yes                     | no                    | no                                | beta     |                                                                                                                        |
+| [Microsoft](https://dexidp.io/docs/connectors/microsoft/)             | yes                     | yes                   | no                                | beta     |                                                                                                                        |
+| [AuthProxy](https://dexidp.io/docs/connectors/authproxy/)             | no                      | yes                   | no                                | alpha    | Authentication proxies such as Apache2 mod_auth, etc.                                                                  |
+| [Bitbucket Cloud](https://dexidp.io/docs/connectors/bitbucketcloud/)  | yes                     | yes                   | no                                | alpha    |                                                                                                                        |
+| [OpenShift](https://dexidp.io/docs/connectors/openshift/)             | yes                     | yes                   | no                                | alpha    |                                                                                                                        |
+| [Atlassian Crowd](https://dexidp.io/docs/connectors/atlassian-crowd/) | yes                     | yes                   | yes \*                            | beta     | preferred_username claim must be configured through config                                                             |
+| [Gitea](https://dexidp.io/docs/connectors/gitea/)                     | yes                     | no                    | yes                               | beta     |                                                                                                                        |
+| [OpenStack Keystone](documentacion/keystone_connector.md)             | yes                     | yes                   | no                                | **beta** | TOTP/MFA, TokenIdentity, multi-domain, i18n                                                                            |
 
 Stable, beta, and alpha are defined as:
 
-* Stable: well tested, in active use, and will not change in backward incompatible ways.
-* Beta: tested and unlikely to change in backward incompatible ways.
-* Alpha: may be untested by core maintainers and is subject to change in backward incompatible ways.
+- Stable: well tested, in active use, and will not change in backward incompatible ways.
+- Beta: tested and unlikely to change in backward incompatible ways.
+- Alpha: may be untested by core maintainers and is subject to change in backward incompatible ways.
 
 All changes or deprecations of connector features will be announced in the [release notes][release-notes].
 
 ## Documentation
 
-* [Getting started](https://dexidp.io/docs/getting-started/)
-* [Intro to OpenID Connect](https://dexidp.io/docs/openid-connect/)
-* [Writing apps that use dex][using-dex]
-* [What's new in v2](https://dexidp.io/docs/archive/v2/)
-* [Custom scopes, claims, and client features](https://dexidp.io/docs/custom-scopes-claims-clients/)
-* [Storage options](https://dexidp.io/docs/storage/)
-* [gRPC API](https://dexidp.io/docs/api/)
-* [Using Kubernetes with dex](https://dexidp.io/docs/kubernetes/)
-* Client libraries
-  * [Go][go-oidc]
+- [Getting started](https://dexidp.io/docs/getting-started/)
+- [Intro to OpenID Connect](https://dexidp.io/docs/openid-connect/)
+- [Writing apps that use dex][using-dex]
+- [What's new in v2](https://dexidp.io/docs/archive/v2/)
+- [Custom scopes, claims, and client features](https://dexidp.io/docs/custom-scopes-claims-clients/)
+- [Storage options](https://dexidp.io/docs/storage/)
+- [gRPC API](https://dexidp.io/docs/api/)
+- [Using Kubernetes with dex](https://dexidp.io/docs/kubernetes/)
+- Client libraries
+    - [Go][go-oidc]
 
 ## Reporting a vulnerability
 
