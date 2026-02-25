@@ -134,11 +134,11 @@
     - Histogramas: Latencia de validación de tokens contra la API de Keystone.
 - [ ] Trazabilidad distribuida (OpenTelemetry) para peticiones hacia OpenStack.
 
-### 15. 🔑 Mejoras en Keystone Connector
+### 15. ✅ Mejoras en Keystone Connector
 
-- [ ] **Application Credentials**: Permitir autenticación mediante `application_credential_id` y `application_credential_secret` como método alternativo a contraseñas o TOTP.
-- [ ] Soporte de caché local para tokens de Keystone (reducir llamadas a `GET /v3/auth/tokens` mediante Redis o memoria en caché LRU con TTL adaptativo).
-- [ ] Mapeo dinámico de Grupos: Permitir mapear roles específicos de un proyecto (tenant) de OpenStack a grupos de Dex en lugar de devolver solo los grupos nativos del usuario.
+- [x] **Application Credentials**: Permitir autenticación mediante `application_credential_id` y `application_credential_secret` como método alternativo a contraseñas o TOTP.
+- [x] Soporte de caché local para tokens de Keystone (reducir llamadas a `GET /v3/auth/tokens` mediante Redis o memoria en caché LRU con TTL adaptativo).
+- [x] Mapeo dinámico de Grupos: Permitir mapear roles específicos de un proyecto (tenant) de OpenStack a grupos de Dex en lugar de devolver solo los grupos nativos del usuario.
 
 ### 16. 🛡️ Seguridad y DevSecOps
 
