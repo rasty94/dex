@@ -2,157 +2,138 @@
 
 > Última actualización: 2026-02-25
 > Imagen Docker: `ghcr.io/rasty94/dex:latest`
+> Repositorio: https://github.com/rasty94/dex
 
 ---
 
-## 🔴 Prioridad Alta — Integración de mejoras de `dex_mod`
+## ✅ Completado — Alta Prioridad
 
-Las siguientes mejoras están implementadas en la carpeta `dex_mod/` pero **aún no se han integrado** en el código fuente principal. Son las pendientes más críticas.
+### 1. ✅ Keystone Connector — TOTP/MFA y mejoras
 
-### 1. ✅ Integrar mejoras del Keystone Connector (TOTP / MFA)
+- [x] Soporte completo de **TOTP (Multi-Factor Authentication)**: `ErrTOTPRequired`, `TOTPContextKey`, `ReceiptContextKey`
+- [x] Flujo MFA en dos pasos: detección de `openstack-auth-receipt`, re-renderizado del formulario con campo TOTP
+- [x] **Multi-dominio dinámico**: el dominio puede venir del formulario o estar fijo en config
+- [x] **`TokenIdentity()`**: validación de tokens Keystone existentes vía `GET /v3/auth/tokens`
+- [x] **`UserIDKey`**: permite usar `email` o `username` como identificador (UUID SHA1)
+- [x] Manejo mejorado de errores en `getAdminToken()` y `getTokenResponse()`
+- [x] Corrección de bug: `defer resp.Body.Close()` reordenado correctamente
+- [x] Tests añadidos: `key_test.go` y `validate_test.go`
 
-- [ ] Añadir soporte para **TOTP (Multi-Factor Authentication)** en `connector/keystone/keystone.go`
-    - Nuevos tipos: `totp`, `userTOTP`, `ErrTOTPRequired`
-    - Context keys: `TOTPContextKey`, `ReceiptContextKey`
-    - TOTP como segundo método de autenticación en `getTokenResponse()`
-    - Gestión del header `openstack-auth-receipt` para flujo MFA en dos pasos
-- [ ] Añadir soporte para **multi-dominio dinámico** (dominio por usuario vs. dominio global)
-- [ ] Añadir **`TokenIdentity()`** — nueva función para validar tokens existentes de Keystone (self-validation vía `GET /v3/auth/tokens`)
-- [ ] Mejorar manejo de errores en `getAdminToken()` (verificación de status code, body logging)
-- [ ] Corregir bug: `defer resp.Body.Close()` antes de `io.ReadAll()` en `getUserGroups()`
-- [ ] Añadir campo `UserIDKey` a `Config` para permitir usar `email` o `username` como ID (con UUID derivado via SHA1)
-- [ ] Copiar tests nuevos: `key_test.go` y `validate_test.go` desde `dex_mod/connector/keystone/`
+### 2. ✅ i18n — Sistema de internacionalización
 
-### 2. ✅ Integrar i18n en el backend (templates.go)
+- [x] `server/i18n.go`: mapa de traducciones EN/ES con fallback automático
+- [x] `server/templates.go`: todos los renders inyectan `Tr` via `Accept-Language`
+- [x] `web/templates/`: plantillas HTML actualizadas para usar `{{ .Tr.xxx }}`
+- [x] `web/templates/password.html`: campos TOTP, dominio, receipt, backlick integrados
 
-- [ ] Modificar las funciones de renderizado en `server/templates.go` para inyectar traducciones (`GetTranslations`) via `Accept-Language` header
-    - `device()` → añadir campo `Tr`
-    - `deviceSuccess()` → añadir campo `Tr`
-    - `login()` → añadir campo `Tr`
-    - `password()` → añadir campos `Tr`, `ShowDomain`, `Domain`, `RequireTOTP`, `Receipt`, `Password`
-    - `approval()` → añadir campo `Tr`
-    - `oob()` → añadir campo `Tr`
-    - `err()` → añadir campo `Tr`
-- [ ] Verificar que `server/i18n.go` (ya copiado) está correctamente importado y utilizado
+### 3. ✅ Refactor interfaz `CallbackConnector`
 
-### 3. ✅ Adaptar `server/handlers.go` para TOTP
+- [x] Eliminado parámetro `connData []byte` de `LoginURL` y `HandleCallback`
+- [x] Eliminado `UserNotInRequiredGroupsError` de `connector/connector.go`
+- [x] Todos los connectors adaptados a la nueva interfaz:
+    - bitbucketcloud, gitea, github, gitlab, google, linkedin, microsoft, mock, oidc, openshift
 
-- [x] Modificar `handlePasswordLogin()` para detectar `ErrTOTPRequired` y re-renderizar el formulario en modo TOTP
-- [x] Pasar los nuevos campos (`showDomain`, `domain`, `requireTOTP`, `receipt`, `lastPassword`) a `templates.password()`
-- [x] Implementar lectura del campo `totp` y `receipt` del formulario POST y pasarlos via context al connector
+### 4. ✅ UI / Themes
+
+- [x] CSS actualizado para temas `dark` y `light`
+- [x] Nuevo `robots.txt`
+- [x] SVG icons actualizados en `web/static/img/`
+- [x] Archivos `*OLD.png` eliminados de los themes
+
+### 5. ✅ Docker y distribución
+
+- [x] Imagen publicada en `ghcr.io/rasty94/dex:latest`
+- [x] `.dockerignore` ampliado para excluir artefactos innecesarios
+- [x] `Ejemplos/docker-compose.yml` apunta a la imagen GHCR
+
+### 6. ✅ Documentación y repositorio
+
+- [x] `documentacion/keystone_connector.md`: análisis de permisos OpenStack
+- [x] `documentacion/Permisos base keystone.md`: referencia completa de políticas
+- [x] `documentacion/policy_modificado.yml`: política Keystone ajustada para Dex
+- [x] `.gitignore` actualizado con `dex_mod`
+- [x] `Dependabot` ya configurado para Go, Docker y GitHub Actions
 
 ---
 
-## 🟠 Prioridad Media — CI/CD y DevOps
+## 🟠 Pendiente — Prioridad Media
 
-### 4. Configurar CI/CD para publicar a GHCR automáticamente
+### 7. CI/CD — Publicación automática a GHCR
 
-- [ ] Crear workflow `.github/workflows/ghcr-publish.yaml` que construya y publique `ghcr.io/rasty94/dex` en cada push a `master`
-- [ ] Usar `docker/build-push-action` con login a GHCR via `GITHUB_TOKEN`
-- [ ] Añadir tags de versión (`latest`, `vX.Y.Z`, commit SHA)
+- [ ] Crear workflow `.github/workflows/ghcr-publish.yaml` que construya y publique en cada push a `master`
+- [ ] Usar `docker/build-push-action` con `GITHUB_TOKEN` para login a GHCR
+- [ ] Tags automáticos: `latest`, SHA corto del commit, y `vX.Y.Z` en releases
 - [ ] Opcional: build multi-arquitectura (`linux/amd64`, `linux/arm64`)
 
-### 5. Optimizar `.dockerignore`
+### 8. UI — Pulir plantillas HTML
 
-- [ ] Añadir a `.dockerignore`:
-    ```
-    dex_mod/
-    Ejemplos/
-    documentacion/
-    .github/
-    .git/
-    docs/
-    *.md
-    ```
-    Para reducir el contexto de build y acelerar las construcciones Docker.
+- [ ] Traducir strings hardcoded en `password.html`: `"TOTP / App Code"`, `"Verify"`, `"Invalid TOTP code."`, `"Invalid credentials."`, `"Signing in..."`
+- [ ] Añadir iconos SVG reales para los connectors en `login.html` (actualmente solo texto)
+- [ ] Verificar diseño responsive en móvil para ambos temas
 
-### 6. Configurar Dependabot / Renovate para Go modules
+### 9. i18n — Ampliar idiomas
 
-- [ ] Verificar que `dependabot.yaml` está configurado para este fork
-- [ ] Asegurar actualizaciones automáticas de dependencias Go y GitHub Actions
+- [ ] Añadir traducciones para: `fr`, `pt`, `de`
+- [ ] Evaluar externalizar traducciones a YAML/JSON en lugar de Go hardcodeado
 
 ---
 
-## 🟡 Prioridad Media — UI / Frontend
+## 🟢 Pendiente — Prioridad Baja
 
-### 7. Pulir las plantillas HTML
+### 10. Seguridad
 
-- [ ] Revisar que todas las plantillas usan claves de traducción `{{ .Tr.xxx }}` de forma consistente
-- [ ] ~~Hardcoded strings~~ en `password.html`: traducir `"TOTP / App Code"`, `"Verify"`, `"Invalid TOTP code."`, `"Invalid credentials."`, `"Signing in..."`
-- [ ] Añadir iconos SVG para cada tipo de connector en `login.html` (actualmente tiene placeholder comment `<!-- GitHub Icon could go here -->`)
-- [ ] Responsive: verificar que los temas `dark` y `light` se ven correctamente en móvil
-
-### 8. Añadir más idiomas al sistema i18n
-
-- [ ] Añadir traducciones para: `fr` (francés), `pt` (portugués), `de` (alemán)
-- [ ] Mover traducciones a archivos YAML/JSON externos en lugar de hardcodearlas en `server/i18n.go`
-- [ ] Permitir configurar el idioma por defecto via `config.yaml`
-
-### 9. Eliminar archivos obsoletos de themes
-
-- [ ] Borrar `faviconOLD.png` y `logoOLD.png` de `web/themes/dark/` y `web/themes/light/`
-- [ ] Borrar `web/themes/light/.!3520!faviconOLD.png` (archivo corrupto/residual)
-
----
-
-## 🟢 Prioridad Baja — Calidad de Código y Testing
-
-### 10. Testing del conector Keystone mejorado
-
-- [ ] Escribir tests unitarios para:
-    - `Login()` con TOTP habilitado
-    - `Login()` con multi-dominio
-    - `TokenIdentity()` (validación de token existente)
-    - `getTokenResponse()` con receipts
-- [ ] Integrar `key_test.go` y `validate_test.go` de `dex_mod`
-- [ ] Añadir mocking del endpoint Keystone para tests sin dependencia externa
-
-### 11. Seguridad
-
-- [ ] Eliminar credenciales hardcodeadas en `Ejemplos/config.yaml` (password de admin está en claro)
-    - Usar variables de entorno o archivos secretos
+- [ ] Eliminar credenciales hardcodeadas en `Ejemplos/config.yaml`
 - [ ] Añadir headers de seguridad por defecto en `config.docker.yaml`:
     ```yaml
     headers:
         X-Frame-Options: "DENY"
         X-Content-Type-Options: "nosniff"
-        X-XSS-Protection: "1; mode=block"
         Content-Security-Policy: "default-src 'self'"
         Strict-Transport-Security: "max-age=31536000; includeSubDomains"
     ```
-- [ ] Verificar que los tokens de Keystone se manejan de forma segura en logs (no loguear tokens completos)
+- [ ] Verificar que los tokens no se loguean completos
 
-### 12. Limpieza general del repositorio
+### 11. Testing
 
-- [ ] Decidir si `dex_mod/` se elimina tras integrar todas las mejoras
-- [ ] Eliminar archivos `test_output*.txt` residuales dentro de `dex_mod/`
-- [ ] Evaluar si `Ejemplos-Oasix/` (presente en dex_mod) es necesario
-- [ ] Actualizar `README.md` para reflejar:
-    - La nueva imagen Docker (`ghcr.io/rasty94/dex`)
-    - Las mejoras del connector Keystone (TOTP, multi-dominio, token validation)
-    - El soporte de internacionalización (i18n)
-    - El estado del connector Keystone como "beta" en la tabla de connectores
+- [ ] Tests unitarios para flujo TOTP completo (mock del endpoint Keystone)
+- [ ] Tests de `TokenIdentity()` con mocks
 
-### 13. Documentación
+### 12. Documentación
 
-- [ ] Documentar la configuración del TOTP/MFA para Keystone en `documentacion/`
-- [ ] Crear guía de despliegue con docker-compose incluyendo certificados TLS
-- [ ] Documentar los permisos OpenStack necesarios (ampliar `keystone_connector.md` con TOTP)
-- [ ] Añadir CHANGELOG.md para trackear versiones del fork
+- [ ] Ampliar `keystone_connector.md` con la configuración de TOTP/MFA
+- [ ] Guía de despliegue con docker-compose + certificados TLS
+- [ ] Añadir `CHANGELOG.md` para versiones del fork
+- [ ] Actualizar `README.md`:
+    - Imagen Docker: `ghcr.io/rasty94/dex`
+    - Nuevas funcionalidades: TOTP, i18n, TokenIdentity
+    - Elevar el conector Keystone de `alpha` a `beta`
+
+### 13. Limpieza
+
+- [ ] Eliminar `dex_mod/` cuando ya no sea necesario como referencia
+- [ ] Revisar si `Ejemplos-Oasix/` puede eliminarse
 
 ---
 
 ## 📋 Resumen de Estado
 
-| Área                        | Estado | Notas                                  |
-| --------------------------- | ------ | -------------------------------------- |
-| `.gitignore` actualizado    | ✅     | `dex_mod` ignorado                     |
-| Imagen Docker GHCR          | ✅     | `ghcr.io/rasty94/dex:latest` publicada |
-| Templates HTML (UI)         | ✅     | Copiados desde `dex_mod`               |
-| CSS y themes                | ✅     | Estilos dark/light actualizados        |
-| `server/i18n.go`            | ✅     | Archivo copiado (EN + ES)              |
-| i18n wiring en templates.go | ❌     | Pendiente de integrar                  |
-| Keystone TOTP/MFA           | ❌     | Pendiente de integrar                  |
-| Keystone TokenIdentity      | ❌     | Pendiente de integrar                  |
-| CI/CD GHCR automático       | ❌     | Pendiente                              |
-| Tests Keystone              | ❌     | Pendiente                              |
+| Área                                    | Estado | Notas                                  |
+| --------------------------------------- | :----: | -------------------------------------- |
+| `.gitignore`                            |   ✅   | `dex_mod` ignorado                     |
+| `.dockerignore`                         |   ✅   | Excluye artefactos innecesarios        |
+| Imagen Docker GHCR                      |   ✅   | `ghcr.io/rasty94/dex:latest` publicada |
+| Templates HTML (UI)                     |   ✅   | Actualizados con TOTP y i18n           |
+| CSS y themes                            |   ✅   | Estilos dark/light limpios             |
+| i18n (EN + ES)                          |   ✅   | `server/i18n.go`, wired en templates   |
+| Keystone TOTP/MFA                       |   ✅   | `ErrTOTPRequired`, flujo 2 pasos       |
+| Keystone `TokenIdentity`                |   ✅   | Self-validation de tokens              |
+| Keystone `UserIDKey` (email/username)   |   ✅   | UUID SHA1 derivado                     |
+| Refactor `CallbackConnector`            |   ✅   | Todos los connectors actualizados      |
+| Tests Keystone (`key_test`, `validate`) |   ✅   | Añadidos                               |
+| Documentación Keystone/permisos         |   ✅   | En `documentacion/`                    |
+| Dependabot                              |   ✅   | Go + Docker + Actions configurado      |
+| CI/CD automático GHCR                   |   ❌   | Pendiente                              |
+| Strings TOTP hardcoded en templates     |   ❌   | Pendiente traducción                   |
+| Tests TOTP unitarios con mocks          |   ❌   | Pendiente                              |
+| CHANGELOG.md                            |   ❌   | Pendiente                              |
+| README.md actualizado                   |   ❌   | Pendiente                              |

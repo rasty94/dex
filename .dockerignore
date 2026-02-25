@@ -1,2 +1,41 @@
+# Build artifacts
 bin/
 tmp/
+
+# Local dev / env files
+.devenv/
+.direnv/
+.envrc
+.gitpod.yml
+
+# IDE
+.idea/
+.vscode/
+
+# Version control
+.git/
+
+# CI
+.github/
+
+# Documentation (not needed in image)
+docs/
+documentacion/
+*.md
+!config.docker.yaml
+
+# Example configs and scripts (not needed in image)
+Ejemplos/
+Ejemplos-Oasix/
+examples/
+scripts/
+
+# Test files
+**/*_test.go
+test_output*.txt
+
+# Modified source (reference only)
+dex_mod/
+
+# OS artifacts
+.DS_Store
