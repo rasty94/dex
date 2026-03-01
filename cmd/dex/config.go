@@ -263,7 +263,7 @@ type GRPC struct {
 	TLSMaxVersion string `json:"tlsMaxVersion"`
 	Reflection    bool   `json:"reflection"`
 	// Token is the authorization token required to access the gRPC API.
-	Token         string `json:"token"`
+	Token string `json:"token"`
 }
 
 // Storage holds app's storage configuration.

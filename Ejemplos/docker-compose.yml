@@ -2,6 +2,9 @@ version: '3.8'
 
 services:
   dex:
+    build:
+      context: ../
+      dockerfile: Dockerfile
 #    image: ghcr.io/dexidp/dex:latest
     image: ghcr.io/rasty94/dex:latest
     container_name: dex
