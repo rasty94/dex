@@ -23,7 +23,7 @@ func TestConnectorCacheInvalidation(t *testing.T) {
 		connectors: make(map[string]Connector),
 	}
 
-	apiServer := NewAPI(s, logger, "test", serv)
+	apiServer := NewAPI(s, logger, "test", serv, nil)
 	ctx := context.Background()
 
 	connID := "mock-conn"
