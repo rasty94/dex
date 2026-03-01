@@ -1,4 +1,4 @@
-name: CI/CD Pipeline Professionals
+name: CI/CD Pipeline
 
 on:
   push:
@@ -24,48 +24,17 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-          cache: true # Cache nativo de dependencias de Go
+          cache: false
 
-      - name: Cache golangci-lint binary
-        id: cache-lint
-        uses: actions/cache@v4
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
         with:
-          path: bin/golangci-lint
-          key: ${{ runner.os }}-lint-v1-64-5 # Versión fija para el cache
+          version: v1.64.5
+          args: --timeout=5m
 
-      - name: Download golangci-lint
-        if: steps.cache-lint.outputs.cache-hit != 'true'
-        run: make bin/golangci-lint
-
-      - name: Run Lint
-        run: ./bin/golangci-lint run
-
-  docker-verify:
-    name: Docker Build Verify
+  docker:
+    name: Docker Build & Publish
     needs: lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build only (Verify)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false # Solo verificamos que la imagen construye bien
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  docker-publish:
-    name: Docker Publish to GHCR
-    needs: [lint, docker-verify]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -83,6 +52,8 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        # Solo logueamos si cumple las condiciones para publicación
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -103,15 +74,16 @@ jobs:
         id: version
         run: echo "value=$(bash ./scripts/git-version)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+      - name: Build and (Optionally) Push
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true # Aquí sí subimos la imagen
+          # Decide dinámicamente si empujar la imagen al repo
+          push: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
-          cache-from: type=gha # Recupera el cache generado en el paso Verify
+          cache-from: type=gha
           cache-to: type=gha,mode=max
