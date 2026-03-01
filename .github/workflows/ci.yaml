@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline Professionals
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   lint:
-    name: Lint (Non-blocking)
+    name: Code Quality (Lint)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -24,23 +24,52 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.24"
+          cache: true # Cache nativo de dependencias de Go
+
+      - name: Cache golangci-lint binary
+        id: cache-lint
+        uses: actions/cache@v4
+        with:
+          path: bin/golangci-lint
+          key: ${{ runner.os }}-lint-v1-64-5 # Versión fija para el cache
 
       - name: Download golangci-lint
+        if: steps.cache-lint.outputs.cache-hit != 'true'
         run: make bin/golangci-lint
 
-      - name: Lint
-        run: make lint
+      - name: Run Lint
+        run: ./bin/golangci-lint run
 
-  build-and-push:
-    name: Build and Push Docker image
+  docker-verify:
+    name: Docker Build Verify
     needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build only (Verify)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false # Solo verificamos que la imagen construye bien
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  docker-publish:
+    name: Docker Publish to GHCR
+    needs: [lint, docker-verify]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    # Compilar y subir imagen solo en la rama master y al subir tags
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,7 +82,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -69,26 +98,20 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch }}
             type=sha,prefix=sha-,format=short
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-          labels: |
-            org.opencontainers.image.title=Dex (rasty94 fork)
-            org.opencontainers.image.description=OpenID Connect identity provider with Keystone TOTP/MFA support
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Get version from git
         id: version
         run: echo "value=$(bash ./scripts/git-version)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: true # Aquí sí subimos la imagen
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
-          cache-from: type=gha
+          cache-from: type=gha # Recupera el cache generado en el paso Verify
           cache-to: type=gha,mode=max
