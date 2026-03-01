@@ -1,6 +1,6 @@
 module github.com/dexidp/dex
 
-go 1.24.0
+go 1.25.0
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
@@ -35,7 +35,7 @@ require (
 	go.etcd.io/etcd/client/v3 v3.6.8
 	golang.org/x/crypto v0.48.0
 	golang.org/x/exp v0.0.0-20221004215720-b9f4876ce741
-	golang.org/x/net v0.50.0
+	golang.org/x/net v0.51.0
 	golang.org/x/oauth2 v0.35.0
 	google.golang.org/api v0.266.0
 	google.golang.org/grpc v1.79.1

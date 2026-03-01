@@ -17,6 +17,11 @@ import (
 	"github.com/dexidp/dex/connector"
 )
 
+var (
+	_ connector.PasswordConnector = (*conn)(nil)
+	_ connector.RefreshConnector  = (*conn)(nil)
+)
+
 type conn struct {
 	Domain        domainKeystone
 	Host          string
@@ -150,11 +155,6 @@ type userResponse struct {
 		ID    string `json:"id"`
 	} `json:"user"`
 }
-
-var (
-	_ connector.PasswordConnector = &conn{}
-	_ connector.RefreshConnector  = &conn{}
-)
 
 // Open returns an authentication strategy using Keystone.
 func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, error) {

@@ -100,8 +100,14 @@ func runServe(options serveOptions) error {
 	}
 
 	var c Config
-	if err := yaml.Unmarshal(configData, &c); err != nil {
+
+	jsonConfigData, err := yaml.YAMLToJSON(configData)
+	if err != nil {
 		return fmt.Errorf("error parse config file %s: %v", configFile, err)
+	}
+
+	if err := configUnmarshaller(jsonConfigData, &c); err != nil {
+		return fmt.Errorf("error unmarshalling config file %s: %v", configFile, err)
 	}
 
 	applyConfigOverrides(options, &c)
@@ -579,7 +585,7 @@ func runServe(options serveOptions) error {
 
 		grpcListener, err := net.Listen("tcp", c.GRPC.Addr)
 		if err != nil {
-			return fmt.Errorf("listening (grcp) on %s: %w", c.GRPC.Addr, err)
+			return fmt.Errorf("listening (grpc) on %s: %w", c.GRPC.Addr, err)
 		}
 
 		reloadFunc := func(ctx context.Context) error {
