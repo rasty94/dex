@@ -32,9 +32,24 @@ jobs:
           version: v2.10.1
           args: --timeout=5m
 
+  sonarcloud:
+    name: SonarCloud Analysis
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+      - name: SonarCloud Scan
+        uses: sonarsource/sonarcloud-scan-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
   docker:
     name: Docker Build & Publish
-    needs: lint
+    needs: [lint, sonarcloud]
     runs-on: ubuntu-latest
     permissions:
       contents: read
