@@ -54,7 +54,7 @@ func newTestServer(responses map[string]interface{}) *httptest.Server {
 
 func newClient() *http.Client {
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // NOSONAR
 	}
 	return &http.Client{Transport: tr}
 }
