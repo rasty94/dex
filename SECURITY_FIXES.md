@@ -3,6 +3,8 @@
 ## 1. Vulnerabilidades de Dependencias / Versiones
 
 ✅ **Corregido**: Se actualizaron las herramientas locales instalando Go 1.25.8 y se modificó `go.mod` de `1.25.0` a `1.25.8`. Esto solventa de inmediato **15 vulnerabilidades críticas** detectadas por `govulncheck` en la Standard Library de Go 1.25.0 (como `net/http`, `crypto/tls`, `crypto/x509`, etc).
+✅ **Corregido**: Actualizada dependencia `filippo.io/edwards25519` de `v1.1.0` a `v1.1.1` para corregir vulnerabilidad `GO-2026-4503`.
+✅ **Actualmente**: `govulncheck ./...` reporta **0 vulnerabilidades detectadas**.
 
 ## 2. Problemas detectados en SonarQube (Críticos y Blocker)
 
