@@ -311,7 +311,7 @@ func mockConnectorDataTestStorage(t *testing.T, s storage.Storage) {
 		Name: "mockPassword",
 		Config: []byte(`{
 "username": "test",
-"password": "test"
+"password": "test" // NOSONAR
 }`),
 	}
 
@@ -371,7 +371,7 @@ func TestHandlePassword(t *testing.T) {
 
 				req, _ := http.NewRequest("POST", u.String(), bytes.NewBufferString(v.Encode()))
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
-				req.SetBasicAuth("test", "barfoo")
+				req.SetBasicAuth("test", "barfoo") // NOSONAR
 
 				rr := httptest.NewRecorder()
 				s.ServeHTTP(rr, req)
@@ -463,7 +463,7 @@ func TestHandlePassword_LocalPasswordDBClaims(t *testing.T) {
 
 	req, _ := http.NewRequest("POST", u.String(), bytes.NewBufferString(v.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth("test", "barfoo")
+	req.SetBasicAuth("test", "barfoo") // NOSONAR
 
 	rr := httptest.NewRecorder()
 	s.ServeHTTP(rr, req)
