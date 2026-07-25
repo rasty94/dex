@@ -146,10 +146,13 @@
 - [x] Análisis estático de código de seguridad (SAST) usando Gosec en las Actions.
 - [x] Auditoría de logs estructurados: Guardar eventos de auditoría (ej. IP del intento de login fallido).
 
-### 17. 🎨 UI / UX
+### 17. ✅ UI / UX
 
-- [ ] **Tematización Dinámica por Cliente**: Permitir que un `client_id` inyecte su propio Logo o color principal en la pantalla de login (Feature nativa de Dex pero mejorable en las plantillas).
-- [ ] Añadir un checkbox de "Recordar este dispositivo durante 30 días" (MFA Trust) para evitar pedir el TOTP todos los días en IPs conocidas.
+- [x] **Tematización Dinámica por Cliente**: `frontend.clientThemes[<client_id>]` permite logo y `primaryColor` por cliente; si no hay `logoURL` en el tema se usa el `logoURL` del propio cliente en storage. El color se valida como hex al arrancar (se inyecta en un `<style>`) y sobrescribe `--primary-color`.
+    - `server.Brand` lleva ahora `ReqPath`, `Tr`, `LogoURL` y `PrimaryColor` a todas las plantillas
+- [x] Checkbox "Recordar este dispositivo" (MFA Trust) — `mfaTrust.enabled`
+    - ⚠️ **No son 30 días reales**: Keystone impone el segundo factor y no tiene concepto de dispositivo de confianza, así que Dex no puede pedir solo la contraseña. En su lugar guarda el token emitido tras el TOTP en una cookie `HttpOnly`/`SameSite=Lax` y lo revalida con `TokenIdentity()` en el siguiente login.
+    - La confianza dura lo que dure el token en Keystone (`[token] expiration`, por defecto 1h), no lo que diga `mfaTrust.duration`, y se corta al revocar el token
 - [x] Botón de "Mostrar Contraseña" (ojo) en el input de password.
 
 ### 18. 🚀 Rendimiento y Alta Disponibilidad (HA)
@@ -201,3 +204,5 @@
 | README.md actualizado                       |   ✅   | Fork badges, mejoras, Keystone beta       |
 | `keystone_connector.md` ampliado            |   ✅   | TOTP, TokenIdentity, permisos, comandos   |
 | Guía despliegue TLS                         |   ✅   | `despliegue-docker-tls.md`                |
+| Tematización por `client_id`                |   ✅   | `frontend.clientThemes`, logo + color     |
+| MFA Trust (dispositivo de confianza)        |   ✅   | `mfaTrust`, limitado al TTL de Keystone   |

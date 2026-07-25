@@ -198,7 +198,7 @@ func (s *Server) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := s.templates.login(r, w, connectorInfos); err != nil {
+	if err := s.templates.login(s.brand(r, r.Form.Get("client_id")), w, connectorInfos); err != nil {
 		s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 	}
 }
@@ -386,9 +386,27 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		showDomain = true
 	}
 
+	b := s.brand(r, authReq.ClientID)
+
+	// A device can only be trusted if the connector can later revalidate the
+	// token it issued, which is what lets us skip the second factor.
+	tiConn, canTrustDevice := conn.Connector.(connector.TokenIdentityConnector)
+	canTrustDevice = canTrustDevice && s.mfaTrust.Enabled
+
 	switch r.Method {
 	case http.MethodGet:
-		if err := s.templates.password(r, w, r.URL.String(), "", usernamePrompt(pwConn), false, backLink, showDomain, "", false, "", ""); err != nil {
+		if token := s.mfaTrustToken(r, authReq.ConnectorID); canTrustDevice && token != "" {
+			identity, err := tiConn.TokenIdentity(ctx, "", token)
+			if err == nil {
+				s.completeLogin(w, r, identity, authReq, conn.Connector)
+				return
+			}
+			// Expired or revoked upstream: drop the cookie and ask for credentials.
+			s.logger.InfoContext(ctx, "trusted device token rejected, falling back to login form", "err", err)
+			s.clearMFATrustCookie(w, authReq.ConnectorID)
+		}
+
+		if err := s.templates.password(b, w, r.URL.String(), "", usernamePrompt(pwConn), false, backLink, showDomain, "", false, "", "", false); err != nil {
 			s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 		}
 	case http.MethodPost:
@@ -412,10 +430,16 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			r = r.WithContext(context.WithValue(r.Context(), keystone.ReceiptContextKey, receipt))
 		}
 
+		// Only a login that actually cleared the second factor may trust the device.
+		var issuedToken string
+		if canTrustDevice && r.FormValue("trust_device") != "" && r.FormValue("totp") != "" {
+			r = r.WithContext(context.WithValue(r.Context(), keystone.IssuedTokenContextKey, &issuedToken))
+		}
+
 		identity, ok, err := pwConn.Login(r.Context(), scopes, username, password)
 		if err != nil {
 			if errTotp, isTotp := err.(keystone.ErrTOTPRequired); isTotp {
-				if err := s.templates.password(r, w, r.URL.String(), username, usernamePrompt(pwConn), false, backLink, showDomain, r.FormValue("domain"), true, errTotp.Receipt, password); err != nil {
+				if err := s.templates.password(b, w, r.URL.String(), username, usernamePrompt(pwConn), false, backLink, showDomain, r.FormValue("domain"), true, errTotp.Receipt, password, canTrustDevice); err != nil {
 					s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 				}
 				return
@@ -432,7 +456,7 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		if !ok {
 			totpWasRequired := r.FormValue("receipt") != ""
-			if err := s.templates.password(r, w, r.URL.String(), username, usernamePrompt(pwConn), true, backLink, showDomain, r.FormValue("domain"), totpWasRequired, r.FormValue("receipt"), password); err != nil {
+			if err := s.templates.password(b, w, r.URL.String(), username, usernamePrompt(pwConn), true, backLink, showDomain, r.FormValue("domain"), totpWasRequired, r.FormValue("receipt"), password, canTrustDevice); err != nil {
 				s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 			}
 
@@ -444,28 +468,40 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username, "ip", ip)
 			return
 		}
-		redirectURL, canSkipApproval, err := s.finalizeLogin(r.Context(), identity, authReq, conn.Connector)
-		if err != nil {
-			s.logger.ErrorContext(r.Context(), "failed to finalize login", "err", err)
-			s.renderError(r, w, http.StatusInternalServerError, "Login error.")
-			return
+		if issuedToken != "" {
+			s.setMFATrustCookie(w, authReq.ConnectorID, issuedToken)
 		}
 
-		if canSkipApproval {
-			authReq, err = s.storage.GetAuthRequest(ctx, authReq.ID)
-			if err != nil {
-				s.logger.ErrorContext(r.Context(), "failed to get finalized auth request", "err", err)
-				s.renderError(r, w, http.StatusInternalServerError, "Login error.")
-				return
-			}
-			s.sendCodeResponse(w, r, authReq)
-			return
-		}
-
-		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		s.completeLogin(w, r, identity, authReq, conn.Connector)
 	default:
 		s.renderError(r, w, http.StatusBadRequest, "Unsupported request method.")
 	}
+}
+
+// completeLogin finalizes an authenticated identity and sends the user back to
+// the client, either directly or through the approval screen.
+func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, identity connector.Identity, authReq storage.AuthRequest, conn connector.Connector) {
+	ctx := r.Context()
+
+	redirectURL, canSkipApproval, err := s.finalizeLogin(ctx, identity, authReq, conn)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to finalize login", "err", err)
+		s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+		return
+	}
+
+	if canSkipApproval {
+		authReq, err = s.storage.GetAuthRequest(ctx, authReq.ID)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to get finalized auth request", "err", err)
+			s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+			return
+		}
+		s.sendCodeResponse(w, r, authReq)
+		return
+	}
+
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
 func (s *Server) handleConnectorCallback(w http.ResponseWriter, r *http.Request) {
@@ -698,7 +734,7 @@ func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
 			s.renderError(r, w, http.StatusInternalServerError, "Failed to retrieve client.")
 			return
 		}
-		if err := s.templates.approval(r, w, authReq.ID, authReq.Claims.Username, client.Name, authReq.Scopes); err != nil {
+		if err := s.templates.approval(s.brand(r, authReq.ClientID), w, authReq.ID, authReq.Claims.Username, client.Name, authReq.Scopes); err != nil {
 			s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 		}
 	case http.MethodPost:
@@ -774,7 +810,7 @@ func (s *Server) sendCodeResponse(w http.ResponseWriter, r *http.Request, authRe
 			// Implicit and hybrid flows that try to use the OOB redirect URI are
 			// rejected earlier. If we got here we're using the code flow.
 			if authReq.RedirectURI == redirectURIOOB {
-				if err := s.templates.oob(r, w, code.ID); err != nil {
+				if err := s.templates.oob(s.brand(r, ""), w, code.ID); err != nil {
 					s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 				}
 				return
@@ -1738,7 +1774,7 @@ func (s *Server) writeAccessToken(w http.ResponseWriter, resp *accessTokenRespon
 }
 
 func (s *Server) renderError(r *http.Request, w http.ResponseWriter, status int, description string) {
-	if err := s.templates.err(r, w, status, description); err != nil {
+	if err := s.templates.err(s.brand(r, ""), w, status, description); err != nil {
 		s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 	}
 }

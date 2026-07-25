@@ -6,3 +6,13 @@
 /docker-compose.override.yaml
 /var/
 /vendor/
+references
+
+# graphify
+/graphify-out/
+.graphifyignore
+
+# claude
+/.claude/
+CLAUDE.md
+.gitattributes

@@ -11,10 +11,15 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="{{ url .ReqPath "static/main.css" }}" rel="stylesheet">
     <link rel="icon" href="{{ url .ReqPath "theme/favicon.png" }}">
+    {{ if .PrimaryColor }}<style>
+      :root {
+        --primary-color: {{ .PrimaryColor }};
+        --primary-hover: {{ .PrimaryColor }};
+      }
+    </style>{{ end }}
   </head>
   <body>
     <div class="dex-container">
       <div class="dex-header">
-        <img class="dex-logo" src="{{ url .ReqPath logo }}" alt="{{ issuer }}">
+        <img class="dex-logo" src="{{ if .LogoURL }}{{ url .ReqPath .LogoURL }}{{ else }}{{ url .ReqPath logo }}{{ end }}" alt="{{ issuer }}">
       </div>
-

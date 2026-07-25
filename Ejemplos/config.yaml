@@ -69,6 +69,21 @@ web:
 #   logoURL: theme/logo.png
 #   dir: web/
 #   theme: light
+#   # Per client_id branding on the login pages. If logoURL is omitted, the
+#   # logoURL of the client itself (staticClients / gRPC API) is used.
+#   clientThemes:
+#     my-app:
+#       logoURL: https://my-app.example.com/logo.png
+#       primaryColor: "#ff6600"
+
+# "Trust this device" checkbox on the TOTP step. Keystone enforces the second
+# factor itself, so dex cannot skip it: instead it keeps the token issued after
+# a successful TOTP login in an HttpOnly cookie and revalidates that token on
+# the next login. The device stays trusted only while Keystone keeps the token
+# valid ([token] expiration in keystone.conf), and revoking it ends the trust.
+# mfaTrust:
+#   enabled: true
+#   duration: 720h
 
 # Configuration for telemetry
 telemetry:

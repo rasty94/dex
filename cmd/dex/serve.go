@@ -400,6 +400,15 @@ func runServe(options serveOptions) error {
 		IDTokensValidFor:           idTokensValidFor,
 	}
 
+	serverConfig.MFATrust.Enabled = c.MFATrust.Enabled
+	if c.MFATrust.Duration != "" {
+		mfaTrustDuration, err := time.ParseDuration(c.MFATrust.Duration)
+		if err != nil {
+			return fmt.Errorf("invalid config value %q for mfa trust duration: %v", c.MFATrust.Duration, err)
+		}
+		serverConfig.MFATrust.Duration = mfaTrustDuration
+	}
+
 	if c.Expiry.AuthRequests != "" {
 		authRequests, err := time.ParseDuration(c.Expiry.AuthRequests)
 		if err != nil {

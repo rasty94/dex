@@ -41,6 +41,11 @@ var (
 	DomainContextKey  = contextKey("domain")
 	TOTPContextKey    = contextKey("totp")
 	ReceiptContextKey = contextKey("receipt")
+
+	// IssuedTokenContextKey carries a *string that Login fills with the Keystone
+	// token it obtained. Callers use it to reuse the token later (trusted
+	// devices) instead of re-authenticating the user.
+	IssuedTokenContextKey = contextKey("issued-token")
 )
 
 type ErrTOTPRequired struct {
@@ -267,6 +272,10 @@ func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, pas
 		identity.UserID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(identity.Email)).String()
 	} else if p.UserIDKey == "username" && identity.Username != "" {
 		identity.UserID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(identity.Username)).String()
+	}
+
+	if out, ok := ctx.Value(IssuedTokenContextKey).(*string); ok && out != nil {
+		*out = token
 	}
 
 	return identity, true, nil

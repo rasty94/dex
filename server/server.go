@@ -125,6 +125,21 @@ type Config struct {
 	// If enabled, the server will continue starting even if some connectors fail to initialize.
 	// This allows the server to operate with a subset of connectors if some are misconfigured.
 	ContinueOnConnectorFailure bool
+
+	// MFATrust lets a user mark a device as trusted so subsequent logins reuse the
+	// upstream token instead of asking for credentials and a second factor again.
+	MFATrust MFATrustConfig
+}
+
+// MFATrustConfig configures the "remember this device" checkbox on the second
+// factor step. See Server.mfaTrustCookie for the trust model.
+type MFATrustConfig struct {
+	Enabled bool `json:"enabled"`
+
+	// Maximum lifetime of the trust cookie. The effective lifetime is still
+	// capped by the upstream token expiry, which is usually much shorter.
+	// Defaults to 720h (30 days).
+	Duration time.Duration `json:"duration"`
 }
 
 // WebConfig holds the server's frontend templates and asset configuration.
@@ -156,6 +171,19 @@ type WebConfig struct {
 
 	// Map of extra values passed into the templates
 	Extra map[string]string
+
+	// Per client_id branding overrides for the login pages, keyed by client ID.
+	ClientThemes map[string]ClientTheme
+}
+
+// ClientTheme overrides the login page branding for a single client_id.
+type ClientTheme struct {
+	// Logo shown on the login pages. If empty, the LogoURL of the client in
+	// storage is used, and failing that the global frontend logo.
+	LogoURL string `json:"logoURL"`
+
+	// Hex color (#rgb, #rrggbb or #rrggbbaa) used for buttons and links.
+	PrimaryColor string `json:"primaryColor"`
 }
 
 func value(val, defaultValue time.Duration) time.Duration {
@@ -204,6 +232,11 @@ type Server struct {
 	logger *slog.Logger
 
 	signer signer.Signer
+
+	// Per client_id login page branding.
+	clientThemes map[string]ClientTheme
+
+	mfaTrust MFATrustConfig
 }
 
 // NewServer constructs a server from the provided config.
@@ -275,6 +308,12 @@ func newServer(ctx context.Context, c Config) (*Server, error) {
 		webFS = c.Web.WebFS
 	}
 
+	for clientID, theme := range c.Web.ClientThemes {
+		if err := theme.validate(); err != nil {
+			return nil, fmt.Errorf("server: invalid theme for client %q: %v", clientID, err)
+		}
+	}
+
 	web := webConfig{
 		webFS:     webFS,
 		logoURL:   c.Web.LogoURL,
@@ -311,6 +350,11 @@ func newServer(ctx context.Context, c Config) (*Server, error) {
 		passwordConnector:      c.PasswordConnector,
 		logger:                 c.Logger,
 		signer:                 c.Signer,
+		clientThemes:           c.Web.ClientThemes,
+		mfaTrust:               c.MFATrust,
+	}
+	if s.mfaTrust.Duration <= 0 {
+		s.mfaTrust.Duration = 720 * time.Hour
 	}
 
 	// Retrieves connector objects in backend storage. This list includes the static connectors

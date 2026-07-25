@@ -46,6 +46,10 @@ type Config struct {
 
 	Frontend server.WebConfig `json:"frontend"`
 
+	// MFATrust configures the "trust this device" checkbox shown on the second
+	// factor step.
+	MFATrust MFATrust `json:"mfaTrust"`
+
 	// Signer configuration controls signing of JWT tokens issued by Dex.
 	Signer Signer `json:"signer"`
 
@@ -549,6 +553,15 @@ type Expiry struct {
 
 	// RefreshTokens defines refresh tokens expiry policy
 	RefreshTokens RefreshToken `json:"refreshTokens"`
+}
+
+// MFATrust holds configuration for trusted devices on the second factor step.
+type MFATrust struct {
+	Enabled bool `json:"enabled"`
+
+	// Duration is the lifetime of the trust cookie, e.g. "720h". The effective
+	// lifetime is still capped by the upstream token expiry. Defaults to 720h.
+	Duration string `json:"duration"`
 }
 
 // Logger holds configuration required to customize logging for dex.

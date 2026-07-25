@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -239,6 +240,51 @@ func relativeURL(serverPath, reqPath, assetPath string) string {
 	return relativeURL
 }
 
+// hexColor matches the only shapes allowed for a client's primary color. The
+// value is interpolated into a <style> block, so anything else is rejected at
+// startup rather than escaped at render time.
+var hexColor = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
+
+func (t ClientTheme) validate() error {
+	if t.PrimaryColor != "" && !hexColor.MatchString(t.PrimaryColor) {
+		return fmt.Errorf("primaryColor %q is not a hex color", t.PrimaryColor)
+	}
+	return nil
+}
+
+// Brand is the per-request presentation data every template receives: the
+// request path used to build relative asset URLs, the translations for the
+// request's language, and the branding of the client being logged into.
+type Brand struct {
+	ReqPath      string
+	Tr           map[string]string
+	LogoURL      string
+	PrimaryColor string
+}
+
+// brand resolves the branding for clientID. An empty clientID, an unknown one,
+// or a storage failure all fall back to the global frontend branding.
+func (s *Server) brand(r *http.Request, clientID string) Brand {
+	b := Brand{
+		ReqPath: r.URL.Path,
+		Tr:      GetTranslations(r.Header.Get("Accept-Language")),
+	}
+	if clientID == "" {
+		return b
+	}
+
+	theme := s.clientThemes[clientID]
+	b.LogoURL, b.PrimaryColor = theme.LogoURL, theme.PrimaryColor
+
+	if b.LogoURL == "" {
+		// The client's own logo, already part of the storage model.
+		if client, err := s.storage.GetClient(r.Context(), clientID); err == nil {
+			b.LogoURL = client.LogoURL
+		}
+	}
+	return b
+}
+
 var scopeDescriptions = map[string]string{
 	"offline_access": "Have offline access",
 	"profile":        "View basic profile information",
@@ -261,61 +307,58 @@ func (n byName) Len() int           { return len(n) }
 func (n byName) Less(i, j int) bool { return n[i].Name < n[j].Name }
 func (n byName) Swap(i, j int)      { n[i], n[j] = n[j], n[i] }
 
-func (t *templates) device(r *http.Request, w http.ResponseWriter, postURL string, userCode string, lastWasInvalid bool) error {
+func (t *templates) device(b Brand, w http.ResponseWriter, postURL string, userCode string, lastWasInvalid bool) error {
 	if lastWasInvalid {
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	data := struct {
+		Brand
 		PostURL  string
 		UserCode string
 		Invalid  bool
-		ReqPath  string
-		Tr       map[string]string
-	}{postURL, userCode, lastWasInvalid, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
+	}{b, postURL, userCode, lastWasInvalid}
 	return renderTemplate(w, t.deviceTmpl, data)
 }
 
-func (t *templates) deviceSuccess(r *http.Request, w http.ResponseWriter, clientName string) error {
+func (t *templates) deviceSuccess(b Brand, w http.ResponseWriter, clientName string) error {
 	data := struct {
+		Brand
 		ClientName string
-		ReqPath    string
-		Tr         map[string]string
-	}{clientName, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
+	}{b, clientName}
 	return renderTemplate(w, t.deviceSuccessTmpl, data)
 }
 
-func (t *templates) login(r *http.Request, w http.ResponseWriter, connectors []connectorInfo) error {
+func (t *templates) login(b Brand, w http.ResponseWriter, connectors []connectorInfo) error {
 	sort.Sort(byName(connectors))
 	data := struct {
+		Brand
 		Connectors []connectorInfo
-		ReqPath    string
-		Tr         map[string]string
-	}{connectors, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
+	}{b, connectors}
 	return renderTemplate(w, t.loginTmpl, data)
 }
 
-func (t *templates) password(r *http.Request, w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid bool, backLink string, showDomain bool, domain string, requireTOTP bool, receipt string, lastPassword string) error {
+func (t *templates) password(b Brand, w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid bool, backLink string, showDomain bool, domain string, requireTOTP bool, receipt string, lastPassword string, offerTrust bool) error {
 	if lastWasInvalid {
 		w.WriteHeader(http.StatusUnauthorized)
 	}
 	data := struct {
+		Brand
 		PostURL        string
 		BackLink       string
 		Username       string
 		UsernamePrompt string
 		Invalid        bool
-		ReqPath        string
 		ShowDomain     bool
 		Domain         string
 		RequireTOTP    bool
 		Receipt        string
 		Password       string
-		Tr             map[string]string
-	}{postURL, backLink, lastUsername, usernamePrompt, lastWasInvalid, r.URL.Path, showDomain, domain, requireTOTP, receipt, lastPassword, GetTranslations(r.Header.Get("Accept-Language"))}
+		OfferTrust     bool
+	}{b, postURL, backLink, lastUsername, usernamePrompt, lastWasInvalid, showDomain, domain, requireTOTP, receipt, lastPassword, offerTrust}
 	return renderTemplate(w, t.passwordTmpl, data)
 }
 
-func (t *templates) approval(r *http.Request, w http.ResponseWriter, authReqID, username, clientName string, scopes []string) error {
+func (t *templates) approval(b Brand, w http.ResponseWriter, authReqID, username, clientName string, scopes []string) error {
 	accesses := []string{}
 	for _, scope := range scopes {
 		access, ok := scopeDescriptions[scope]
@@ -325,33 +368,30 @@ func (t *templates) approval(r *http.Request, w http.ResponseWriter, authReqID, 
 	}
 	sort.Strings(accesses)
 	data := struct {
+		Brand
 		User      string
 		Client    string
 		AuthReqID string
 		Scopes    []string
-		ReqPath   string
-		Tr        map[string]string
-	}{username, clientName, authReqID, accesses, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
+	}{b, username, clientName, authReqID, accesses}
 	return renderTemplate(w, t.approvalTmpl, data)
 }
 
-func (t *templates) oob(r *http.Request, w http.ResponseWriter, code string) error {
+func (t *templates) oob(b Brand, w http.ResponseWriter, code string) error {
 	data := struct {
-		Code    string
-		ReqPath string
-		Tr      map[string]string
-	}{code, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
+		Brand
+		Code string
+	}{b, code}
 	return renderTemplate(w, t.oobTmpl, data)
 }
 
-func (t *templates) err(r *http.Request, w http.ResponseWriter, errCode int, errMsg string) error {
+func (t *templates) err(b Brand, w http.ResponseWriter, errCode int, errMsg string) error {
 	w.WriteHeader(errCode)
 	data := struct {
+		Brand
 		ErrType string
 		ErrMsg  string
-		ReqPath string
-		Tr      map[string]string
-	}{http.StatusText(errCode), errMsg, r.URL.Path, GetTranslations(r.Header.Get("Accept-Language"))}
+	}{b, http.StatusText(errCode), errMsg}
 	if err := t.errorTmpl.Execute(w, data); err != nil {
 		return fmt.Errorf("rendering template %s failed: %s", t.errorTmpl.Name(), err)
 	}
