@@ -1,6 +1,6 @@
 # TODO — Dex Fork (rasty94/dex)
 
-> Última actualización: 2026-02-25
+> Última actualización: 2026-07-31
 > Imagen Docker: `ghcr.io/rasty94/dex:latest`
 > Repositorio: https://github.com/rasty94/dex
 
@@ -158,7 +158,8 @@
 ### 18. 🚀 Rendimiento y Alta Disponibilidad (HA)
 
 - [ ] Cache Distribuida: Expandir la actual caché nativa en RAM de Keystone para soportar Redis de backend, permitiendo despliegues de Dex multi-réplica compartir estado de validación de tokens.
-- [ ] Rate Limiting en Backend: Prevenir ataques de fuerza bruta en nivel aplicativo contra el endpoint de Keystone, controlando el número de intentos por usuario/IP antes de llamar a la API externa.
+- [x] Rate Limiting en Backend: `loginRateLimit` (`enabled`, `attempts`, `window`) limita los intentos **fallidos** por pareja IP + usuario antes de llamar a Keystone, tanto en el formulario de login como en el grant `password`. Un login correcto pone el contador a cero.
+    - ⚠️ Los buckets viven en memoria del proceso: con N réplicas el límite efectivo es `attempts × N`. Migrarlo a Redis va de la mano con la caché distribuida de arriba.
 
 ### 19. ☁️ Ecosistema Cloud Native e Integraciones
 
@@ -175,6 +176,19 @@
 - [x] Extender la API gRPC existente para permitir cambios de configuración en tiempo real sin reiniciar.
 - [x] Añadir capa de autenticación y autorización al servidor gRPC (interceptor/middlewares).
 - [x] Definir los protobufs necesarios para administrar clientes y configuraciones.
+
+### 22. ✅ CI — Ejecución de tests
+
+- [x] `ci.yaml` ejecutaba lint + SonarCloud + build de Docker pero **ningún test**, así que los fallos pasaban desapercibidos. Añadido job `test` (`go test -race ./...`) del que ahora depende el job `docker`.
+- [x] `TestHandlePassword`: el `// NOSONAR` de `dc6ebdcf` quedó dentro de un literal JSON, invalidando la config del conector mock. El conector no abría y el grant `password` respondía 400 en vez de 401 ante credenciales inválidas.
+- [x] `TestVerifyUnsignedMessageAndSignedAssertionWithRootXmlNs`: `testdata/oam-ca.pem` caducó en junio de 2026 y no tenemos la clave privada para refirmar los fixtures. El reloj de validación se fija a 2020 para seguir verificando la firma.
+    - ⏰ `testdata/idp-cert.pem` caduca en enero de 2027, pero ya queda cubierto por el mismo reloj fijo.
+
+### 23. 🧹 Deuda técnica conocida
+
+- [ ] **Sesiones Keystone antiguas con `userIDKey: email`/`username`**: `Refresh()` usa ahora el id real de Keystone guardado en `identity.ConnectorData`. Las sesiones creadas antes de ese cambio no lo tienen y caen al fallback (`identity.UserID`, que es el UUID sintético), así que seguirán fallando el refresh hasta que el usuario vuelva a autenticarse. Anotarlo en el `CHANGELOG` de la próxima release.
+- [ ] **Coste de resolver el `sub` plano**: este fork emite un `sub` plano (`genSubject` en `server/oauth2.go`) en lugar del protobuf-base64 de upstream, así que `ListRefresh`/`RevokeRefresh` recorren todos los conectores configurados buscando al usuario. Con 2-3 conectores es irrelevante; si la lista crece, cachear el mapeo `sub → (userID, connID)`.
+- [ ] **`Ejemplos/` en solo lectura**: el directorio está como `dr-xr-xr-x` en algunos entornos de desarrollo, lo que hace fallar `git checkout` sobre `Ejemplos/config.yaml` con "Permission denied". Se arregla con `chmod u+w Ejemplos`.
 
 ---
 
@@ -206,3 +220,5 @@
 | Guía despliegue TLS                         |   ✅   | `despliegue-docker-tls.md`                |
 | Tematización por `client_id`                |   ✅   | `frontend.clientThemes`, logo + color     |
 | MFA Trust (dispositivo de confianza)        |   ✅   | `mfaTrust`, limitado al TTL de Keystone   |
+| Tests en CI                                 |   ✅   | Job `test` (`go test -race ./...`)        |
+| Rate limiting de login                      |   ✅   | `loginRateLimit`, en memoria por réplica  |
