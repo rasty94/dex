@@ -258,6 +258,10 @@ func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, pas
 	}
 	identity.Username = username
 	identity.UserID = tokenResp.Token.User.ID
+	// Stash the real Keystone user id in ConnectorData: when UserIDKey is email or
+	// username, UserID is overwritten below with a synthetic UUID that Refresh
+	// cannot use to address the Keystone API.
+	identity.ConnectorData = []byte(identity.UserID)
 
 	user, err := p.getUser(ctx, tokenResp.Token.User.ID, token)
 	if err != nil {
@@ -333,6 +337,7 @@ func (p *conn) TokenIdentity(ctx context.Context, subjectTokenType, subjectToken
 	}
 
 	identity.UserID = userID
+	identity.ConnectorData = []byte(userID)
 	identity.Username = tr.Token.User.Name
 
 	// Use admin token to fetch user details (email) and groups.
@@ -368,15 +373,25 @@ func (p *conn) Refresh(
 	if err != nil {
 		return identity, fmt.Errorf("keystone: failed to obtain admin token: %v", err)
 	}
-	ok, err := p.checkIfUserExists(ctx, identity.UserID, token)
+	// The Keystone API is addressed by the Keystone user id, which is not always
+	// identity.UserID: when UserIDKey is email or username, UserID is a synthetic
+	// UUID and /v3/users/<id> would return 404. Login/TokenIdentity stash the real
+	// id in ConnectorData; fall back to UserID for sessions stored before that,
+	// where the two were the same value.
+	userID := identity.UserID
+	if len(identity.ConnectorData) > 0 {
+		userID = string(identity.ConnectorData)
+	}
+
+	ok, err := p.checkIfUserExists(ctx, userID, token)
 	if err != nil {
 		return identity, err
 	}
 	if !ok {
-		return identity, fmt.Errorf("keystone: user %q does not exist", identity.UserID)
+		return identity, fmt.Errorf("keystone: user %q does not exist", userID)
 	}
 	if scopes.Groups {
-		groups, err := p.getUserGroups(ctx, identity.UserID, token)
+		groups, err := p.getUserGroups(ctx, userID, token)
 		if err != nil {
 			return identity, err
 		}

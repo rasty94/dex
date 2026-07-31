@@ -1582,7 +1582,12 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request, cli
 			}
 		}
 		return false
-	}()
+	}() && requestedTokenType == tokenTypeAccess
+	// A refresh token is only minted when the response can carry it back: only
+	// the access-token branch below has a refresh_token field. For an id_token
+	// request, or an invalid requested_token_type that falls through to the
+	// error above, persisting one would leave an unreachable refresh token and
+	// offline session behind.
 
 	var refreshToken string
 	if reqRefresh {

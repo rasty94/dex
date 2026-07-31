@@ -341,3 +341,62 @@ func TestRefresh_UserDeleted(t *testing.T) {
 		t.Fatal("expected error when user is deleted")
 	}
 }
+
+// TestRefresh_UsesConnectorDataUserID checks that Refresh addresses the
+// Keystone API with the id stashed in ConnectorData rather than Identity.UserID.
+// With UserIDKey set to email or username the two differ: UserID is a
+// synthetic UUID derived from that field and would make every /v3/users/<id>
+// call return 404, breaking the refresh grant.
+func TestRefresh_UsesConnectorDataUserID(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
+
+	const (
+		keystoneID   = "user-42"
+		syntheticUID = "6f1a2b3c-4d5e-5f60-8a9b-0c1d2e3f4a5b"
+	)
+
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		writeToken(w, "admin-id", "admin", "admin-tok")
+	})
+	mux.HandleFunc("/v3/users/user-42", func(w http.ResponseWriter, r *http.Request) {
+		writeUser(w, "jdoe", "jdoe@example.com", keystoneID)
+	})
+	mux.HandleFunc("/v3/users/user-42/groups", func(w http.ResponseWriter, r *http.Request) {
+		writeGroups(w, "devs")
+	})
+	// If Refresh addressed the synthetic UUID instead, this handler would fire
+	// a 404 by falling through to ServeMux's default NotFound response.
+
+	existing := connector.Identity{UserID: syntheticUID, ConnectorData: []byte(keystoneID)}
+	refreshed, err := c.Refresh(context.Background(), connector.Scopes{Groups: true}, existing)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(refreshed.Groups) == 0 {
+		t.Error("expected groups to be refreshed")
+	}
+	// The identity keeps its own UserID: only the API calls are remapped.
+	if refreshed.UserID != syntheticUID {
+		t.Errorf("Refresh changed UserID to %q, want %q", refreshed.UserID, syntheticUID)
+	}
+}
+
+// TestRefresh_FallsBackToUserID covers offline sessions stored before
+// ConnectorData carried the Keystone user id, where UserID held it directly.
+func TestRefresh_FallsBackToUserID(t *testing.T) {
+	srv, mux := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
+
+	mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+		writeToken(w, "admin-id", "admin", "admin-tok")
+	})
+	mux.HandleFunc("/v3/users/user-42", func(w http.ResponseWriter, r *http.Request) {
+		writeUser(w, "jdoe", "jdoe@example.com", "user-42")
+	})
+
+	existing := connector.Identity{UserID: "user-42"}
+	if _, err := c.Refresh(context.Background(), connector.Scopes{}, existing); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

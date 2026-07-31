@@ -888,6 +888,88 @@ func TestHandleTokenExchange(t *testing.T) {
 	}
 }
 
+// A refresh token must only be persisted when the response can carry it back
+// to the client. Only the access-token branch of the token exchange has a
+// refresh_token field, so any other requested_token_type that reached the
+// storage write left an unreachable refresh token, and offline session,
+// behind.
+func TestHandleTokenExchangeOnlyStoresReachableRefreshTokens(t *testing.T) {
+	tests := []struct {
+		name               string
+		requestedTokenType string
+
+		expectedCode     int
+		wantRefreshToken bool
+	}{
+		{
+			"access token request returns and stores a refresh token",
+			tokenTypeAccess,
+			http.StatusOK,
+			true,
+		},
+		{
+			"id token request stores none",
+			tokenTypeID,
+			http.StatusOK,
+			false,
+		},
+		{
+			"invalid requested_token_type stores none",
+			"urn:ietf:params:oauth:token-type:saml2",
+			http.StatusBadRequest,
+			false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			httpServer, s := newTestServer(t, func(c *Config) {
+				c.Storage.CreateClient(ctx, storage.Client{
+					ID:     "client_1",
+					Secret: "secret_1",
+				})
+			})
+			defer httpServer.Close()
+
+			vals := make(url.Values)
+			vals.Set("grant_type", grantTypeTokenExchange)
+			vals.Set("connector_id", "mock")
+			vals.Set("scope", "openid offline_access")
+			vals.Set("requested_token_type", tc.requestedTokenType)
+			vals.Set("subject_token_type", tokenTypeID)
+			vals.Set("subject_token", "foobar")
+			vals.Set("client_id", "client_1")
+			vals.Set("client_secret", "secret_1")
+
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, httpServer.URL+"/token", strings.NewReader(vals.Encode()))
+			req.Header.Set("content-type", "application/x-www-form-urlencoded")
+
+			s.handleToken(rr, req)
+			require.Equal(t, tc.expectedCode, rr.Code, rr.Body.String())
+
+			if tc.expectedCode == http.StatusOK {
+				var res accessTokenResponse
+				require.NoError(t, json.NewDecoder(rr.Result().Body).Decode(&res))
+				if tc.wantRefreshToken {
+					require.NotEmpty(t, res.RefreshToken)
+				} else {
+					require.Empty(t, res.RefreshToken)
+				}
+			}
+
+			stored, err := s.storage.ListRefreshTokens(ctx)
+			require.NoError(t, err)
+			if tc.wantRefreshToken {
+				require.Len(t, stored, 1, "a returned refresh token must be persisted")
+			} else {
+				require.Empty(t, stored, "no refresh token may be persisted when none is returned")
+			}
+		})
+	}
+}
+
 func setNonEmpty(vals url.Values, key, value string) {
 	if value != "" {
 		vals.Set(key, value)

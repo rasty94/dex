@@ -347,14 +347,40 @@ func (d dexAPI) VerifyPassword(ctx context.Context, req *api.VerifyPasswordReq) 
 	}, nil
 }
 
-func (d dexAPI) ListRefresh(ctx context.Context, req *api.ListRefreshReq) (*api.ListRefreshResp, error) {
-	id := new(internal.IDTokenSubject)
-	if err := internal.Unmarshal(req.UserId, id); err != nil {
-		d.logger.Error("failed to unmarshal ID Token subject", "err", err)
-		return nil, err
+// offlineSessionKey maps the user_id of an API request to the (userID, connID)
+// pair offline sessions are stored under.
+//
+// api.proto documents user_id as the "sub" claim of the ID token, but this fork
+// emits a flat user id in sub (see genSubject in oauth2.go), so the connector id
+// is not carried in it and has to be recovered by looking the user up in each
+// configured connector. Subjects in the upstream base64-protobuf format are
+// still resolved, so clients written against the .proto keep working.
+//
+// An unknown user yields an empty connector id, which makes the lookups below
+// report not found through their usual path.
+func (d dexAPI) offlineSessionKey(ctx context.Context, userID string) (string, string) {
+	conns, err := d.s.ListConnectors(ctx)
+	if err != nil {
+		d.logger.Error("failed to list connectors", "err", err)
+	}
+	for _, c := range conns {
+		if _, err := d.s.GetOfflineSessions(ctx, userID, c.ID); err == nil {
+			return userID, c.ID
+		}
 	}
 
-	offlineSessions, err := d.s.GetOfflineSessions(ctx, id.UserId, id.ConnId)
+	id := new(internal.IDTokenSubject)
+	if err := internal.Unmarshal(userID, id); err == nil && id.UserId != "" && id.ConnId != "" {
+		return id.UserId, id.ConnId
+	}
+
+	return userID, ""
+}
+
+func (d dexAPI) ListRefresh(ctx context.Context, req *api.ListRefreshReq) (*api.ListRefreshResp, error) {
+	userID, connID := d.offlineSessionKey(ctx, req.UserId)
+
+	offlineSessions, err := d.s.GetOfflineSessions(ctx, userID, connID)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			// This means that this user-client pair does not have a refresh token yet.
@@ -382,11 +408,7 @@ func (d dexAPI) ListRefresh(ctx context.Context, req *api.ListRefreshReq) (*api.
 }
 
 func (d dexAPI) RevokeRefresh(ctx context.Context, req *api.RevokeRefreshReq) (*api.RevokeRefreshResp, error) {
-	id := new(internal.IDTokenSubject)
-	if err := internal.Unmarshal(req.UserId, id); err != nil {
-		d.logger.Error("failed to unmarshal ID Token subject", "err", err)
-		return nil, err
-	}
+	userID, connID := d.offlineSessionKey(ctx, req.UserId)
 
 	var (
 		refreshID string
@@ -395,7 +417,7 @@ func (d dexAPI) RevokeRefresh(ctx context.Context, req *api.RevokeRefreshReq) (*
 	updater := func(old storage.OfflineSessions) (storage.OfflineSessions, error) {
 		refreshRef := old.Refresh[req.ClientId]
 		if refreshRef == nil || refreshRef.ID == "" {
-			d.logger.Error("refresh token issued to client not found for deletion", "client_id", req.ClientId, "user_id", id.UserId)
+			d.logger.Error("refresh token issued to client not found for deletion", "client_id", req.ClientId, "user_id", userID)
 			notFound = true
 			return old, storage.ErrNotFound
 		}
@@ -408,7 +430,7 @@ func (d dexAPI) RevokeRefresh(ctx context.Context, req *api.RevokeRefreshReq) (*
 		return old, nil
 	}
 
-	if err := d.s.UpdateOfflineSessions(ctx, id.UserId, id.ConnId, updater); err != nil {
+	if err := d.s.UpdateOfflineSessions(ctx, userID, connID, updater); err != nil {
 		if err == storage.ErrNotFound {
 			return &api.RevokeRefreshResp{NotFound: true}, nil
 		}
