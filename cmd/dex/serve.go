@@ -409,6 +409,19 @@ func runServe(options serveOptions) error {
 		serverConfig.MFATrust.Duration = mfaTrustDuration
 	}
 
+	serverConfig.LoginRateLimit.Enabled = c.LoginRateLimit.Enabled
+	serverConfig.LoginRateLimit.Attempts = c.LoginRateLimit.Attempts
+	if c.LoginRateLimit.Window != "" {
+		loginRateLimitWindow, err := time.ParseDuration(c.LoginRateLimit.Window)
+		if err != nil {
+			return fmt.Errorf("invalid config value %q for login rate limit window: %v", c.LoginRateLimit.Window, err)
+		}
+		serverConfig.LoginRateLimit.Window = loginRateLimitWindow
+	}
+	if c.LoginRateLimit.Enabled {
+		logger.Info("config login rate limit", "attempts", serverConfig.LoginRateLimit.Attempts, "window", serverConfig.LoginRateLimit.Window)
+	}
+
 	if c.Expiry.AuthRequests != "" {
 		authRequests, err := time.ParseDuration(c.Expiry.AuthRequests)
 		if err != nil {

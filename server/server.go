@@ -129,6 +129,23 @@ type Config struct {
 	// MFATrust lets a user mark a device as trusted so subsequent logins reuse the
 	// upstream token instead of asking for credentials and a second factor again.
 	MFATrust MFATrustConfig
+
+	// LoginRateLimit throttles failed password logins before they reach the
+	// upstream identity provider.
+	LoginRateLimit LoginRateLimitConfig
+}
+
+// LoginRateLimitConfig configures the brute force protection applied to the
+// password login form and the password grant. See loginLimiter.
+type LoginRateLimitConfig struct {
+	Enabled bool `json:"enabled"`
+
+	// Failed attempts allowed per Window, for each IP and username pair.
+	// Defaults to 10.
+	Attempts int `json:"attempts"`
+
+	// Defaults to 1m.
+	Window time.Duration `json:"window"`
 }
 
 // MFATrustConfig configures the "remember this device" checkbox on the second
@@ -237,6 +254,8 @@ type Server struct {
 	clientThemes map[string]ClientTheme
 
 	mfaTrust MFATrustConfig
+
+	loginLimiter *loginLimiter
 }
 
 // NewServer constructs a server from the provided config.
@@ -356,6 +375,15 @@ func newServer(ctx context.Context, c Config) (*Server, error) {
 	if s.mfaTrust.Duration <= 0 {
 		s.mfaTrust.Duration = 720 * time.Hour
 	}
+
+	loginRateLimit := c.LoginRateLimit
+	if loginRateLimit.Attempts <= 0 {
+		loginRateLimit.Attempts = 10
+	}
+	if loginRateLimit.Window <= 0 {
+		loginRateLimit.Window = time.Minute
+	}
+	s.loginLimiter = newLoginLimiter(loginRateLimit, now)
 
 	// Retrieves connector objects in backend storage. This list includes the static connectors
 	// defined in the ConfigMap and dynamic connectors retrieved from the storage.

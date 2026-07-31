@@ -436,6 +436,15 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			r = r.WithContext(context.WithValue(r.Context(), keystone.IssuedTokenContextKey, &issuedToken))
 		}
 
+		// Throttle before hitting the upstream provider: a failed attempt is
+		// what an attacker repeats, and a successful login clears the counter.
+		limitKey := loginKey(r, username)
+		if !s.loginLimiter.allow(limitKey) {
+			s.logger.WarnContext(r.Context(), "login rate limit exceeded", "user", username, "ip", clientIP(r))
+			s.renderError(r, w, http.StatusTooManyRequests, "Too many login attempts. Please try again later.")
+			return
+		}
+
 		identity, ok, err := pwConn.Login(r.Context(), scopes, username, password)
 		if err != nil {
 			if errTotp, isTotp := err.(keystone.ErrTOTPRequired); isTotp {
@@ -445,12 +454,7 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			ip := r.Header.Get("X-Forwarded-For")
-			if ip == "" {
-				ip = r.RemoteAddr
-			}
-
-			s.logger.ErrorContext(r.Context(), "failed to login user", "err", err, "ip", ip, "user", username)
+			s.logger.ErrorContext(r.Context(), "failed to login user", "err", err, "ip", clientIP(r), "user", username)
 			s.renderError(r, w, http.StatusInternalServerError, ErrMsgLoginError)
 			return
 		}
@@ -460,14 +464,11 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 				s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 			}
 
-			ip := r.Header.Get("X-Forwarded-For")
-			if ip == "" {
-				ip = r.RemoteAddr
-			}
-
-			s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username, "ip", ip)
+			s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username, "ip", clientIP(r))
 			return
 		}
+		s.loginLimiter.reset(limitKey)
+
 		if issuedToken != "" {
 			s.setMFATrustCookie(w, authReq.ConnectorID, issuedToken)
 		}
@@ -1292,25 +1293,26 @@ func (s *Server) handlePasswordGrant(w http.ResponseWriter, r *http.Request, cli
 	// Login
 	username := q.Get("username")
 	password := q.Get("password")
+
+	limitKey := loginKey(r, username)
+	if !s.loginLimiter.allow(limitKey) {
+		s.logger.WarnContext(r.Context(), "login rate limit exceeded", "user", username, "ip", clientIP(r))
+		s.tokenErrHelper(w, errAccessDenied, "Too many login attempts", http.StatusTooManyRequests)
+		return
+	}
+
 	identity, ok, err := passwordConnector.Login(ctx, parseScopes(scopes), username, password)
 	if err != nil {
-		ip := r.Header.Get("X-Forwarded-For")
-		if ip == "" {
-			ip = r.RemoteAddr
-		}
-		s.logger.ErrorContext(r.Context(), "failed to login user", "err", err, "ip", ip, "user", username)
+		s.logger.ErrorContext(r.Context(), "failed to login user", "err", err, "ip", clientIP(r), "user", username)
 		s.tokenErrHelper(w, errInvalidRequest, "Could not login user", http.StatusBadRequest)
 		return
 	}
 	if !ok {
-		ip := r.Header.Get("X-Forwarded-For")
-		if ip == "" {
-			ip = r.RemoteAddr
-		}
-		s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username, "ip", ip)
+		s.logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username, "ip", clientIP(r))
 		s.tokenErrHelper(w, errAccessDenied, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
+	s.loginLimiter.reset(limitKey)
 
 	// Build the claims to send the id token
 	claims := storage.Claims{

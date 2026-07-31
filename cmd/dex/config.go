@@ -50,6 +50,10 @@ type Config struct {
 	// factor step.
 	MFATrust MFATrust `json:"mfaTrust"`
 
+	// LoginRateLimit throttles failed password logins before they reach the
+	// upstream identity provider.
+	LoginRateLimit LoginRateLimit `json:"loginRateLimit"`
+
 	// Signer configuration controls signing of JWT tokens issued by Dex.
 	Signer Signer `json:"signer"`
 
@@ -562,6 +566,19 @@ type MFATrust struct {
 	// Duration is the lifetime of the trust cookie, e.g. "720h". The effective
 	// lifetime is still capped by the upstream token expiry. Defaults to 720h.
 	Duration string `json:"duration"`
+}
+
+// LoginRateLimit holds the brute force protection settings for the password
+// login form and the password grant.
+type LoginRateLimit struct {
+	Enabled bool `json:"enabled"`
+
+	// Failed attempts allowed per Window, for each IP and username pair.
+	// Defaults to 10.
+	Attempts int `json:"attempts"`
+
+	// Window is a duration, e.g. "1m". Defaults to 1m.
+	Window string `json:"window"`
 }
 
 // Logger holds configuration required to customize logging for dex.

@@ -85,6 +85,15 @@ web:
 #   enabled: true
 #   duration: 720h
 
+# Protección contra fuerza bruta en el formulario de login y en el grant
+# "password". Solo cuentan los intentos fallidos, por pareja IP + usuario, y un
+# login correcto pone el contador a cero. Si dex corre con varias réplicas el
+# límite efectivo es attempts × réplicas (el estado vive en memoria).
+# loginRateLimit:
+#   enabled: true
+#   attempts: 10
+#   window: 1m
+
 # Configuration for telemetry
 telemetry:
     http: 0.0.0.0:5558
