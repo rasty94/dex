@@ -569,6 +569,11 @@ func runVerify(t *testing.T, ca string, resp string, shouldSucceed bool) {
 	s := certStore{[]*x509.Certificate{cert}}
 
 	validator := dsig.NewDefaultValidationContext(s)
+	// Los certificados de testdata están caducados (oam-ca.pem expiró en
+	// 2026-06, idp-cert.pem expira en 2027-01) y no tenemos sus claves
+	// privadas para regenerar las respuestas firmadas. Fijamos el reloj a una
+	// fecha dentro de su ventana de validez para seguir verificando la firma.
+	validator.Clock = dsig.NewFakeClockAt(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 
 	data, err := os.ReadFile(resp)
 	if err != nil {

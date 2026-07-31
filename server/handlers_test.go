@@ -309,9 +309,10 @@ func mockConnectorDataTestStorage(t *testing.T, s storage.Storage) {
 		ID:   "test",
 		Type: "mockPassword",
 		Name: "mockPassword",
+		// NOSONAR: credenciales de un conector mock, solo para tests.
 		Config: []byte(`{
 "username": "test",
-"password": "test" // NOSONAR
+"password": "test"
 }`),
 	}
 
