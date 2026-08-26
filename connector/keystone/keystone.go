@@ -432,16 +432,32 @@ func (p *conn) getTokenResponse(ctx context.Context, username, pass string, doma
 			Secret: pass,
 		}
 	} else {
-		methods = []string{"password"}
-		pwd = &password{
-			User: user{
-				Name:     username,
-				Domain:   domain,
-				Password: pass,
-			},
+		receipt, _ := ctx.Value(ReceiptContextKey).(string)
+		code, _ := ctx.Value(TOTPContextKey).(string)
+
+		// A receipt is Keystone's own record that the password was already
+		// accepted, so the second step only has to supply the method still
+		// missing. Resending the password would be allowed but pointless, and it
+		// is what forced the login form to carry the plaintext through the TOTP
+		// step. See the auth receipt spec:
+		// https://docs.openstack.org/keystone/latest/user/multi-factor-authentication.html
+		if receipt != "" && code != "" {
+			methods = []string{"totp"}
+		} else {
+			methods = []string{"password"}
+			pwd = &password{
+				User: user{
+					Name:     username,
+					Domain:   domain,
+					Password: pass,
+				},
+			}
+			if code != "" {
+				methods = append(methods, "totp")
+			}
 		}
-		if code, ok := ctx.Value(TOTPContextKey).(string); ok && code != "" {
-			methods = append(methods, "totp")
+
+		if code != "" {
 			totpData = &totp{
 				User: userTOTP{
 					Name:     username,

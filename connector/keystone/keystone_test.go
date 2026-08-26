@@ -186,6 +186,77 @@ func TestLogin_TOTPSuccessWithReceipt(t *testing.T) {
 	}
 }
 
+// The receipt is Keystone's own record that the password was already accepted,
+// so the second step must not resend it. This is what lets the login form stop
+// carrying the plaintext password through the TOTP step.
+func TestLogin_ReceiptStepOmitsPassword(t *testing.T) {
+	tests := []struct {
+		name            string
+		receipt         string
+		wantMethods     []string
+		wantPasswordKey bool
+	}{
+		{
+			name:            "with receipt, only the missing method travels",
+			receipt:         "receipt-xyz",
+			wantMethods:     []string{"totp"},
+			wantPasswordKey: false,
+		},
+		{
+			name:            "without receipt, both methods travel in one request",
+			receipt:         "",
+			wantMethods:     []string{"password", "totp"},
+			wantPasswordKey: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, mux := mockKeystoneServer(t)
+			c := newTestConn(srv.URL)
+
+			var identityBody map[string]any
+			mux.HandleFunc("/v3/auth/tokens/", func(w http.ResponseWriter, r *http.Request) {
+				var body struct {
+					Auth struct {
+						Identity map[string]any `json:"identity"`
+					} `json:"auth"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decoding request body: %v", err)
+				}
+				identityBody = body.Auth.Identity
+				writeToken(w, "user-42", "jdoe", "tok-totp")
+			})
+			mux.HandleFunc("/v3/users/user-42", func(w http.ResponseWriter, r *http.Request) {
+				writeUser(w, "jdoe", "jdoe@example.com", "user-42")
+			})
+
+			ctx := context.WithValue(context.Background(), TOTPContextKey, "123456")
+			if tc.receipt != "" {
+				ctx = context.WithValue(ctx, ReceiptContextKey, tc.receipt)
+			}
+
+			if _, _, err := c.Login(ctx, connector.Scopes{}, "jdoe", "hunter2"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			methods, _ := identityBody["methods"].([]any)
+			got := make([]string, 0, len(methods))
+			for _, m := range methods {
+				got = append(got, fmt.Sprintf("%v", m))
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tc.wantMethods) {
+				t.Errorf("methods: got %v, want %v", got, tc.wantMethods)
+			}
+
+			if _, present := identityBody["password"]; present != tc.wantPasswordKey {
+				t.Errorf("password block present = %v, want %v", present, tc.wantPasswordKey)
+			}
+		})
+	}
+}
+
 func TestLogin_InvalidTOTP(t *testing.T) {
 	srv, mux := mockKeystoneServer(t)
 	c := newTestConn(srv.URL)

@@ -337,7 +337,10 @@ func (t *templates) login(b Brand, w http.ResponseWriter, connectors []connector
 	return renderTemplate(w, t.loginTmpl, data)
 }
 
-func (t *templates) password(b Brand, w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid bool, backLink string, showDomain bool, domain string, requireTOTP bool, receipt string, lastPassword string, offerTrust bool) error {
+// The TOTP step deliberately gets no password: the receipt carries the fact
+// that the password was already accepted, so re-rendering the plaintext into a
+// hidden field would put it in the DOM and the browser's back cache for nothing.
+func (t *templates) password(b Brand, w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid bool, backLink string, showDomain bool, domain string, requireTOTP bool, receipt string, offerTrust bool) error {
 	if lastWasInvalid {
 		w.WriteHeader(http.StatusUnauthorized)
 	}
@@ -352,9 +355,8 @@ func (t *templates) password(b Brand, w http.ResponseWriter, postURL, lastUserna
 		Domain         string
 		RequireTOTP    bool
 		Receipt        string
-		Password       string
 		OfferTrust     bool
-	}{b, postURL, backLink, lastUsername, usernamePrompt, lastWasInvalid, showDomain, domain, requireTOTP, receipt, lastPassword, offerTrust}
+	}{b, postURL, backLink, lastUsername, usernamePrompt, lastWasInvalid, showDomain, domain, requireTOTP, receipt, offerTrust}
 	return renderTemplate(w, t.passwordTmpl, data)
 }
 

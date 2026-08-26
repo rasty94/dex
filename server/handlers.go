@@ -406,7 +406,7 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			s.clearMFATrustCookie(w, authReq.ConnectorID)
 		}
 
-		if err := s.templates.password(b, w, r.URL.String(), "", usernamePrompt(pwConn), false, backLink, showDomain, "", false, "", "", false); err != nil {
+		if err := s.templates.password(b, w, r.URL.String(), "", usernamePrompt(pwConn), false, backLink, showDomain, "", false, "", false); err != nil {
 			s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 		}
 	case http.MethodPost:
@@ -448,7 +448,7 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		identity, ok, err := pwConn.Login(r.Context(), scopes, username, password)
 		if err != nil {
 			if errTotp, isTotp := err.(keystone.ErrTOTPRequired); isTotp {
-				if err := s.templates.password(b, w, r.URL.String(), username, usernamePrompt(pwConn), false, backLink, showDomain, r.FormValue("domain"), true, errTotp.Receipt, password, canTrustDevice); err != nil {
+				if err := s.templates.password(b, w, r.URL.String(), username, usernamePrompt(pwConn), false, backLink, showDomain, r.FormValue("domain"), true, errTotp.Receipt, canTrustDevice); err != nil {
 					s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 				}
 				return
@@ -460,7 +460,7 @@ func (s *Server) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		if !ok {
 			totpWasRequired := r.FormValue("receipt") != ""
-			if err := s.templates.password(b, w, r.URL.String(), username, usernamePrompt(pwConn), true, backLink, showDomain, r.FormValue("domain"), totpWasRequired, r.FormValue("receipt"), password, canTrustDevice); err != nil {
+			if err := s.templates.password(b, w, r.URL.String(), username, usernamePrompt(pwConn), true, backLink, showDomain, r.FormValue("domain"), totpWasRequired, r.FormValue("receipt"), canTrustDevice); err != nil {
 				s.logger.ErrorContext(r.Context(), "server template error", "err", err)
 			}
 
@@ -707,6 +707,13 @@ func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
 
 	authReq, err := s.storage.GetAuthRequest(ctx, r.FormValue("req"))
 	if err != nil {
+		// The first approval deletes the auth request, so a double submit finds
+		// nothing. That is the user's browser racing itself, not a server fault:
+		// a 400 without the error log, rather than a 500 and noise.
+		if err == storage.ErrNotFound {
+			s.renderError(r, w, http.StatusBadRequest, "User session error.")
+			return
+		}
 		s.logger.ErrorContext(r.Context(), "failed to get auth request", "err", err)
 		s.renderError(r, w, http.StatusInternalServerError, "Database error.")
 		return
