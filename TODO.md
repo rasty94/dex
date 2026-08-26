@@ -194,7 +194,21 @@
 - [x] **Bloque C — CI y build.** Quitado el `continue-on-error` del job de lint (el gate era decorativo), los tres pins de golangci-lint alineados en 2.13.1, e imágenes base al día.
 - [x] **Bloque D — P1 y debilidades propias.** Doble decodificación de `redirect_uri`, nil-deref en `CreateConnector`, doble-submit de aprobación, y eliminación del campo oculto con la contraseña en el paso TOTP.
 - [x] **Bloque E — El `sub` plano.** Decidido: cedemos al formato de upstream. El `sub` vuelve a ser el par `(userID, connectorID)` en protobuf-base64, y con él se va el escaneo de conectores de `api.go`, que solo existía para compensarlo. Es un cambio incompatible para quien indexe por `sub`; documentado en el `CHANGELOG`. A cambio quedamos alineados para heredar `sid`, back-channel logout y revocación con alcance de sesión en el bloque F.
-- [ ] **Bloque F — Re-port sobre `upstream/master`.** No es un `git merge`: upstream troceó `server/` en subpaquetes y los seis ficheros donde vive nuestro trabajo (`handlers.go`, `oauth2.go`, `api.go`, `templates.go`, `refreshhandlers.go`, `deviceflowhandlers.go`) ya no existen allí, así que git los ve como modify/delete. Orden sugerido: `connector/keystone/` (cero conflictos, upstream no lo ha tocado), luego rate limiting → `authflow`/`grants`, i18n y theming → `server/templates/`, después el `.proto` (reescrito en tres commits upstream) y por último `web/`. No activar de golpe lo nuevo de upstream (sesiones, `sid`, back-channel logout, PKCE configurable, CEL, Kerberos).
+- [ ] **Bloque F — Re-port sobre `upstream/master`.** 🚧 **En marcha** en la rama
+      `feat/upstream-sync-2026-08` (empujada a `origin`, partiendo de `upstream/master`).
+      - [x] `connector/keystone/` completo, más el registro de sus colectores en `cmd/dex`.
+            Entró **sin una sola edición**: compila contra el layout nuevo tal cual, y el árbol
+            queda construyendo con los 14 paquetes de conectores en verde. Confirma la
+            estimación de coste cero para esta pieza.
+      - [ ] Rate limiting de login → `server/authflow/password.go` y `server/grants/password.go`.
+      - [ ] i18n y theming por cliente → `server/templates/`.
+      - [ ] Trusted device sobre la maquinaria de cookies de upstream (ya cifradas), no sobre
+            la cookie propia `dex_mfa_trust_*`.
+      - [ ] Flujo TOTP en el servidor (`ErrTOTPRequired`) → `server/authflow/`.
+      - [ ] `.proto` y config dinámica de gRPC: regenerar y reaplicar nuestras extensiones.
+      - [ ] `web/`: CSS, temas y plantillas.
+
+  Por qué no es un `git merge`: upstream troceó `server/` en subpaquetes y los seis ficheros donde vive nuestro trabajo (`handlers.go`, `oauth2.go`, `api.go`, `templates.go`, `refreshhandlers.go`, `deviceflowhandlers.go`) ya no existen allí, así que git los ve como modify/delete. Orden sugerido: `connector/keystone/` (cero conflictos, upstream no lo ha tocado), luego rate limiting → `authflow`/`grants`, i18n y theming → `server/templates/`, después el `.proto` (reescrito en tres commits upstream) y por último `web/`. No activar de golpe lo nuevo de upstream (sesiones, `sid`, back-channel logout, PKCE configurable, CEL, Kerberos).
 - [x] **Bloque G — Devolver a upstream.** [dexidp/dex#4986](https://github.com/dexidp/dex/pull/4986) enviado: el fixture de `connector/oidc/oidc_test.go` publica `"RSA"` como `alg` y `kty`, lo que les romperá los tests en cuanto suban a go-oidc 3.20. El otro candidato (nuestro fix de token exchange, `21c99b5e`) resultó innecesario: el refactor de upstream a `server/grants/tokenexchange.go` ya no persiste refresh token ni offline session, así que el bug murió por el camino.
 
 ### 24. 🎛️ Dashboard de administración
