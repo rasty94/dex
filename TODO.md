@@ -1,6 +1,6 @@
 # TODO — Dex Fork (rasty94/dex)
 
-> Última actualización: 2026-07-31
+> Última actualización: 2026-08-26
 > Imagen Docker: `ghcr.io/rasty94/dex:latest`
 > Repositorio: https://github.com/rasty94/dex
 
@@ -184,7 +184,20 @@
 - [x] `TestVerifyUnsignedMessageAndSignedAssertionWithRootXmlNs`: `testdata/oam-ca.pem` caducó en junio de 2026 y no tenemos la clave privada para refirmar los fixtures. El reloj de validación se fija a 2020 para seguir verificando la firma.
     - ⏰ `testdata/idp-cert.pem` caduca en enero de 2027, pero ya queda cubierto por el mismo reloj fijo.
 
-### 23. 🧹 Deuda técnica conocida
+### 23. 🔄 Sincronización con upstream (dexidp/dex) — plan por bloques
+
+> Estado a 2026-08-26. Último merge de upstream: `5366eefa` (2026-03-01).
+> Divergencia actual: **313 commits de upstream / 52 nuestros** desde `99c4233`.
+
+- [x] **Bloque A — Parche de seguridad inmediato.** Cinco fallos que upstream ya había arreglado: binding del auth code en el device callback (canje entre clientes), `client_secret` filtrado en el redirect del navegador, comparaciones de secreto a tiempo constante en refresh y device flow, y saneado del parámetro `back` (open redirect). Con test de inyección entre clientes.
+- [x] **Bloque B — Dependencias de seguridad.** x/crypto, x/net, go-jose, goxmldsig, etree, go-ldap, go-sqlite3, grpc, go-oidc y mapstructure. Deliberadamente **sin** cel-go/webauthn/otp/gokrb5, que son features y no fixes.
+- [x] **Bloque C — CI y build.** Quitado el `continue-on-error` del job de lint (el gate era decorativo), los tres pins de golangci-lint alineados en 2.13.1, e imágenes base al día.
+- [x] **Bloque D — P1 y debilidades propias.** Doble decodificación de `redirect_uri`, nil-deref en `CreateConnector`, doble-submit de aprobación, y eliminación del campo oculto con la contraseña en el paso TOTP.
+- [ ] **Bloque E — Decidir el `sub` plano.** Bloquea el bloque F. Ver la entrada correspondiente en deuda técnica: upstream ha construido revocación de refresh con alcance de sesión sobre su `sub` protobuf-base64, incompatible con el nuestro.
+- [ ] **Bloque F — Re-port sobre `upstream/master`.** No es un `git merge`: upstream troceó `server/` en subpaquetes y los seis ficheros donde vive nuestro trabajo (`handlers.go`, `oauth2.go`, `api.go`, `templates.go`, `refreshhandlers.go`, `deviceflowhandlers.go`) ya no existen allí, así que git los ve como modify/delete. Orden sugerido: `connector/keystone/` (cero conflictos, upstream no lo ha tocado), luego rate limiting → `authflow`/`grants`, i18n y theming → `server/templates/`, después el `.proto` (reescrito en tres commits upstream) y por último `web/`. No activar de golpe lo nuevo de upstream (sesiones, `sid`, back-channel logout, PKCE configurable, CEL, Kerberos).
+- [ ] **Bloque G — Devolver a upstream.** Dos candidatos: nuestro fix de token exchange (`21c99b5e`, no persistir refresh ni offline session salvo `requested_token_type=access_token`) y el fixture de `connector/oidc/oidc_test.go`, que publica `"RSA"` como `alg` y `kty` y les romperá al subir a go-oidc 3.20.
+
+### 24. 🧹 Deuda técnica conocida
 
 - [ ] **Sesiones Keystone antiguas con `userIDKey: email`/`username`**: `Refresh()` usa ahora el id real de Keystone guardado en `identity.ConnectorData`. Las sesiones creadas antes de ese cambio no lo tienen y caen al fallback (`identity.UserID`, que es el UUID sintético), así que seguirán fallando el refresh hasta que el usuario vuelva a autenticarse. Anotarlo en el `CHANGELOG` de la próxima release.
 - [ ] **Coste de resolver el `sub` plano**: este fork emite un `sub` plano (`genSubject` en `server/oauth2.go`) en lugar del protobuf-base64 de upstream, así que `ListRefresh`/`RevokeRefresh` recorren todos los conectores configurados buscando al usuario. Con 2-3 conectores es irrelevante; si la lista crece, cachear el mapeo `sub → (userID, connID)`.
