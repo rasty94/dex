@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -884,7 +885,9 @@ func newAuthInterceptor(token string) grpc.UnaryServerInterceptor {
 			providedToken = authHeader
 		}
 
-		if providedToken != token {
+		// Constant-time comparison: this is a shared admin secret checked before
+		// any authentication, so a byte-by-byte compare would leak it via timing.
+		if subtle.ConstantTimeCompare([]byte(providedToken), []byte(token)) != 1 {
 			return nil, status.Errorf(codes.Unauthenticated, "invalid authorization token")
 		}
 

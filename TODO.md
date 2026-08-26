@@ -197,7 +197,69 @@
 - [ ] **Bloque F — Re-port sobre `upstream/master`.** No es un `git merge`: upstream troceó `server/` en subpaquetes y los seis ficheros donde vive nuestro trabajo (`handlers.go`, `oauth2.go`, `api.go`, `templates.go`, `refreshhandlers.go`, `deviceflowhandlers.go`) ya no existen allí, así que git los ve como modify/delete. Orden sugerido: `connector/keystone/` (cero conflictos, upstream no lo ha tocado), luego rate limiting → `authflow`/`grants`, i18n y theming → `server/templates/`, después el `.proto` (reescrito en tres commits upstream) y por último `web/`. No activar de golpe lo nuevo de upstream (sesiones, `sid`, back-channel logout, PKCE configurable, CEL, Kerberos).
 - [x] **Bloque G — Devolver a upstream.** [dexidp/dex#4986](https://github.com/dexidp/dex/pull/4986) enviado: el fixture de `connector/oidc/oidc_test.go` publica `"RSA"` como `alg` y `kty`, lo que les romperá los tests en cuanto suban a go-oidc 3.20. El otro candidato (nuestro fix de token exchange, `21c99b5e`) resultó innecesario: el refactor de upstream a `server/grants/tokenexchange.go` ya no persiste refresh token ni offline session, así que el bug murió por el camino.
 
-### 24. 🧹 Deuda técnica conocida
+### 24. 🎛️ Dashboard de administración
+
+> Estado: **propuesta, sin empezar**. Requiere decisiones de arquitectura antes de escribir código.
+
+**El problema no es la API, es quién la usa y cómo.** El API gRPC ya cubre casi todo lo que
+un dashboard necesita: `ListClients`/`Create`/`Update`/`DeleteClient`, `ListPasswords` y sus
+CRUD, `ListConnectors` y sus CRUD (tras el flag `api_connectors_crud`, apagado por defecto),
+`ListRefresh`/`RevokeRefresh`, `GetDiscovery`, `GetVersion` y `ReloadConfig`. Lo que falta es
+una interfaz, un modelo de identidad para los administradores y una pista de auditoría.
+
+#### Lo que hay que decidir antes de teclear
+
+1. **Dónde vive.** Recomendación: **servicio aparte**, no dentro del binario de dex. Dex es el
+   IdP; meterle un panel de administración en el mismo proceso amplía su superficie de ataque
+   y convierte cualquier fallo del panel en un fallo del IdP. Un binario separado que habla
+   gRPC con dex se despliega, se actualiza y se expone por separado.
+2. **Cómo llega el navegador al API.** gRPC no se llama desde un navegador. Hacen falta
+   grpc-web con proxy, o un **BFF** (backend for frontend) que exponga REST/JSON al navegador
+   y hable gRPC con dex. Recomendación: BFF, porque además resuelve el punto siguiente.
+3. **Dónde vive el token de administración.** Hoy el API se protege con **un único token
+   estático compartido** (`newAuthInterceptor` en `cmd/dex/serve.go`): quien lo tenga es
+   administrador total y no queda rastro de quién hizo qué. Ese token **no puede llegar nunca
+   al navegador**. El BFF lo guarda en servidor y nunca lo emite al cliente.
+4. **Quién entra al dashboard.** Los administradores se autentican contra **el propio dex** por
+   OIDC, y se autorizan por pertenencia a un grupo (`dex-admins` o el que se configure). Ojo al
+   problema del huevo y la gallina: si dex no arranca o el conector cae, nadie entra. Hace falta
+   una vía de rescate — un usuario local del password DB, o un flag de arranque.
+5. **Qué significa "añadir usuarios".** Este es el punto que más confusión va a generar y hay
+   que dejarlo escrito en la propia UI: el password DB de dex son **solo usuarios locales**. Los
+   usuarios de Keystone (o LDAP, o GitHub) viven en su proveedor y dex no los crea ni los borra.
+   El dashboard puede listar y gestionar los locales, y para el resto solo puede **consultar** y
+   revocar sesiones. Prometer "gestión de usuarios" a secas es prometer algo que no se puede
+   cumplir.
+
+#### Fases
+
+- **Fase 1 — Solo lectura.** Login por OIDC contra dex, gate por grupo, y vistas de lectura:
+  clientes, conectores, usuarios locales, sesiones activas, versión y discovery. Sin escritura.
+  Entrega valor desde el primer día y el radio de daño de un fallo es cero.
+- **Fase 2 — Escritura de bajo riesgo.** Alta/baja/edición de clientes OAuth2 y de usuarios
+  locales. Revocación de refresh tokens (útil de verdad en incidentes). Cada acción, a un log de
+  auditoría con la identidad OIDC del administrador, no con el token compartido.
+- **Fase 3 — Conectores.** Es la más delicada: la config de un conector es un blob JSON con
+  esquema distinto por tipo. **No** construir un generador de formularios genérico. Empezar por
+  un editor de JSON con validación contra el esquema del tipo y un botón de `ReloadConfig`, y
+  solo hacer formulario a medida para los dos o tres tipos que de verdad usemos.
+- **Fase 4 — Operación.** Métricas ya expuestas por Prometheus (incluidas las de keystone y las
+  del rate limiter de login), estado de salud, y visor de intentos de login fallidos.
+
+#### Requisitos que no son negociables
+
+- Toda escritura queda auditada con **quién** (identidad OIDC), **qué** y **cuándo**.
+- El dashboard no guarda credenciales de usuarios finales ni las muestra.
+- CSRF en todas las mutaciones y `SameSite` en la cookie de sesión del panel.
+- El panel se puede desplegar sin exponerlo a internet (bind separado), y así por defecto.
+
+#### Deuda previa que conviene cerrar antes de la fase 2
+
+- [x] ~~`newAuthInterceptor` compara el token con `!=`~~. Corregido: `subtle.ConstantTimeCompare`.
+- [ ] Un solo token sin identidad ni roles. Si el dashboard va a escribir, el API necesita al
+      menos distinguir varios tokens con nombre para que la auditoría signifique algo.
+
+### 25. 🧹 Deuda técnica conocida
 
 - [ ] **Sesiones Keystone antiguas con `userIDKey: email`/`username`**: `Refresh()` usa ahora el id real de Keystone guardado en `identity.ConnectorData`. Las sesiones creadas antes de ese cambio no lo tienen y caen al fallback (`identity.UserID`, que es el UUID sintético), así que seguirán fallando el refresh hasta que el usuario vuelva a autenticarse. Anotarlo en el `CHANGELOG` de la próxima release.
 - [x] ~~**Coste de resolver el `sub` plano**~~: resuelto de raíz en el bloque E. Al volver al `sub` de upstream el connector id viaja dentro del subject, así que `ListRefresh`/`RevokeRefresh` lo decodifican en lugar de recorrer los conectores.
