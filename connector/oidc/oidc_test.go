@@ -800,10 +800,14 @@ func setupServer(tok map[string]interface{}, idTokenDesired bool) (*httptest.Ser
 		return nil, fmt.Errorf("failed to generate rsa key: %v", err)
 	}
 
+	// "alg" is the signing algorithm and "kty" the key type; the fixture used to
+	// publish "RSA" for both. go-oidc v3.20.0 skips keys whose "alg" it does not
+	// recognize instead of failing the whole key set, so the bogus value left the
+	// verifier with no usable key at all.
 	jwk := jose.JSONWebKey{
 		Key:       key,
 		KeyID:     "keyId",
-		Algorithm: "RSA",
+		Algorithm: "RS256",
 	}
 
 	mux := http.NewServeMux()
@@ -812,7 +816,7 @@ func setupServer(tok map[string]interface{}, idTokenDesired bool) (*httptest.Ser
 		json.NewEncoder(w).Encode(&map[string]interface{}{
 			"keys": []map[string]interface{}{{
 				"alg": jwk.Algorithm,
-				"kty": jwk.Algorithm,
+				"kty": "RSA",
 				"kid": jwk.KeyID,
 				"n":   n(&key.PublicKey),
 				"e":   e(&key.PublicKey),
