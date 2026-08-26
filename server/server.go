@@ -384,6 +384,14 @@ func newServer(ctx context.Context, c Config) (*Server, error) {
 		loginRateLimit.Window = time.Minute
 	}
 	s.loginLimiter = newLoginLimiter(loginRateLimit, now)
+	if s.loginLimiter != nil && c.PrometheusRegistry != nil {
+		rejected := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "login_rate_limited_total",
+			Help: "Count of login attempts refused by the login rate limiter.",
+		})
+		c.PrometheusRegistry.MustRegister(rejected)
+		s.loginLimiter.rejected = rejected
+	}
 
 	// Retrieves connector objects in backend storage. This list includes the static connectors
 	// defined in the ConfigMap and dynamic connectors retrieved from the storage.

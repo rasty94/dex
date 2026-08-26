@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 )
 
@@ -26,6 +27,10 @@ type loginLimiter struct {
 	limit rate.Limit
 	burst int
 	now   func() time.Time
+
+	// Counts refused attempts. Without it there is no way to tell a limit that
+	// is stopping an attack from one that is locking real users out.
+	rejected prometheus.Counter
 
 	mu      sync.Mutex
 	buckets map[string]*loginBucket
@@ -71,7 +76,13 @@ func (l *loginLimiter) allow(key string) bool {
 	}
 	b.seen = now
 
-	return b.limiter.AllowN(now, 1)
+	if b.limiter.AllowN(now, 1) {
+		return true
+	}
+	if l.rejected != nil {
+		l.rejected.Inc()
+	}
+	return false
 }
 
 // reset forgets the failed attempts recorded for key.

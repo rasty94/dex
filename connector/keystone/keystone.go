@@ -202,6 +202,14 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
 func (p *conn) Close() error { return nil }
 
 func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, password string) (identity connector.Identity, validPassword bool, err error) {
+	// A login carrying a receipt is the second factor step of a login that
+	// already cleared the password, so both are counted separately.
+	step := "password"
+	if receipt, ok := ctx.Value(ReceiptContextKey).(string); ok && receipt != "" {
+		step = "totp"
+	}
+	defer func() { loginAttempts.WithLabelValues(step, loginResult(validPassword, err)).Inc() }()
+
 	// determine domain to use for this login: either an override from context
 	// or the connector-configured domain.
 	domain := p.Domain
@@ -285,14 +293,23 @@ func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, pas
 	return identity, true, nil
 }
 
-func (p *conn) TokenIdentity(ctx context.Context, subjectTokenType, subjectToken string) (connector.Identity, error) {
-	var identity connector.Identity
-
+func (p *conn) TokenIdentity(ctx context.Context, subjectTokenType, subjectToken string) (identity connector.Identity, err error) {
 	if p.tokenCache != nil {
 		if cached, ok := p.tokenCache.get(subjectToken); ok {
+			tokenCacheLookups.WithLabelValues("hit").Inc()
 			return cached.(connector.Identity), nil
 		}
+		tokenCacheLookups.WithLabelValues("miss").Inc()
 	}
+
+	// Only the calls that actually reach Keystone are timed; cache hits above
+	// would otherwise flatten the latency we care about.
+	start := time.Now()
+	defer func() {
+		r := result(err)
+		tokenValidations.WithLabelValues(r).Inc()
+		tokenValidationDuration.WithLabelValues(r).Observe(time.Since(start).Seconds())
+	}()
 
 	// Validate the provided subject token using the connector's admin credentials.
 	// Validate the provided subject token using the token itself (self-validation).
@@ -368,7 +385,9 @@ func (p *conn) Prompt() string { return "username" }
 
 func (p *conn) Refresh(
 	ctx context.Context, scopes connector.Scopes, identity connector.Identity,
-) (connector.Identity, error) {
+) (_ connector.Identity, err error) {
+	defer func() { refreshAttempts.WithLabelValues(result(err)).Inc() }()
+
 	token, err := p.getAdminToken(ctx)
 	if err != nil {
 		return identity, fmt.Errorf("keystone: failed to obtain admin token: %v", err)
