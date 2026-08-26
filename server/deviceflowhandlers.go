@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -329,6 +330,23 @@ func (s *Server) handleDeviceCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Bind the auth code to this device request: it must have been minted for
+		// the same client and issued to the device callback redirect. The
+		// authorization_code grant enforces the same binding on /token; skipping it
+		// here would let a code minted for one client be redeemed against another
+		// client's device request, issuing that client's tokens to the attacker.
+		// The redirect is matched on the parsed path suffix so an issuer path
+		// prefix still passes and a "/device/callback" in the query string cannot
+		// spoof it; a value that fails to parse is not a valid device redirect.
+		redirectURL, err := url.Parse(authCode.RedirectURI)
+		validRedirect := err == nil && strings.HasSuffix(redirectURL.Path, deviceCallbackURI)
+		if authCode.ClientID != deviceReq.ClientID || !validRedirect {
+			s.logger.ErrorContext(r.Context(), "device callback: auth code does not match the device request",
+				"auth_code_client_id", authCode.ClientID, "device_client_id", deviceReq.ClientID)
+			s.renderError(r, w, http.StatusBadRequest, "Invalid or expired auth code.")
+			return
+		}
+
 		client, err := s.storage.GetClient(ctx, deviceReq.ClientID)
 		if err != nil {
 			if err != storage.ErrNotFound {
@@ -339,7 +357,9 @@ func (s *Server) handleDeviceCallback(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		if client.Secret != deviceReq.ClientSecret {
+		// Constant-time comparison, matching the token endpoint's client auth, so
+		// the compare does not leak the secret via timing.
+		if subtle.ConstantTimeCompare([]byte(client.Secret), []byte(deviceReq.ClientSecret)) != 1 {
 			s.tokenErrHelper(w, errInvalidClient, "Invalid client credentials.", http.StatusUnauthorized)
 			return
 		}
@@ -439,7 +459,9 @@ func (s *Server) verifyUserCode(w http.ResponseWriter, r *http.Request) {
 		}
 		q := u.Query()
 		q.Set("client_id", deviceRequest.ClientID)
-		q.Set("client_secret", deviceRequest.ClientSecret)
+		// No client_secret here: /auth never consumes it, so it would only leak the
+		// confidential secret into browser history, Referer and access logs. The
+		// client is authenticated on the callback against the stored device request.
 		q.Set("state", deviceRequest.UserCode)
 		q.Set("response_type", "code")
 		q.Set("redirect_uri", "/device/callback")

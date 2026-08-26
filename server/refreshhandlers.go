@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -172,11 +173,14 @@ func (s *Server) getRefreshTokenFromStorage(ctx context.Context, clientID *strin
 		return nil, &refreshError{msg: errInvalidGrant, desc: invalidErr.desc, code: http.StatusBadRequest}
 	}
 
-	if refresh.Token != token.Token {
+	// Constant-time comparison of the token secret: introspection reaches this
+	// path unauthenticated (handleIntrospect passes a nil clientID), so a
+	// byte-by-byte '!=' would leak the secret via timing.
+	if subtle.ConstantTimeCompare([]byte(refresh.Token), []byte(token.Token)) != 1 {
 		switch {
 		case !s.refreshTokenPolicy.AllowedToReuse(refresh.LastUsed):
 			fallthrough
-		case refresh.ObsoleteToken != token.Token:
+		case subtle.ConstantTimeCompare([]byte(refresh.ObsoleteToken), []byte(token.Token)) != 1:
 			fallthrough
 		case refresh.ObsoleteToken == "":
 			s.logger.ErrorContext(ctx, "refresh token claimed twice", "token_id", refresh.ID)

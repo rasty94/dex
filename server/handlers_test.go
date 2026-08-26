@@ -1091,3 +1091,23 @@ func (m *mockSAMLRefreshConnector) HandlePOST(s connector.Scopes, samlResponse, 
 func (m *mockSAMLRefreshConnector) Refresh(ctx context.Context, s connector.Scopes, ident connector.Identity) (connector.Identity, error) {
 	return m.refreshIdentity, nil
 }
+
+func TestSanitizeBackLink(t *testing.T) {
+	tests := map[string]string{
+		"":                            "",
+		"/auth?prompt=select_account": "/auth?prompt=select_account",
+		"/dex/auth?client_id=x":       "/dex/auth?client_id=x",
+		"/auth#frag":                  "/auth#frag",
+		"https://evil.example":        "",
+		"http://evil.example/auth":    "",
+		"//evil.example":              "",
+		"/\\evil.example":             "",
+		"javascript:alert(1)":         "",
+		"relative/path":               "",
+	}
+	for in, want := range tests {
+		if got := sanitizeBackLink(in); got != want {
+			t.Errorf("sanitizeBackLink(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
