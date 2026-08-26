@@ -15,7 +15,6 @@ jobs:
   lint:
     name: Code Quality (Lint)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,7 +28,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.10.1
+          version: v2.13.1
           args: --timeout=5m
 
   test:
