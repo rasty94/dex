@@ -8,6 +8,30 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### ⚠️ Cambios incompatibles
+
+- **El claim `sub` vuelve al formato de upstream.** Este fork emitía un `sub` plano
+  (el user id tal cual); ahora vuelve a ser el par `(userID, connectorID)` codificado
+  en protobuf-base64, igual que dexidp/dex. Motivo: el `sub` plano no lleva el
+  connector, y todo lo que resuelve un subject contra una sesión offline lo necesita
+  — la API gRPC de refresh, y la revocación con alcance de sesión que upstream ha
+  construido encima. Mantenerlo nos dejaba fuera de esas features para siempre.
+  - **Impacto:** cualquier consumidor que guarde o compare el `sub` de un ID token
+    verá un valor distinto para el mismo usuario. `ListRefresh`/`RevokeRefresh` ahora
+    exigen el subject codificado y rechazan un user id plano con error, en lugar de
+    buscar al usuario recorriendo los conectores.
+  - **Migración:** los clientes que indexen por `sub` deben re-mapear a los usuarios
+    en su siguiente autenticación. No hay cambio de esquema en storage.
+
+### Seguridad
+
+- Binding del auth code en el callback del device flow (canje entre clientes)
+- `client_secret` ya no viaja en el redirect del navegador
+- Comparaciones de secreto a tiempo constante en refresh y device flow
+- Saneado del parámetro `back` (open redirect en la pantalla de login)
+- La contraseña ya no se re-inyecta en un campo oculto durante el paso TOTP
+- Dependencias de criptografía, JOSE y SAML al día con upstream
+
 ### En progreso
 
 - Tests unitarios TOTP con mocking del endpoint Keystone

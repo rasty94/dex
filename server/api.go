@@ -347,38 +347,23 @@ func (d dexAPI) VerifyPassword(ctx context.Context, req *api.VerifyPasswordReq) 
 	}, nil
 }
 
-// offlineSessionKey maps the user_id of an API request to the (userID, connID)
-// pair offline sessions are stored under.
-//
-// api.proto documents user_id as the "sub" claim of the ID token, but this fork
-// emits a flat user id in sub (see genSubject in oauth2.go), so the connector id
-// is not carried in it and has to be recovered by looking the user up in each
-// configured connector. Subjects in the upstream base64-protobuf format are
-// still resolved, so clients written against the .proto keep working.
-//
-// An unknown user yields an empty connector id, which makes the lookups below
-// report not found through their usual path.
-func (d dexAPI) offlineSessionKey(ctx context.Context, userID string) (string, string) {
-	conns, err := d.s.ListConnectors(ctx)
-	if err != nil {
-		d.logger.Error("failed to list connectors", "err", err)
-	}
-	for _, c := range conns {
-		if _, err := d.s.GetOfflineSessions(ctx, userID, c.ID); err == nil {
-			return userID, c.ID
-		}
-	}
-
+// offlineSessionKey decodes the user_id of an API request into the
+// (userID, connID) pair offline sessions are stored under. As api.proto
+// documents, user_id is the "sub" claim of the ID token, which carries both.
+func (d dexAPI) offlineSessionKey(userID string) (string, string, error) {
 	id := new(internal.IDTokenSubject)
-	if err := internal.Unmarshal(userID, id); err == nil && id.UserId != "" && id.ConnId != "" {
-		return id.UserId, id.ConnId
+	if err := internal.Unmarshal(userID, id); err != nil {
+		d.logger.Error("failed to unmarshal ID Token subject", "err", err)
+		return "", "", err
 	}
-
-	return userID, ""
+	return id.UserId, id.ConnId, nil
 }
 
 func (d dexAPI) ListRefresh(ctx context.Context, req *api.ListRefreshReq) (*api.ListRefreshResp, error) {
-	userID, connID := d.offlineSessionKey(ctx, req.UserId)
+	userID, connID, err := d.offlineSessionKey(req.UserId)
+	if err != nil {
+		return nil, err
+	}
 
 	offlineSessions, err := d.s.GetOfflineSessions(ctx, userID, connID)
 	if err != nil {
@@ -408,7 +393,10 @@ func (d dexAPI) ListRefresh(ctx context.Context, req *api.ListRefreshReq) (*api.
 }
 
 func (d dexAPI) RevokeRefresh(ctx context.Context, req *api.RevokeRefreshReq) (*api.RevokeRefreshResp, error) {
-	userID, connID := d.offlineSessionKey(ctx, req.UserId)
+	userID, connID, err := d.offlineSessionKey(req.UserId)
+	if err != nil {
+		return nil, err
+	}
 
 	var (
 		refreshID string

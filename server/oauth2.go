@@ -316,10 +316,20 @@ func (s *Server) newIDToken(ctx context.Context, clientID string, claims storage
 	issuedAt := s.now()
 	expiry = issuedAt.Add(s.idTokensValidFor)
 
+	// The subject encodes the (userID, connectorID) pair. A flat user id would
+	// be prettier, but it drops the connector, and everything that resolves a
+	// subject back to an offline session — the refresh gRPC API, and upstream's
+	// session-scoped revocation — needs both halves.
+	sub, err := genSubject(claims.UserID, connID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to marshal ID token subject", "err", err)
+		return "", "", expiry, fmt.Errorf("failed to marshal ID token subject: %v", err)
+	}
+
 	sessionID = uuid.New().String()
 	tok := idTokenClaims{
 		Issuer:    s.issuerURL.String(),
-		Subject:   claims.UserID, // Use UserID directly, no base64
+		Subject:   sub,
 		Nonce:     nonce,
 		Expiry:    expiry.Unix(),
 		IssuedAt:  issuedAt.Unix(),

@@ -334,12 +334,10 @@ func TestRefreshToken(t *testing.T) {
 	}
 }
 
-// TestRefreshTokenFlatSubject exercises ListRefresh and RevokeRefresh with the
-// flat "sub" this fork puts in the ID token (see genSubject in oauth2.go),
-// rather than the upstream base64-protobuf subject covered by TestRefreshToken.
-// Since that subject doesn't carry the connector id, the server has to recover
-// it from the configured connectors.
-func TestRefreshTokenFlatSubject(t *testing.T) {
+// A user_id that is not a valid encoded subject is rejected rather than being
+// treated as a bare user id: guessing would look up an offline session under
+// the wrong key. TestRefreshToken above covers the well-formed case.
+func TestRefreshTokenInvalidSubject(t *testing.T) {
 	logger := newLogger(t)
 	s := memory.New(logger)
 
@@ -348,72 +346,11 @@ func TestRefreshTokenFlatSubject(t *testing.T) {
 
 	ctx := t.Context()
 
-	if err := s.CreateConnector(ctx, storage.Connector{
-		ID: "keystone", Type: "keystone", Name: "Keystone",
-	}); err != nil {
-		t.Fatalf("create connector: %v", err)
+	if _, err := client.ListRefresh(ctx, &api.ListRefreshReq{UserId: "not-an-encoded-subject"}); err == nil {
+		t.Error("expected an error listing refresh tokens for a malformed subject")
 	}
-
-	// The subject a Keystone user gets in their ID token: a plain user id, with
-	// no connector id encoded into it.
-	const userID = "6f1a2b3c-4d5e-5f60-8a9b-0c1d2e3f4a5b"
-
-	r := storage.RefreshToken{
-		ID:          storage.NewID(),
-		Token:       "bar",
-		ClientID:    "client_id",
-		ConnectorID: "keystone",
-		Scopes:      []string{"openid", "offline_access"},
-		CreatedAt:   time.Now().UTC().Round(time.Millisecond),
-		LastUsed:    time.Now().UTC().Round(time.Millisecond),
-		Claims:      storage.Claims{UserID: userID, Username: "jane"},
-	}
-	if err := s.CreateRefresh(ctx, r); err != nil {
-		t.Fatalf("create refresh token: %v", err)
-	}
-
-	session := storage.OfflineSessions{
-		UserID: userID,
-		ConnID: r.ConnectorID,
-		Refresh: map[string]*storage.RefreshTokenRef{
-			r.ClientID: {ID: r.ID, ClientID: r.ClientID, CreatedAt: r.CreatedAt, LastUsed: r.LastUsed},
-		},
-	}
-	if err := s.CreateOfflineSessions(ctx, session); err != nil {
-		t.Fatalf("create offline session: %v", err)
-	}
-
-	listReq := api.ListRefreshReq{UserId: userID}
-	listResp, err := client.ListRefresh(ctx, &listReq)
-	if err != nil {
-		t.Fatalf("list refresh tokens: %v", err)
-	}
-	if len(listResp.RefreshTokens) != 1 {
-		t.Fatalf("expected 1 refresh token for the flat subject, got %d", len(listResp.RefreshTokens))
-	}
-	if got := listResp.RefreshTokens[0].Id; got != r.ID {
-		t.Errorf("expected refresh token %q, got %q", r.ID, got)
-	}
-
-	revokeResp, err := client.RevokeRefresh(ctx, &api.RevokeRefreshReq{UserId: userID, ClientId: r.ClientID})
-	if err != nil {
-		t.Fatalf("revoke refresh token: %v", err)
-	}
-	if revokeResp.NotFound {
-		t.Error("refresh token session wasn't found")
-	}
-
-	if resp, _ := client.ListRefresh(ctx, &listReq); len(resp.RefreshTokens) != 0 {
-		t.Error("refresh token returned in spite of revoking it")
-	}
-
-	// An unknown user is an empty list, not an error.
-	resp, err := client.ListRefresh(ctx, &api.ListRefreshReq{UserId: "nobody"})
-	if err != nil {
-		t.Fatalf("list refresh tokens for unknown user: %v", err)
-	}
-	if len(resp.RefreshTokens) != 0 {
-		t.Errorf("expected no refresh tokens for an unknown user, got %d", len(resp.RefreshTokens))
+	if _, err := client.RevokeRefresh(ctx, &api.RevokeRefreshReq{UserId: "not-an-encoded-subject", ClientId: "client_id"}); err == nil {
+		t.Error("expected an error revoking a refresh token for a malformed subject")
 	}
 }
 

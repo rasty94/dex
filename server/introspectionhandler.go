@@ -215,13 +215,21 @@ func (s *Server) introspectRefreshToken(ctx context.Context, token string) (*Int
 		return nil, newIntrospectInternalServerError()
 	}
 
+	// Same subject encoding as the ID token, so a caller can match what
+	// introspection reports against the sub it already holds.
+	subjectString, sErr := genSubject(rCtx.storageToken.Claims.UserID, rCtx.storageToken.ConnectorID)
+	if sErr != nil {
+		s.logger.ErrorContext(ctx, "failed to marshal ID token subject", "err", sErr)
+		return nil, newIntrospectInternalServerError()
+	}
+
 	return &Introspection{
 		Active:    true,
 		ClientID:  rCtx.storageToken.ClientID,
 		IssuedAt:  rCtx.storageToken.CreatedAt.Unix(),
 		NotBefore: rCtx.storageToken.CreatedAt.Unix(),
 		Expiry:    rCtx.storageToken.CreatedAt.Add(s.refreshTokenPolicy.absoluteLifetime).Unix(),
-		Subject:   rCtx.storageToken.Claims.UserID,
+		Subject:   subjectString,
 		Username:  rCtx.storageToken.Claims.PreferredUsername,
 		Audience:  getAudience(rCtx.storageToken.ClientID, rCtx.scopes),
 		Issuer:    s.issuerURL.String(),

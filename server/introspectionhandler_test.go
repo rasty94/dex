@@ -279,6 +279,11 @@ func TestHandleIntrospect(t *testing.T) {
 	expiredRefreshToken, err := internal.Marshal(&internal.RefreshToken{RefreshId: "expired", Token: "bar"})
 	require.NoError(t, err)
 
+	// Introspection reports the same encoded (userID, connectorID) subject the
+	// ID token carries, not the bare user id.
+	subject, err := genSubject("1", "test")
+	require.NoError(t, err)
+
 	inactiveResponse := "{\"active\":false}\n"
 	badRequestResponse := `{"error":"invalid_request","error_description":"The POST body can not be empty."}`
 
@@ -299,7 +304,7 @@ func TestHandleIntrospect(t *testing.T) {
 		{
 			testName:           "Access Token: active",
 			token:              activeAccessToken,
-			response:           toJSON(getIntrospectionValue(s.issuerURL, time.Now(), expiry, "access_token", "1", "test")),
+			response:           toJSON(getIntrospectionValue(s.issuerURL, time.Now(), expiry, "access_token", subject, "test")),
 			responseStatusCode: 200,
 		},
 		{
@@ -312,7 +317,7 @@ func TestHandleIntrospect(t *testing.T) {
 		{
 			testName:           "Refresh Token: active",
 			token:              activeRefreshToken,
-			response:           toJSON(getIntrospectionValue(s.issuerURL, time.Now(), time.Now().Add(s.refreshTokenPolicy.absoluteLifetime), "refresh_token", "1", "test")),
+			response:           toJSON(getIntrospectionValue(s.issuerURL, time.Now(), time.Now().Add(s.refreshTokenPolicy.absoluteLifetime), "refresh_token", subject, "test")),
 			responseStatusCode: 200,
 		},
 		{
