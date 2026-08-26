@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -27,6 +29,31 @@ type conn struct {
 	AdminPassword string
 	client        *http.Client
 	Logger        *slog.Logger
+	UserIDKey     string
+	tokenCache    *timeCache
+	groupMap      map[string]string
+	fetchRoles    bool
+}
+
+type contextKey string
+
+var (
+	DomainContextKey  = contextKey("domain")
+	TOTPContextKey    = contextKey("totp")
+	ReceiptContextKey = contextKey("receipt")
+
+	// IssuedTokenContextKey carries a *string that Login fills with the Keystone
+	// token it obtained. Callers use it to reuse the token later (trusted
+	// devices) instead of re-authenticating the user.
+	IssuedTokenContextKey = contextKey("issued-token")
+)
+
+type ErrTOTPRequired struct {
+	Receipt string
+}
+
+func (e ErrTOTPRequired) Error() string {
+	return "keystone: totp required"
 }
 
 type userKeystone struct {
@@ -53,11 +80,19 @@ type domainKeystone struct {
 //			domain: default
 //			keystoneUsername: demo
 //			keystonePassword: DEMO_PASS
+//			cacheTTL: "5m"
+//			fetchRoles: true
+//			groupMapping:
+//			  "admin@my-project": "platform-admins"
 type Config struct {
-	Domain        string `json:"domain"`
-	Host          string `json:"keystoneHost"`
-	AdminUsername string `json:"keystoneUsername"`
-	AdminPassword string `json:"keystonePassword"`
+	Domain        string            `json:"domain"`
+	Host          string            `json:"keystoneHost"`
+	AdminUsername string            `json:"keystoneUsername"`
+	AdminPassword string            `json:"keystonePassword"`
+	UserIDKey     string            `json:"userIDKey"`
+	CacheTTL      string            `json:"cacheTTL"`
+	FetchRoles    bool              `json:"fetchRoles"`
+	GroupMapping  map[string]string `json:"groupMapping"`
 }
 
 type loginRequestData struct {
@@ -69,8 +104,26 @@ type auth struct {
 }
 
 type identity struct {
-	Methods  []string `json:"methods"`
-	Password password `json:"password"`
+	Methods               []string               `json:"methods"`
+	Password              *password              `json:"password,omitempty"`
+	ApplicationCredential *applicationCredential `json:"application_credential,omitempty"`
+	TOTP                  *totp                  `json:"totp,omitempty"`
+}
+
+type applicationCredential struct {
+	ID     string `json:"id"`
+	Secret string `json:"secret"`
+}
+
+// totp method structure
+type totp struct {
+	User userTOTP `json:"user"`
+}
+
+type userTOTP struct {
+	Name     string         `json:"name"`
+	Domain   domainKeystone `json:"domain"`
+	Passcode string         `json:"passcode"`
 }
 
 type password struct {
@@ -124,6 +177,14 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
 		}
 	}
 
+	var tokenCache *timeCache
+	if c.CacheTTL != "" {
+		importTime, err := time.ParseDuration(c.CacheTTL)
+		if err == nil && importTime > 0 {
+			tokenCache = newTimeCache(importTime)
+		}
+	}
+
 	return &conn{
 		Domain:        domain,
 		Host:          c.Host,
@@ -131,18 +192,57 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
 		AdminPassword: c.AdminPassword,
 		Logger:        logger.With(slog.Group("connector", "type", "keystone", "id", id)),
 		client:        http.DefaultClient,
+		UserIDKey:     c.UserIDKey,
+		tokenCache:    tokenCache,
+		groupMap:      c.GroupMapping,
+		fetchRoles:    c.FetchRoles,
 	}, nil
 }
 
 func (p *conn) Close() error { return nil }
 
 func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, password string) (identity connector.Identity, validPassword bool, err error) {
-	resp, err := p.getTokenResponse(ctx, username, password)
+	// A login carrying a receipt is the second factor step of a login that
+	// already cleared the password, so both are counted separately.
+	step := "password"
+	if receipt, ok := ctx.Value(ReceiptContextKey).(string); ok && receipt != "" {
+		step = "totp"
+	}
+	defer func() { loginAttempts.WithLabelValues(step, loginResult(validPassword, err)).Inc() }()
+
+	// determine domain to use for this login: either an override from context
+	// or the connector-configured domain.
+	domain := p.Domain
+	if v := ctx.Value(DomainContextKey); v != nil {
+		if ds, ok := v.(string); ok && ds != "" {
+			if _, err := uuid.Parse(ds); err == nil || ds == "default" {
+				domain = domainKeystone{ID: ds}
+			} else {
+				domain = domainKeystone{Name: ds}
+			}
+		}
+	}
+
+	resp, err := p.getTokenResponse(ctx, username, password, domain)
 	if err != nil {
 		return identity, false, fmt.Errorf("keystone: error %v", err)
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode/100 != 2 {
-		return identity, false, fmt.Errorf("keystone login: error %v", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode == 401 {
+			receipt := resp.Header.Get("openstack-auth-receipt")
+			if receipt != "" {
+				return identity, false, ErrTOTPRequired{Receipt: receipt}
+			}
+			// If it's 401 without receipt, the password or TOTP is invalid
+			return identity, false, nil
+		}
+
+		p.Logger.Error("keystone: token validation failed", "status", resp.Status, "subject_token", username, "body", string(bodyBytes))
+		return identity, false, fmt.Errorf("keystone login: error %v, body: %s", resp.StatusCode, string(bodyBytes))
 	}
 	if resp.StatusCode != 201 {
 		return identity, false, nil
@@ -152,7 +252,6 @@ func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, pas
 	if err != nil {
 		return identity, false, err
 	}
-	defer resp.Body.Close()
 	tokenResp := new(tokenResponse)
 	err = json.Unmarshal(data, &tokenResp)
 	if err != nil {
@@ -167,6 +266,10 @@ func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, pas
 	}
 	identity.Username = username
 	identity.UserID = tokenResp.Token.User.ID
+	// Stash the real Keystone user id in ConnectorData: when UserIDKey is email or
+	// username, UserID is overwritten below with a synthetic UUID that Refresh
+	// cannot use to address the Keystone API.
+	identity.ConnectorData = []byte(identity.UserID)
 
 	user, err := p.getUser(ctx, tokenResp.Token.User.ID, token)
 	if err != nil {
@@ -177,27 +280,137 @@ func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, pas
 		identity.EmailVerified = true
 	}
 
+	if p.UserIDKey == "email" && identity.Email != "" {
+		identity.UserID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(identity.Email)).String()
+	} else if p.UserIDKey == "username" && identity.Username != "" {
+		identity.UserID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(identity.Username)).String()
+	}
+
+	if out, ok := ctx.Value(IssuedTokenContextKey).(*string); ok && out != nil {
+		*out = token
+	}
+
 	return identity, true, nil
+}
+
+func (p *conn) TokenIdentity(ctx context.Context, subjectTokenType, subjectToken string) (identity connector.Identity, err error) {
+	if p.tokenCache != nil {
+		if cached, ok := p.tokenCache.get(subjectToken); ok {
+			tokenCacheLookups.WithLabelValues("hit").Inc()
+			return cached.(connector.Identity), nil
+		}
+		tokenCacheLookups.WithLabelValues("miss").Inc()
+	}
+
+	// Only the calls that actually reach Keystone are timed; cache hits above
+	// would otherwise flatten the latency we care about.
+	start := time.Now()
+	defer func() {
+		r := result(err)
+		tokenValidations.WithLabelValues(r).Inc()
+		tokenValidationDuration.WithLabelValues(r).Observe(time.Since(start).Seconds())
+	}()
+
+	// Validate the provided subject token using the connector's admin credentials.
+	// Validate the provided subject token using the token itself (self-validation).
+	// We use the subjectToken as the X-Auth-Token to validate itself.
+	adminToken := subjectToken
+
+	// Ask Keystone to validate the subject token and return token details.
+	validateURL := p.Host + "/v3/auth/tokens"
+	req, err := http.NewRequest("GET", validateURL, nil)
+	if err != nil {
+		return identity, err
+	}
+	req.Header.Set("X-Auth-Token", adminToken)
+	req.Header.Set("X-Subject-Token", subjectToken)
+	req = req.WithContext(ctx)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return identity, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		p.Logger.Error("keystone: token validation failed", "status", resp.Status, "subject_token", subjectToken, "body", string(bodyBytes))
+		return identity, fmt.Errorf("keystone: token validation failed: %v, body: %s", resp.Status, string(bodyBytes))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return identity, err
+	}
+
+	tr := new(tokenResponse)
+	if err := json.Unmarshal(data, &tr); err != nil {
+		return identity, fmt.Errorf("keystone: invalid token response: %v", err)
+	}
+
+	userID := tr.Token.User.ID
+	if userID == "" {
+		return identity, fmt.Errorf("keystone: token did not contain user id")
+	}
+
+	identity.UserID = userID
+	identity.ConnectorData = []byte(userID)
+	identity.Username = tr.Token.User.Name
+
+	// Use admin token to fetch user details (email) and groups.
+	user, err := p.getUser(ctx, userID, adminToken)
+	if err == nil && user.User.Email != "" {
+		identity.Email = user.User.Email
+		identity.EmailVerified = true
+	}
+	groups, err := p.getUserGroups(ctx, userID, adminToken)
+	if err == nil {
+		identity.Groups = groups
+	}
+
+	if p.UserIDKey == "email" && identity.Email != "" {
+		identity.UserID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(identity.Email)).String()
+	} else if p.UserIDKey == "username" && identity.Username != "" {
+		identity.UserID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(identity.Username)).String()
+	}
+
+	if p.tokenCache != nil {
+		p.tokenCache.set(subjectToken, identity)
+	}
+
+	return identity, nil
 }
 
 func (p *conn) Prompt() string { return "username" }
 
 func (p *conn) Refresh(
 	ctx context.Context, scopes connector.Scopes, identity connector.Identity,
-) (connector.Identity, error) {
+) (_ connector.Identity, err error) {
+	defer func() { refreshAttempts.WithLabelValues(result(err)).Inc() }()
+
 	token, err := p.getAdminToken(ctx)
 	if err != nil {
 		return identity, fmt.Errorf("keystone: failed to obtain admin token: %v", err)
 	}
-	ok, err := p.checkIfUserExists(ctx, identity.UserID, token)
+	// The Keystone API is addressed by the Keystone user id, which is not always
+	// identity.UserID: when UserIDKey is email or username, UserID is a synthetic
+	// UUID and /v3/users/<id> would return 404. Login/TokenIdentity stash the real
+	// id in ConnectorData; fall back to UserID for sessions stored before that,
+	// where the two were the same value.
+	userID := identity.UserID
+	if len(identity.ConnectorData) > 0 {
+		userID = string(identity.ConnectorData)
+	}
+
+	ok, err := p.checkIfUserExists(ctx, userID, token)
 	if err != nil {
 		return identity, err
 	}
 	if !ok {
-		return identity, fmt.Errorf("keystone: user %q does not exist", identity.UserID)
+		return identity, fmt.Errorf("keystone: user %q does not exist", userID)
 	}
 	if scopes.Groups {
-		groups, err := p.getUserGroups(ctx, identity.UserID, token)
+		groups, err := p.getUserGroups(ctx, userID, token)
 		if err != nil {
 			return identity, err
 		}
@@ -206,18 +419,62 @@ func (p *conn) Refresh(
 	return identity, nil
 }
 
-func (p *conn) getTokenResponse(ctx context.Context, username, pass string) (response *http.Response, err error) {
+func (p *conn) getTokenResponse(ctx context.Context, username, pass string, domain domainKeystone) (response *http.Response, err error) {
+	var methods []string
+	var pwd *password
+	var appCred *applicationCredential
+	var totpData *totp
+
+	if strings.HasPrefix(username, "appcred:") {
+		methods = []string{"application_credential"}
+		appCred = &applicationCredential{
+			ID:     strings.TrimPrefix(username, "appcred:"),
+			Secret: pass,
+		}
+	} else {
+		receipt, _ := ctx.Value(ReceiptContextKey).(string)
+		code, _ := ctx.Value(TOTPContextKey).(string)
+
+		// A receipt is Keystone's own record that the password was already
+		// accepted, so the second step only has to supply the method still
+		// missing. Resending the password would be allowed but pointless, and it
+		// is what forced the login form to carry the plaintext through the TOTP
+		// step. See the auth receipt spec:
+		// https://docs.openstack.org/keystone/latest/user/multi-factor-authentication.html
+		if receipt != "" && code != "" {
+			methods = []string{"totp"}
+		} else {
+			methods = []string{"password"}
+			pwd = &password{
+				User: user{
+					Name:     username,
+					Domain:   domain,
+					Password: pass,
+				},
+			}
+			if code != "" {
+				methods = append(methods, "totp")
+			}
+		}
+
+		if code != "" {
+			totpData = &totp{
+				User: userTOTP{
+					Name:     username,
+					Domain:   domain,
+					Passcode: code,
+				},
+			}
+		}
+	}
+
 	jsonData := loginRequestData{
 		auth: auth{
 			Identity: identity{
-				Methods: []string{"password"},
-				Password: password{
-					User: user{
-						Name:     username,
-						Domain:   p.Domain,
-						Password: pass,
-					},
-				},
+				Methods:               methods,
+				Password:              pwd,
+				ApplicationCredential: appCred,
+				TOTP:                  totpData,
 			},
 		},
 	}
@@ -233,19 +490,31 @@ func (p *conn) getTokenResponse(ctx context.Context, username, pass string) (res
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if receipt, ok := ctx.Value(ReceiptContextKey).(string); ok && receipt != "" {
+		req.Header.Set("openstack-auth-receipt", receipt)
+	}
 	req = req.WithContext(ctx)
 
 	return p.client.Do(req)
 }
 
 func (p *conn) getAdminToken(ctx context.Context) (string, error) {
-	resp, err := p.getTokenResponse(ctx, p.AdminUsername, p.AdminPassword)
+	resp, err := p.getTokenResponse(ctx, p.AdminUsername, p.AdminPassword, p.Domain)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode/100 != 2 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("keystone admin login failed: %v, body: %s", resp.Status, string(bodyBytes))
+	}
+
 	token := resp.Header.Get("X-Subject-Token")
+	if token == "" {
+		return "", fmt.Errorf("keystone admin login: no token returned in X-Subject-Token header")
+	}
+	io.Copy(io.Discard, resp.Body)
 	return token, nil
 }
 
@@ -271,7 +540,7 @@ func (p *conn) getUser(ctx context.Context, userID string, token string) (*userR
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, err
+		return nil, fmt.Errorf("keystone: unexpected status %d fetching user %s", resp.StatusCode, userID)
 	}
 
 	data, err := io.ReadAll(resp.Body)
@@ -302,12 +571,12 @@ func (p *conn) getUserGroups(ctx context.Context, userID string, token string) (
 		p.Logger.Error("error while fetching user groups", "user_id", userID, "err", err)
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	groupsResp := new(groupsResponse)
 
@@ -318,7 +587,97 @@ func (p *conn) getUserGroups(ctx context.Context, userID string, token string) (
 
 	groups := make([]string, len(groupsResp.Groups))
 	for i, group := range groupsResp.Groups {
-		groups[i] = group.Name
+		gName := group.Name
+		if mapped, ok := p.groupMap[gName]; ok && mapped != "" {
+			gName = mapped
+		}
+		groups[i] = gName
 	}
+
+	if p.fetchRoles {
+		roles, err := p.getUserRoles(ctx, userID, token)
+		if err == nil {
+			groups = append(groups, roles...)
+		}
+	}
+
 	return groups, nil
+}
+
+type roleAssignment struct {
+	Role struct {
+		Name string `json:"name"`
+	} `json:"role"`
+	Scope struct {
+		Project struct {
+			Name string `json:"name"`
+		} `json:"project"`
+		Domain struct {
+			Name string `json:"name"`
+		} `json:"domain"`
+	} `json:"scope"`
+}
+
+type roleAssignmentsResponse struct {
+	RoleAssignments []roleAssignment `json:"role_assignments"`
+}
+
+func (p *conn) getUserRoles(ctx context.Context, userID string, token string) ([]string, error) {
+	// https://docs.openstack.org/api-ref/identity/v3/index.html#list-role-assignments
+	rolesURL := p.Host + "/v3/role_assignments?user.id=" + userID + "&include_names=1"
+	req, err := http.NewRequest("GET", rolesURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Auth-Token", token)
+	req = req.WithContext(ctx)
+	resp, err := p.client.Do(req)
+	if err != nil {
+		p.Logger.Error("error while fetching user roles", "user_id", userID, "err", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("keystone roles: unexpected status %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	rolesResp := new(roleAssignmentsResponse)
+	err = json.Unmarshal(data, &rolesResp)
+	if err != nil {
+		return nil, err
+	}
+
+	var roles []string
+	seen := make(map[string]bool)
+
+	for _, ra := range rolesResp.RoleAssignments {
+		if ra.Role.Name == "" {
+			continue
+		}
+		var roleName string
+		if ra.Scope.Project.Name != "" {
+			roleName = ra.Role.Name + "@" + ra.Scope.Project.Name
+		} else if ra.Scope.Domain.Name != "" {
+			roleName = ra.Role.Name + "@" + ra.Scope.Domain.Name
+		} else {
+			roleName = ra.Role.Name
+		}
+
+		if mapped, ok := p.groupMap[roleName]; ok && mapped != "" {
+			roleName = mapped
+		}
+
+		if !seen[roleName] {
+			seen[roleName] = true
+			roles = append(roles, roleName)
+		}
+	}
+
+	return roles, nil
 }

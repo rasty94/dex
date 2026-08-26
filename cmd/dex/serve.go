@@ -36,6 +36,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"github.com/dexidp/dex/api/v2"
+	"github.com/dexidp/dex/connector/keystone"
 	"github.com/dexidp/dex/pkg/featureflags"
 	"github.com/dexidp/dex/server"
 	"github.com/dexidp/dex/server/apiserver"
@@ -159,6 +160,14 @@ func runServe(options serveOptions) error {
 	err = prometheusRegistry.Register(grpcMetrics)
 	if err != nil {
 		return fmt.Errorf("failed to register gRPC server metrics: %v", err)
+	}
+
+	// The connector interface has no access to the registry, so its collectors
+	// are registered here. They stay at zero when no keystone connector is set up.
+	for _, collector := range keystone.Collectors() {
+		if err := prometheusRegistry.Register(collector); err != nil {
+			return fmt.Errorf("failed to register keystone metrics: %v", err)
+		}
 	}
 
 	var grpcOptions []grpc.ServerOption
