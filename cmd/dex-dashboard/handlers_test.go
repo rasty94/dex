@@ -21,7 +21,7 @@ func testLogger() *slog.Logger {
 // this asserts the pages are actually distinct. Passing real API types also
 // catches a template referencing a field that does not exist.
 func TestPagesRenderTheirOwnContent(t *testing.T) {
-	d, err := newDashboard(nil, nil, testLogger())
+	d, err := newDashboard(nil, nil, nil, testLogger())
 	if err != nil {
 		t.Fatalf("newDashboard: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestPagesRenderTheirOwnContent(t *testing.T) {
 
 // A failing dex call must render the page with an explanation, not a blank 500.
 func TestRenderListShowsTheError(t *testing.T) {
-	d, err := newDashboard(nil, nil, testLogger())
+	d, err := newDashboard(nil, nil, nil, testLogger())
 	if err != nil {
 		t.Fatalf("newDashboard: %v", err)
 	}

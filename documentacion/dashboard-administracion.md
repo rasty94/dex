@@ -306,6 +306,36 @@ algo que viene del fichero de configuración en lugar del almacén.
 
 ---
 
+## 9 ter. La vista de Status
+
+Lee el endpoint de telemetría de Dex (`telemetry.http`, por defecto el puerto 5558) y
+resume lo que un operador mira primero:
+
+- **Salud**: el health check propio de Dex.
+- **Tráfico por endpoint**: peticiones y respuestas 4xx/5xx de cada handler, sacadas de
+  `http_requests_total`. Las 4xx cuentan como error igual que las 5xx: una riada de
+  401 en `/token` dice tanto como un 500, y a menudo más.
+- **Logins frenados** por el rate limiter.
+- **Contadores del conector Keystone**, si está configurado.
+
+Son **totales desde que arrancó Dex, no tasas**. Responden a «¿pasa algo y está
+fallando?», no a «¿a qué ritmo». Para tendencias, Prometheus contra ese mismo endpoint.
+
+Dos cosas que conviene saber:
+
+- El endpoint de telemetría **no tiene autenticación propia**. El panel lo lee desde el
+  servidor y no lo reexpone al navegador: si `telemetryURL` apunta a algo accesible
+  desde fuera, el problema está en la red, no aquí.
+- Si `dex.telemetryURL` no se configura, la vista lo dice y no falla. Lo mismo si el
+  endpoint no responde.
+
+**Lo que esta vista no puede hacer** es enseñar los intentos de login fallidos uno a
+uno. Dex los escribe en su log, y no hay API para consultarlos: eso necesita un
+recolector de logs, no un panel. Los contadores dicen *cuántos*; el *quién* y el
+*cuándo* están en `docker logs dex`.
+
+---
+
 ## 10. Puesta en marcha
 
 ### En Dex
@@ -442,6 +472,7 @@ conoce. En despliegue real, ambas van detrás del proxy con sus nombres público
 | `/connectors` | sí | Conectores configurados |
 | `/users` | sí | Usuarios del password DB |
 | `/sessions` | sí | Refresh tokens por `sub` |
+| `/status` | sí | Salud y métricas de Dex |
 | `/logout` | sí + CSRF | Cierra la sesión (`POST`) |
 | `/callback` | no | Retorno del login OIDC |
 | `/healthz` | no | Sonda de vida |

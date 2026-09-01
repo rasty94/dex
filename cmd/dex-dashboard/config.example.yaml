@@ -21,6 +21,11 @@ dex:
     # is plaintext, which is only acceptable over loopback.
     # caCert: /etc/dex/ca.pem
 
+    # dex's telemetry endpoint, which backs the Status view. It has no
+    # authentication of its own: the dashboard must be able to reach it and
+    # nothing else should. Leave it unset to hide the view.
+    telemetryURL: http://127.0.0.1:5558
+
 # Administrators sign in against dex itself. Register this as a client in dex:
 #
 #   staticClients:

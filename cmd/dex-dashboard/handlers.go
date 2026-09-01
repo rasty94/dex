@@ -22,16 +22,17 @@ var templateFS embed.FS
 // requireAdmin, so a nil session here is a programming error, not a state to
 // render around.
 type dashboard struct {
-	dex    *dexClient
-	auth   *authenticator
-	pages  map[string]*template.Template
-	logger *slog.Logger
+	dex       *dexClient
+	auth      *authenticator
+	telemetry *telemetry
+	pages     map[string]*template.Template
+	logger    *slog.Logger
 }
 
 // pageTemplates are the views, each paired with the shared layout.
 var pageTemplates = []string{
 	"overview.html", "clients.html", "connectors.html", "users.html", "sessions.html",
-	"client_form.html", "user_form.html", "connector_form.html", "confirm.html",
+	"client_form.html", "user_form.html", "connector_form.html", "confirm.html", "status.html",
 }
 
 var templateFuncs = template.FuncMap{
@@ -48,7 +49,7 @@ var templateFuncs = template.FuncMap{
 // the whole directory at once. Every page defines a block named "content", and
 // in a single set those definitions overwrite each other — the last file parsed
 // would win and every page would render the same body.
-func newDashboard(dex *dexClient, auth *authenticator, logger *slog.Logger) (*dashboard, error) {
+func newDashboard(dex *dexClient, auth *authenticator, tel *telemetry, logger *slog.Logger) (*dashboard, error) {
 	pages := make(map[string]*template.Template, len(pageTemplates))
 	for _, name := range pageTemplates {
 		t, err := template.New(name).Funcs(templateFuncs).
@@ -58,7 +59,7 @@ func newDashboard(dex *dexClient, auth *authenticator, logger *slog.Logger) (*da
 		}
 		pages[name] = t
 	}
-	return &dashboard{dex: dex, auth: auth, pages: pages, logger: logger}, nil
+	return &dashboard{dex: dex, auth: auth, telemetry: tel, pages: pages, logger: logger}, nil
 }
 
 // page is what every template receives.

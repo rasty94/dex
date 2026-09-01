@@ -41,6 +41,12 @@ type DexConfig struct {
 	// CACert enables TLS against the gRPC API with the given root. Without it
 	// the connection is plaintext, which is only acceptable over loopback.
 	CACert string `json:"caCert"`
+
+	// TelemetryURL is dex's telemetry endpoint, e.g. http://dex:5558. It backs
+	// the Status view. That endpoint has no authentication of its own, so it
+	// must be reachable from the dashboard and from nowhere else; the dashboard
+	// reads it server-side and never proxies it to a browser.
+	TelemetryURL string `json:"telemetryURL"`
 }
 
 // OIDCConfig is how administrators log in: against dex itself.

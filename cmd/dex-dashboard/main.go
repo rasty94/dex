@@ -52,7 +52,7 @@ func run() error {
 		return err
 	}
 
-	d, err := newDashboard(dex, auth, logger)
+	d, err := newDashboard(dex, auth, newTelemetry(c.Dex.TelemetryURL), logger)
 	if err != nil {
 		return err
 	}
@@ -69,6 +69,7 @@ func run() error {
 	mux.HandleFunc("/connectors", auth.requireAdmin(d.handleConnectors))
 	mux.HandleFunc("/users", auth.requireAdmin(d.handleUsers))
 	mux.HandleFunc("/sessions", auth.requireAdmin(d.handleSessions))
+	mux.HandleFunc("/status", auth.requireAdmin(d.handleStatus))
 
 	// Writes. Every one of them sits behind a session, the CSRF token and write
 	// permission; the GET forms behind a session and write permission, so a

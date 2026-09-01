@@ -51,7 +51,8 @@ panel es de solo lectura para todo el mundo.
 | Clients | los clientes OAuth2 de `dex.yaml` |
 | Connectors | los conectores configurados: `mock` y `local` |
 | Local users | los usuarios del password DB |
-| Sessions | refresh tokens de un usuario, buscando por su `sub` |
+| Sessions | refresh tokens de un usuario, por `sub` o por usuario + conector |
+| Status | salud de Dex, tráfico por endpoint, errores y logins frenados |
 
 Y con permiso de escritura: alta, edición y baja de clientes OAuth2, conectores y
 usuarios locales, cambio de contraseña, revocación de refresh tokens y recarga de

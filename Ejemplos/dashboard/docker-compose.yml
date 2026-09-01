@@ -67,6 +67,8 @@ services:
             # La API gRPC de Dex, en el mismo espacio de red.
             - DEX_DASHBOARD_GRPC_ADDRESS=127.0.0.1:5557
             - DEX_DASHBOARD_GRPC_TOKEN=token-de-ejemplo-cambiame
+            # Telemetria de dex, para la vista de Status.
+            - DEX_DASHBOARD_TELEMETRY_URL=http://127.0.0.1:5558
 
             # Quién es administrador. Sin grupo ni email el panel se niega a
             # arrancar, a propósito: admitir a cualquier usuario autenticado

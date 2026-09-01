@@ -14,6 +14,9 @@ dex:
 {{- if getenv "DEX_DASHBOARD_GRPC_CA_CERT" "" }}
   caCert: {{ .Env.DEX_DASHBOARD_GRPC_CA_CERT }}
 {{- end }}
+{{- if getenv "DEX_DASHBOARD_TELEMETRY_URL" "" }}
+  telemetryURL: {{ .Env.DEX_DASHBOARD_TELEMETRY_URL }}
+{{- end }}
 
 oidc:
   issuer: {{ getenv "DEX_DASHBOARD_OIDC_ISSUER" | required "$DEX_DASHBOARD_OIDC_ISSUER is required" }}

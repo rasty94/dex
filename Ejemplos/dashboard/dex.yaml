@@ -11,6 +11,11 @@ storage:
 web:
     http: 0.0.0.0:5556
 
+# Metricas y health check. El panel las lee para su vista de Status. Este
+# endpoint no lleva autenticacion propia: no debe publicarse fuera.
+telemetry:
+    http: 0.0.0.0:5558
+
 # La API gRPC es lo que administra el panel. Viene apagada por defecto en la
 # imagen; aquí se enciende a propósito.
 grpc:
