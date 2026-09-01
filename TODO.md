@@ -54,7 +54,17 @@
       - [ ] Trusted device sobre la maquinaria de cookies de upstream (ya cifradas), no sobre
             la cookie propia `dex_mfa_trust_*`.
       - [ ] Flujo TOTP en el servidor (`ErrTOTPRequired`) → `server/authflow/`.
-      - [ ] `.proto` y config dinámica de gRPC: regenerar y reaplicar nuestras extensiones.
+      - [x] `.proto` y config dinámica de gRPC. Nuestra única extensión del `.proto`
+            resultó ser `ReloadConfig`; el resto de la rebanada fueron los actualizadores
+            de `storage/static.go` (upstream devuelve el envoltorio por valor y sin forma
+            de cambiarlo) y la autenticación por token, que upstream no tiene en absoluto
+            — se apoya solo en mTLS. Dos mejoras sobre el original: `mutatingPrefixes`
+            suma `Terminate` y `Reset`, métodos nuevos de upstream que destruyen sesiones
+            y segundos factores y habrían pasado sin auditoría; y tanto los actualizadores
+            como los interceptores tienen ya test, que no tenían en `master`.
+      - [ ] **Portar el tooling del fork**: `.pre-commit-config.yaml` no está en la rama,
+            así que ahora mismo los commits allí van sin hooks y el lint hay que lanzarlo
+            a mano. Van con él los objetivos del `Makefile` que compilan los tres binarios.
       - [ ] `web/`: CSS, temas y plantillas.
       - [ ] **Portar `cmd/dex-dashboard` y la cadena Docker.** Decidido que la rama
             sustituye a `master`, así que el panel tiene que viajar con ella: el binario,
@@ -74,12 +84,10 @@
 > [documentacion/dashboard-administracion.md](documentacion/dashboard-administracion.md).
 > Aquí queda solo lo pendiente.
 
-- [ ] **Tokens con nombre en la API gRPC de dex.** Hoy es un único token compartido. El panel
-      manda `x-dex-actor` y dex lo registra, pero eso es el panel atestiguando, no una identidad
-      que dex verifique. Con varios tokens con nombre, un cliente distinto del panel también
-      quedaría identificado y se podrían revocar por separado.
-      Se construye **dentro de la rebanada `.proto` del bloque F**, en la rama: toca el mismo
-      `.proto` y el mismo `serve.go` que el re-port, y hacerlo en `master` sería escribirlo dos veces.
+- [x] **Tokens con nombre en la API gRPC de dex.** Hecho en la rama, dentro de la rebanada
+      `.proto`. `grpc.tokens` acepta pares nombre/token, la línea de auditoría lleva ya
+      `caller`, y el `grpc.token` de siempre sigue valiendo como `default`. Queda pendiente
+      **enseñárselo al panel**: hoy manda un único token y no sabe de nombres.
 - [ ] **Visor de intentos de login fallidos.** No se puede hacer con la API actual: dex los
       escribe en su log y no hay forma de consultarlos. Necesita un recolector de logs, no una
       vista más. La de Status ya dice *cuántos*; falta el *quién* y el *cuándo*.
