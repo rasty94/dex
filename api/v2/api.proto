@@ -599,4 +599,17 @@ service Dex {
   rpc DeleteMFASecret(DeleteMFASecretReq) returns (DeleteMFASecretResp) {};
   // RevokeConsent revokes consent for a specific client.
   rpc RevokeConsent(RevokeConsentReq) returns (RevokeConsentResp) {};
+  // ReloadConfig reloads the server configuration from the configuration file without restarting.
+  rpc ReloadConfig(ReloadConfigReq) returns (ReloadConfigResp) {};
+}
+
+// ReloadConfigReq is a request to reload the configuration.
+message ReloadConfigReq {}
+
+// ReloadConfigResp returns the result of the configuration reload.
+message ReloadConfigResp {
+  // Set to true if the configuration was reloaded successfully.
+  bool success = 1;
+  // Error message if the reload failed.
+  string error = 2;
 }

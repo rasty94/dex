@@ -24,7 +24,10 @@ const apiVersion = 4
 // connector CRUD, the discovery handler to serve the same document as HTTP, and
 // the back-channel notifier to tell relying parties about the sessions it ends —
 // rather than the whole Server.
-func NewAPI(s storage.Storage, logger *slog.Logger, version string, conns *connectors.Cache, disc *discovery.Handler, bc *backchannel.Notifier) api.DexServer {
+//
+// reloadFunc re-reads the configuration file on demand and may be nil, in which
+// case ReloadConfig reports that it is not configured instead of failing.
+func NewAPI(s storage.Storage, logger *slog.Logger, version string, conns *connectors.Cache, disc *discovery.Handler, bc *backchannel.Notifier, reloadFunc func(context.Context) error) api.DexServer {
 	apiLogger := logger.With("component", "api")
 	return dexAPI{
 		s:           s,
@@ -34,6 +37,7 @@ func NewAPI(s storage.Storage, logger *slog.Logger, version string, conns *conne
 		discovery:   disc,
 		backchannel: bc,
 		refresh:     tokens.NewRefreshStore(s, time.Now, apiLogger),
+		reloadFunc:  reloadFunc,
 	}
 }
 
@@ -47,6 +51,7 @@ type dexAPI struct {
 	discovery   *discovery.Handler
 	backchannel *backchannel.Notifier
 	refresh     *tokens.RefreshStore
+	reloadFunc  func(context.Context) error
 }
 
 func (d dexAPI) GetVersion(ctx context.Context, req *api.VersionReq) (*api.VersionResp, error) {
@@ -81,4 +86,23 @@ func unixOrZero(t time.Time) int64 {
 		return 0
 	}
 	return t.Unix()
+}
+
+// ReloadConfig re-reads the configuration file and applies the parts that can
+// change at runtime (static clients and connectors). Failures come back in the
+// response rather than as a gRPC error: the call itself succeeded, it is the
+// reload that did not, and the caller wants the reason.
+func (d dexAPI) ReloadConfig(ctx context.Context, req *api.ReloadConfigReq) (*api.ReloadConfigResp, error) {
+	d.logger.InfoContext(ctx, "reloading configuration on request from the gRPC API")
+
+	if d.reloadFunc == nil {
+		return &api.ReloadConfigResp{Success: false, Error: "reload function not configured"}, nil
+	}
+
+	if err := d.reloadFunc(ctx); err != nil {
+		d.logger.ErrorContext(ctx, "failed to reload configuration", "err", err)
+		return &api.ReloadConfigResp{Success: false, Error: fmt.Sprintf("reload failed: %v", err)}, nil
+	}
+
+	return &api.ReloadConfigResp{Success: true}, nil
 }

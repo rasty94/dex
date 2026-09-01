@@ -20,7 +20,7 @@ func TestStaticClients(t *testing.T) {
 	c3 := storage.Client{ID: "spam", Secret: "spam_secret"}
 
 	backing.CreateClient(ctx, c1)
-	s := storage.WithStaticClients(backing, []storage.Client{c2})
+	s, _ := storage.WithStaticClients(backing, []storage.Client{c2})
 
 	tests := []struct {
 		name    string
@@ -217,7 +217,7 @@ func TestStaticConnectors(t *testing.T) {
 	c3 := storage.Connector{ID: storage.NewID(), Type: "saml", Name: "saml", ResourceVersion: "1", Config: config3}
 
 	backing.CreateConnector(ctx, c1)
-	s := storage.WithStaticConnectors(backing, []storage.Connector{c2})
+	s, _ := storage.WithStaticConnectors(backing, []storage.Connector{c2})
 
 	tests := []struct {
 		name    string
@@ -288,5 +288,72 @@ func TestStaticConnectors(t *testing.T) {
 		if err == nil && tc.wantErr {
 			t.Errorf("%s: expected error, didn't get one", tc.name)
 		}
+	}
+}
+
+// The updaters are the reason this fork returns them at all: ReloadConfig swaps
+// the static sets while requests are in flight. Cover both the swap and the fact
+// that the old entries stop resolving, which is what makes a removed client
+// actually go away rather than linger.
+func TestStaticClientsUpdater(t *testing.T) {
+	ctx := t.Context()
+
+	backing := New(slog.New(slog.DiscardHandler))
+	s, update := storage.WithStaticClients(backing, []storage.Client{{ID: "before", Secret: "s1"}})
+
+	if _, err := s.GetClient(ctx, "before"); err != nil {
+		t.Fatalf("expected the initial static client to resolve: %v", err)
+	}
+
+	update([]storage.Client{{ID: "after", Secret: "s2"}})
+
+	got, err := s.GetClient(ctx, "after")
+	if err != nil {
+		t.Fatalf("expected the reloaded static client to resolve: %v", err)
+	}
+	if got.Secret != "s2" {
+		t.Errorf("secret: got %q, want %q", got.Secret, "s2")
+	}
+	if _, err := s.GetClient(ctx, "before"); err != storage.ErrNotFound {
+		t.Errorf("removed static client still resolves: err = %v, want %v", err, storage.ErrNotFound)
+	}
+
+	clients, err := s.ListClients(ctx)
+	if err != nil {
+		t.Fatalf("list clients: %v", err)
+	}
+	if len(clients) != 1 || clients[0].ID != "after" {
+		t.Errorf("ListClients after reload: got %v, want just \"after\"", clients)
+	}
+}
+
+func TestStaticConnectorsUpdater(t *testing.T) {
+	ctx := t.Context()
+
+	cfg := []byte(`{"issuer": "https://accounts.google.com"}`)
+	backing := New(slog.New(slog.DiscardHandler))
+	s, update := storage.WithStaticConnectors(backing, []storage.Connector{
+		{ID: "before", Type: "oidc", Name: "before", ResourceVersion: "1", Config: cfg},
+	})
+
+	if _, err := s.GetConnector(ctx, "before"); err != nil {
+		t.Fatalf("expected the initial static connector to resolve: %v", err)
+	}
+
+	update([]storage.Connector{
+		{ID: "after", Type: "oidc", Name: "after", ResourceVersion: "2", Config: cfg},
+	})
+
+	got, err := s.GetConnector(ctx, "after")
+	if err != nil {
+		t.Fatalf("expected the reloaded static connector to resolve: %v", err)
+	}
+	// A fresh ResourceVersion is what makes the server reopen the connector; a
+	// reload that kept the old one would silently keep serving the old config.
+	if got.ResourceVersion != "2" {
+		t.Errorf("resource version: got %q, want %q", got.ResourceVersion, "2")
+	}
+	if _, err := s.GetConnector(ctx, "before"); err != storage.ErrNotFound {
+		t.Errorf("removed static connector still resolves: err = %v, want %v", err, storage.ErrNotFound)
 	}
 }

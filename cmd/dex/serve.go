@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -32,8 +33,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	"github.com/dexidp/dex/api/v2"
 	"github.com/dexidp/dex/connector/keystone"
@@ -170,7 +174,11 @@ func runServe(options serveOptions) error {
 		}
 	}
 
-	var grpcOptions []grpc.ServerOption
+	var (
+		grpcOptions        []grpc.ServerOption
+		unaryInterceptors  []grpc.UnaryServerInterceptor
+		streamInterceptors []grpc.StreamServerInterceptor
+	)
 
 	allowedTLSCiphers := []uint16{
 		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
@@ -211,13 +219,26 @@ func runServe(options serveOptions) error {
 
 		if c.GRPC.TLSClientCA != "" {
 			// Only add metrics if client auth is enabled
-			grpcOptions = append(grpcOptions,
-				grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()),
-				grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()),
-			)
+			streamInterceptors = append(streamInterceptors, grpcMetrics.StreamServerInterceptor())
+			unaryInterceptors = append(unaryInterceptors, grpcMetrics.UnaryServerInterceptor())
 		}
 
 		grpcOptions = append(grpcOptions, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	}
+
+	if c.GRPC.Token != "" {
+		logger.Info("gRPC API authentication enabled with token")
+		unaryInterceptors = append(unaryInterceptors, newAuthInterceptor(c.GRPC.Token))
+	}
+
+	// Appended after authentication so only accepted calls are recorded.
+	unaryInterceptors = append(unaryInterceptors, newAuditInterceptor(logger))
+
+	if len(unaryInterceptors) > 0 {
+		grpcOptions = append(grpcOptions, grpc.ChainUnaryInterceptor(unaryInterceptors...))
+	}
+	if len(streamInterceptors) > 0 {
+		grpcOptions = append(grpcOptions, grpc.ChainStreamInterceptor(streamInterceptors...))
 	}
 
 	s, err := c.Storage.Config.Open(logger)
@@ -227,6 +248,8 @@ func runServe(options serveOptions) error {
 	defer s.Close()
 
 	logger.Info("config storage", "storage_type", c.Storage.Type)
+
+	var updateStaticClients func([]storage.Client)
 
 	if len(c.StaticClients) > 0 {
 		for i, client := range c.StaticClients {
@@ -253,7 +276,7 @@ func runServe(options serveOptions) error {
 			}
 			logger.Info("config static client", "client_name", client.Name)
 		}
-		s = storage.WithStaticClients(s, c.StaticClients)
+		s, updateStaticClients = storage.WithStaticClients(s, c.StaticClients)
 	}
 	if len(c.StaticPasswords) > 0 {
 		passwords := make([]storage.Password, len(c.StaticPasswords))
@@ -262,6 +285,8 @@ func runServe(options serveOptions) error {
 		}
 		s = storage.WithStaticPasswords(s, passwords, logger)
 	}
+
+	var updateStaticConnectors func([]storage.Connector)
 
 	storageConnectors := make([]storage.Connector, len(c.StaticConnectors))
 	for i, c := range c.StaticConnectors {
@@ -295,7 +320,7 @@ func runServe(options serveOptions) error {
 		logger.Info("config connector: local passwords enabled")
 	}
 
-	s = storage.WithStaticConnectors(s, storageConnectors)
+	s, updateStaticConnectors = storage.WithStaticConnectors(s, storageConnectors)
 
 	if len(c.OAuth2.ResponseTypes) > 0 {
 		logger.Info("config response types accepted", "response_types", c.OAuth2.ResponseTypes)
@@ -618,15 +643,15 @@ func runServe(options serveOptions) error {
 	if c.GRPC.Addr != "" {
 		logger.Info("listening on", "server", "grpc", "address", c.GRPC.Addr)
 
-		if c.GRPC.TLSClientCA == "" {
+		if c.GRPC.TLSClientCA == "" && c.GRPC.Token == "" {
 			// The gRPC API grants full administrative access (client secret reads,
 			// password/connector/identity CRUD). Its only built-in caller
 			// authentication is mutual TLS via grpc.tlsClientCA; without it, anyone
 			// who can reach the port controls the identity provider. This is a valid
 			// setup only when a trusted front-facing service authenticates callers.
-			logger.Warn("grpc: API server has no client certificate authentication (grpc.tlsClientCA is unset); "+
+			logger.Warn("grpc: API server has no caller authentication (neither grpc.tlsClientCA nor grpc.token is set); "+
 				"it exposes full administrative access. Ensure the port is only reachable by an authenticated, trusted service, "+
-				"or set grpc.tlsClientCA to require mutual TLS.",
+				"set grpc.token, or set grpc.tlsClientCA to require mutual TLS.",
 				"tls", c.GRPC.TLSCert != "")
 		}
 
@@ -635,8 +660,64 @@ func runServe(options serveOptions) error {
 			return fmt.Errorf("listening (grpc) on %s: %w", c.GRPC.Addr, err)
 		}
 
+		reloadFunc := func(ctx context.Context) error {
+			logger.InfoContext(ctx, "reloading configuration from file", "configFile", configFile)
+			reloadConfigData, err := os.ReadFile(configFile)
+			if err != nil {
+				return fmt.Errorf("failed to read config file %s for reload: %w", configFile, err)
+			}
+
+			var reloadConfig Config
+			if err := yaml.Unmarshal(reloadConfigData, &reloadConfig); err != nil {
+				return fmt.Errorf("error parse config file %s during reload: %w", configFile, err)
+			}
+			applyConfigOverrides(options, &reloadConfig)
+
+			if err := reloadConfig.Validate(); err != nil {
+				return fmt.Errorf("invalid configuration: %w", err)
+			}
+
+			if updateStaticClients != nil {
+				for i, client := range reloadConfig.StaticClients {
+					if client.IDEnv != "" {
+						reloadConfig.StaticClients[i].ID = os.Getenv(client.IDEnv)
+					}
+					if client.SecretEnv != "" {
+						reloadConfig.StaticClients[i].Secret = os.Getenv(client.SecretEnv)
+					}
+				}
+				updateStaticClients(reloadConfig.StaticClients)
+				logger.InfoContext(ctx, "static clients reloaded in storage")
+			}
+
+			if updateStaticConnectors != nil {
+				newStorageConnectors := make([]storage.Connector, len(reloadConfig.StaticConnectors))
+				for i, rc := range reloadConfig.StaticConnectors {
+					conn, err := ToStorageConnector(rc)
+					if err != nil {
+						return fmt.Errorf("failed to initialize updated static connector %q: %w", rc.ID, err)
+					}
+					// A unique version forces the connector to be reopened on the next request.
+					conn.ResourceVersion = fmt.Sprintf("static-reloaded-%d", time.Now().UnixNano())
+					newStorageConnectors[i] = conn
+				}
+				if reloadConfig.EnablePasswordDB {
+					newStorageConnectors = append(newStorageConnectors, storage.Connector{
+						ID:              connectors.LocalConnector,
+						Name:            "Email",
+						Type:            connectors.LocalConnector,
+						ResourceVersion: fmt.Sprintf("static-reloaded-%d", time.Now().UnixNano()),
+					})
+				}
+				updateStaticConnectors(newStorageConnectors)
+				logger.InfoContext(ctx, "static connectors reloaded in storage")
+			}
+
+			return nil
+		}
+
 		grpcSrv := grpc.NewServer(grpcOptions...)
-		api.RegisterDexServer(grpcSrv, apiserver.NewAPI(serverConfig.Storage, logger, version, serv.Connectors(), serv.Discovery(), serv.Backchannel()))
+		api.RegisterDexServer(grpcSrv, apiserver.NewAPI(serverConfig.Storage, logger, version, serv.Connectors(), serv.Discovery(), serv.Backchannel(), reloadFunc))
 
 		grpcMetrics.InitializeMetrics(grpcSrv)
 		if c.GRPC.Reflection {
@@ -912,4 +993,85 @@ func buildMFAProviders(authenticators []MFAAuthenticator, issuerURL string, logg
 		}
 	}
 	return providers
+}
+
+// actorHeader names the administrator a call is made on behalf of. The API
+// authenticates a shared token, not a person, so without it the audit trail can
+// only ever say "the token did it". A trusted client (the admin dashboard) sets
+// it; it is an attestation by that client, not an identity dex verified, and is
+// logged as such.
+const actorHeader = "x-dex-actor"
+
+// mutatingPrefixes are the method names worth an audit line. Reads are left out
+// on purpose: logging every ListClients would bury the handful of calls that
+// actually changed something.
+var mutatingPrefixes = []string{"Create", "Update", "Delete", "Revoke", "Terminate", "Reset", "ReloadConfig"}
+
+// newAuditInterceptor records every state-changing gRPC call, with the actor
+// when the caller named one.
+func newAuditInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		method := info.FullMethod
+		if i := strings.LastIndex(method, "/"); i >= 0 {
+			method = method[i+1:]
+		}
+
+		mutating := false
+		for _, prefix := range mutatingPrefixes {
+			if strings.HasPrefix(method, prefix) {
+				mutating = true
+				break
+			}
+		}
+		if !mutating {
+			return handler(ctx, req)
+		}
+
+		actor := "unknown"
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if values := md.Get(actorHeader); len(values) > 0 && values[0] != "" {
+				actor = values[0]
+			}
+		}
+
+		resp, err := handler(ctx, req)
+		if err != nil {
+			logger.WarnContext(ctx, "gRPC API call failed", "method", method, "actor", actor, "err", err)
+			return resp, err
+		}
+		logger.InfoContext(ctx, "gRPC API call", "method", method, "actor", actor)
+		return resp, nil
+	}
+}
+
+func newAuthInterceptor(token string) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return nil, status.Errorf(codes.Unauthenticated, "metadata is not provided")
+		}
+		values := md["authorization"]
+		if len(values) == 0 {
+			values = md["bearer"] // fallback for simple clients
+			if len(values) == 0 {
+				return nil, status.Errorf(codes.Unauthenticated, "authorization token is not provided")
+			}
+		}
+
+		authHeader := values[0]
+		var providedToken string
+		if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			providedToken = authHeader[7:]
+		} else {
+			providedToken = authHeader
+		}
+
+		// Constant-time comparison: this is a shared admin secret checked before
+		// any authentication, so a byte-by-byte compare would leak it via timing.
+		if subtle.ConstantTimeCompare([]byte(providedToken), []byte(token)) != 1 {
+			return nil, status.Errorf(codes.Unauthenticated, "invalid authorization token")
+		}
+
+		return handler(ctx, req)
+	}
 }
