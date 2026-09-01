@@ -159,3 +159,50 @@ func TestSessionCookieFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchesFilter(t *testing.T) {
+	tests := []struct {
+		name   string
+		q      string
+		fields []string
+		want   bool
+	}{
+		{"an empty filter keeps everything", "", []string{"anything"}, true},
+		{"substring match", "app", []string{"example-app"}, true},
+		{"case insensitive", "APP", []string{"example-app"}, true},
+		{"matches any of the fields", "jane", []string{"example-app", "jane@example.com"}, true},
+		{"no match", "zzz", []string{"example-app", "jane@example.com"}, false},
+		{"an empty field is not a match", "x", []string{""}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := matchesFilter(tc.q, tc.fields...); got != tc.want {
+				t.Errorf("matchesFilter(%q, %v) = %v, want %v", tc.q, tc.fields, got, tc.want)
+			}
+		})
+	}
+}
+
+// A filter that hides rows must say so, otherwise the page looks like the data
+// is gone rather than merely filtered out.
+func TestFilteredListingReportsWhatItHid(t *testing.T) {
+	d, err := newDashboard(nil, nil, nil, testLogger())
+	if err != nil {
+		t.Fatalf("newDashboard: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/clients?q=app", nil)
+	d.renderFiltered(rr, req, "clients.html", "Clients", "clients", func() (any, int, error) {
+		return []*api.ClientInfo{{Id: "example-app"}}, 3, nil
+	})
+
+	body := rr.Body.String()
+	if !strings.Contains(body, "Showing 1 of 3") {
+		t.Errorf("filtered listing does not report what it hid, got: %s", body)
+	}
+	// The box keeps what was typed, so the filter is visible and clearable.
+	if !strings.Contains(body, `value="app"`) {
+		t.Error("the filter box lost the query")
+	}
+}

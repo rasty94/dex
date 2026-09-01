@@ -9,6 +9,16 @@
   </form>
 </div>
 {{ end }}
+{{ if or .Filter (gt .Total 0) }}
+<form method="get" class="lookup" style="margin-bottom:1rem">
+  <input type="text" name="q" value="{{ .Filter }}" placeholder="Filter…">
+  <button type="submit">Filter</button>
+  {{ if .Filter }}<a class="btn" href="{{ .SelfPath }}">Clear</a>{{ end }}
+</form>
+{{ if and .Filter (lt .Shown .Total) }}
+<p class="note" style="margin-top:-.6rem">Showing {{ .Shown }} of {{ .Total }}.</p>
+{{ end }}
+{{ end }}
 <div class="card scroll">
   {{ if .Data }}
   <table>

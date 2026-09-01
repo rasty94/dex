@@ -71,13 +71,27 @@ type page struct {
 	// Notice carries the one-line result of a write, handed over in the query
 	// string by the redirect that followed it.
 	Notice string
-	Data   any
+	// Filter is the current ?q=, so the search box keeps what was typed and the
+	// listing can say how many rows it hid.
+	Filter string
+	Total  int
+	Shown  int
+	// SelfPath is this listing's own path, so "Clear" can drop the filter
+	// without the template having to know which page it is on.
+	SelfPath string
+	Data     any
 }
 
 func (d *dashboard) render(w http.ResponseWriter, r *http.Request, name string, p page) {
 	p.Session = sessionFrom(r.Context())
 	if p.Notice == "" {
 		p.Notice = r.URL.Query().Get("msg")
+	}
+	if p.Filter == "" {
+		p.Filter = filterQuery(r)
+	}
+	if p.SelfPath == "" {
+		p.SelfPath = r.URL.Path
 	}
 	t, ok := d.pages[name]
 	if !ok {
@@ -164,21 +178,75 @@ func (d *dashboard) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *dashboard) handleClients(w http.ResponseWriter, r *http.Request) {
-	d.renderList(w, r, "clients.html", "Clients", "clients", func() (any, error) {
-		return d.dex.listClients(r.Context())
+	q := filterQuery(r)
+	d.renderFiltered(w, r, "clients.html", "Clients", "clients", func() (any, int, error) {
+		all, err := d.dex.listClients(r.Context())
+		if err != nil {
+			return nil, 0, err
+		}
+		out := make([]*api.ClientInfo, 0, len(all))
+		for _, c := range all {
+			if matchesFilter(q, c.Id, c.Name, strings.Join(c.RedirectUris, " ")) {
+				out = append(out, c)
+			}
+		}
+		return out, len(all), nil
 	})
 }
 
 func (d *dashboard) handleConnectors(w http.ResponseWriter, r *http.Request) {
-	d.renderList(w, r, "connectors.html", "Connectors", "connectors", func() (any, error) {
-		return d.dex.listConnectors(r.Context())
+	q := filterQuery(r)
+	d.renderFiltered(w, r, "connectors.html", "Connectors", "connectors", func() (any, int, error) {
+		all, err := d.dex.listConnectors(r.Context())
+		if err != nil {
+			return nil, 0, err
+		}
+		out := make([]*api.Connector, 0, len(all))
+		for _, c := range all {
+			if matchesFilter(q, c.Id, c.Type, c.Name) {
+				out = append(out, c)
+			}
+		}
+		return out, len(all), nil
 	})
 }
 
 func (d *dashboard) handleUsers(w http.ResponseWriter, r *http.Request) {
-	d.renderList(w, r, "users.html", "Local users", "users", func() (any, error) {
-		return d.dex.listPasswords(r.Context())
+	q := filterQuery(r)
+	d.renderFiltered(w, r, "users.html", "Local users", "users", func() (any, int, error) {
+		all, err := d.dex.listPasswords(r.Context())
+		if err != nil {
+			return nil, 0, err
+		}
+		out := make([]*api.Password, 0, len(all))
+		for _, p := range all {
+			if matchesFilter(q, p.Email, p.Username, p.UserId) {
+				out = append(out, p)
+			}
+		}
+		return out, len(all), nil
 	})
+}
+
+// renderFiltered is renderList for a listing that can be narrowed by ?q=. The
+// fetch reports how many rows existed before filtering, so the page can say
+// what it is hiding instead of looking empty.
+func (d *dashboard) renderFiltered(w http.ResponseWriter, r *http.Request, name, title, nav string, fetch func() (any, int, error)) {
+	data, total, err := fetch()
+	if err != nil {
+		d.logger.Error("dex API call failed", "view", nav, "err", err)
+		d.render(w, r, name, page{Title: title, Nav: nav, Error: friendlyGRPCError(err)})
+		return
+	}
+	shown := 0
+	if v, ok := data.([]*api.ClientInfo); ok {
+		shown = len(v)
+	} else if v, ok := data.([]*api.Connector); ok {
+		shown = len(v)
+	} else if v, ok := data.([]*api.Password); ok {
+		shown = len(v)
+	}
+	d.render(w, r, name, page{Title: title, Nav: nav, Total: total, Shown: shown, Data: data})
 }
 
 // handleSessions looks up a user's refresh tokens. dex keys them on the "sub"
@@ -246,4 +314,26 @@ type sessionsData struct {
 	Connectors []string
 	Tokens     []*api.RefreshTokenRef
 	Searched   bool
+}
+
+// filterQuery is the ?q= a listing was filtered by.
+func filterQuery(r *http.Request) string {
+	return strings.TrimSpace(r.URL.Query().Get("q"))
+}
+
+// matchesFilter reports whether any of the fields contains q, case-insensitively.
+// Filtering happens here rather than in dex because the API has no search: the
+// whole list is fetched either way, and an operator hunting for one client
+// should not have to read a hundred rows to find it.
+func matchesFilter(q string, fields ...string) bool {
+	if q == "" {
+		return true
+	}
+	q = strings.ToLower(q)
+	for _, f := range fields {
+		if strings.Contains(strings.ToLower(f), q) {
+			return true
+		}
+	}
+	return false
 }

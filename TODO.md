@@ -69,8 +69,9 @@
 - [ ] **Visor de intentos de login fallidos.** No se puede hacer con la API actual: dex los
       escribe en su log y no hay forma de consultarlos. Necesita un recolector de logs, no una
       vista más. La de Status ya dice *cuántos*; falta el *quién* y el *cuándo*.
-- [ ] **Búsqueda y paginación en los listados.** Con dos docenas de clientes da igual; con
-      cientos, no.
+- [ ] **Paginación en los listados.** Ya hay filtro por texto en clientes, conectores y
+      usuarios, que resuelve el caso de «encontrar uno». Con miles de filas haría falta además
+      paginar, y eso sí necesita que la API de dex lo soporte: hoy `ListClients` devuelve todo.
 - [ ] **Sesiones compartidas entre réplicas.** Hoy viven en memoria del proceso: un reinicio
       pide login otra vez y el panel no sobrevive a estar replicado. Va de la mano de la caché
       distribuida de la sección 2.
