@@ -3,6 +3,7 @@
 /.idea/
 /bin/
 /dex-dashboard
+/docker-entrypoint
 /config.yaml
 /docker-compose.override.yaml
 /var/

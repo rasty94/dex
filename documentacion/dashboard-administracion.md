@@ -276,7 +276,84 @@ política más estricta.
 
 ---
 
-## 11. Rutas
+## 11. Despliegue con Docker
+
+El panel **viaja en la misma imagen que Dex** (`ghcr.io/rasty94/dex`), pero se ejecuta
+como un contenedor aparte. Un solo build, un solo publicado y una sola superficie de
+CVEs que vigilar; el aislamiento que importa —proceso, red, exposición— se consigue
+igual al levantarlo por separado. El binario añade unos 13 MB a una imagen de 163 MB.
+
+```yaml
+services:
+    dex:
+        image: ghcr.io/rasty94/dex:latest
+        command: ["dex", "serve", "/etc/dex/config.yaml"]
+        environment:
+            - DEX_GRPC_ADDR=0.0.0.0:5557      # sin esto el panel no tiene con qué hablar
+
+    dashboard:
+        image: ghcr.io/rasty94/dex:latest      # misma imagen
+        command: ["dex-dashboard", "--config", "/etc/dex/config.dashboard.docker.yaml"]
+        depends_on: [dex]
+        ports:
+            - "127.0.0.1:5560:5560"            # solo loopback
+        environment:
+            - DEX_DASHBOARD_BASE_URL=https://panel.example.com
+            - DEX_DASHBOARD_OIDC_ISSUER=https://dex.example.com/dex
+            - DEX_DASHBOARD_OIDC_CLIENT_SECRET=...
+            - DEX_DASHBOARD_GRPC_ADDRESS=dex:5557
+            - DEX_DASHBOARD_GRPC_TOKEN=...
+            - DEX_DASHBOARD_ADMIN_GROUPS=dex-admins
+```
+
+Ejemplo completo en `Ejemplos/docker-compose.yml`.
+
+### La API gRPC no está encendida por defecto
+
+`config.docker.yaml` **no habilita gRPC** salvo que se pida con `DEX_GRPC_ADDR`. Es
+una interfaz de gestión y no debería estar escuchando porque sí. Sin esa variable, el
+panel arranca pero todas las vistas dan «Cannot reach dex's gRPC API».
+
+Si además se pone `DEX_GRPC_TOKEN` en Dex, el mismo valor va en
+`DEX_DASHBOARD_GRPC_TOKEN`.
+
+### El cliente hay que registrarlo a mano
+
+La imagen no trae un cliente `dex-dashboard` preconfigurado, y es deliberado: sería
+publicar un secreto conocido para el panel de administración. Hay que añadirlo a la
+configuración de Dex con su `redirectURIs` apuntando a `<baseURL>/callback`.
+
+### Variables de entorno
+
+Toda la configuración del panel se puede dar por entorno. El fichero
+`config.dashboard.docker.yaml` es una plantilla gomplate que el `docker-entrypoint`
+renderiza al arrancar, igual que hace con la de Dex:
+
+| Variable | Por defecto | Notas |
+| -------- | ----------- | ----- |
+| `DEX_DASHBOARD_BASE_URL` | — | **Obligatoria.** URL pública del panel |
+| `DEX_DASHBOARD_OIDC_ISSUER` | — | **Obligatoria.** Issuer de Dex |
+| `DEX_DASHBOARD_LISTEN` | `0.0.0.0:5560` | |
+| `DEX_DASHBOARD_OIDC_CLIENT_ID` | `dex-dashboard` | |
+| `DEX_DASHBOARD_OIDC_CLIENT_SECRET` | vacío | |
+| `DEX_DASHBOARD_GRPC_ADDRESS` | `dex:5557` | |
+| `DEX_DASHBOARD_GRPC_TOKEN` | vacío | |
+| `DEX_DASHBOARD_GRPC_TOKEN_FILE` | — | Tiene prioridad sobre el anterior |
+| `DEX_DASHBOARD_GRPC_CA_CERT` | — | Activa TLS contra la API gRPC |
+| `DEX_DASHBOARD_ADMIN_GROUPS` | — | Lista separada por comas |
+| `DEX_DASHBOARD_ADMIN_EMAILS` | — | Lista separada por comas |
+| `DEX_DASHBOARD_SESSION_TTL` | `8h` | |
+
+### El error que se comete siempre
+
+`baseURL` y el `issuer` tienen que ser URLs **que el navegador pueda resolver**, no
+nombres internos de la red de Docker. Con `issuer: http://dex:5556/dex` el panel
+arranca perfectamente y el login redirige a un host que el navegador del operador no
+conoce. En despliegue real, ambas van detrás del proxy con sus nombres públicos.
+
+---
+
+## 12. Rutas
 
 | Ruta | Protegida | Qué hace |
 | ---- | :-------: | -------- |
@@ -291,14 +368,16 @@ política más estricta.
 
 ---
 
-## 12. Diagnóstico
+## 13. Diagnóstico
 
 | Síntoma | Causa probable |
 | ------- | -------------- |
 | `admin.groups or admin.emails is required` al arrancar | Falta la puerta de acceso; ver §4 |
 | Bucle de redirecciones al entrar | `baseURL` no coincide con el `redirectURI` registrado en Dex |
 | «dex refused the API token» | `dex.token` no coincide con el de la API gRPC |
-| «Cannot reach dex's gRPC API» | `grpc.addr` no habilitado en Dex, o `dex.grpcAddress` mal |
+| «Cannot reach dex's gRPC API» | `grpc.addr` no habilitado en Dex, o `dex.grpcAddress` mal. En Docker, falta `DEX_GRPC_ADDR` (§11) |
+| El login redirige a un host que el navegador no conoce | `issuer` o `baseURL` con nombres internos de Docker en vez de públicos (§11) |
+| `$DEX_DASHBOARD_BASE_URL is required` al arrancar el contenedor | gomplate no pudo renderizar la plantilla: falta esa variable |
 | Entra pero da 403 | La identidad no está en `admin.groups` ni en `admin.emails` |
 | 403 y en los grupos no aparece nada | El conector no está devolviendo el claim `groups` |
 | Conectores en «—» | El flag `api_connectors_crud` de Dex está apagado |
@@ -314,7 +393,7 @@ Eventos que deja en el log, y merece la pena vigilar:
 
 ---
 
-## 13. Estado y siguiente paso
+## 14. Estado y siguiente paso
 
 Fase 1 entregada y probada de extremo a extremo contra un Dex real: el login OIDC
 completo, un usuario autenticado sin el grupo de administración recibiendo `403`, y

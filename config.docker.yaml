@@ -27,6 +27,20 @@ telemetry:
   http: {{ .Env.DEX_TELEMETRY_HTTP }}
 {{- end }}
 
+{{- /* The gRPC API is what the admin dashboard talks to. Off unless asked for:
+       it is a management interface and should not be listening by default. */}}
+{{- if getenv "DEX_GRPC_ADDR" "" }}
+grpc:
+  addr: {{ .Env.DEX_GRPC_ADDR }}
+{{- if getenv "DEX_GRPC_TOKEN" "" }}
+  token: {{ .Env.DEX_GRPC_TOKEN | quote }}
+{{- end }}
+{{- if getenv "DEX_GRPC_TLS_CERT" "" }}
+  tlsCert: {{ .Env.DEX_GRPC_TLS_CERT }}
+  tlsKey: {{ getenv "DEX_GRPC_TLS_KEY" | required "$DEX_GRPC_TLS_KEY in case of grpc.tlsCert is set" }}
+{{- end }}
+{{- end }}
+
 expiry:
   deviceRequests: {{ getenv "DEX_EXPIRY_DEVICE_REQUESTS" "5m" }}
   signingKeys: {{ getenv "DEX_EXPIRY_SIGNING_KEYS" "6h" }}

@@ -1,0 +1,36 @@
+{{- /* NOTE: This configuration file is an example and exists only for development purposes. */ -}}
+{{- /* To find more about gomplate formatting, please visit its documentation site - https://docs.gomplate.ca/ */ -}}
+listen: {{ getenv "DEX_DASHBOARD_LISTEN" "0.0.0.0:5560" }}
+
+baseURL: {{ getenv "DEX_DASHBOARD_BASE_URL" | required "$DEX_DASHBOARD_BASE_URL is required: the OIDC redirect URI is built from it" }}
+
+dex:
+  grpcAddress: {{ getenv "DEX_DASHBOARD_GRPC_ADDRESS" "dex:5557" }}
+{{- if getenv "DEX_DASHBOARD_GRPC_TOKEN_FILE" "" }}
+  tokenFile: {{ .Env.DEX_DASHBOARD_GRPC_TOKEN_FILE }}
+{{- else }}
+  token: {{ getenv "DEX_DASHBOARD_GRPC_TOKEN" "" | quote }}
+{{- end }}
+{{- if getenv "DEX_DASHBOARD_GRPC_CA_CERT" "" }}
+  caCert: {{ .Env.DEX_DASHBOARD_GRPC_CA_CERT }}
+{{- end }}
+
+oidc:
+  issuer: {{ getenv "DEX_DASHBOARD_OIDC_ISSUER" | required "$DEX_DASHBOARD_OIDC_ISSUER is required" }}
+  clientID: {{ getenv "DEX_DASHBOARD_OIDC_CLIENT_ID" "dex-dashboard" }}
+  clientSecret: {{ getenv "DEX_DASHBOARD_OIDC_CLIENT_SECRET" "" | quote }}
+
+admin:
+{{- if getenv "DEX_DASHBOARD_ADMIN_GROUPS" "" }}
+  groups:
+{{- range (getenv "DEX_DASHBOARD_ADMIN_GROUPS" | strings.Split ",") }}
+    - {{ . | strings.TrimSpace | quote }}
+{{- end }}
+{{- end }}
+{{- if getenv "DEX_DASHBOARD_ADMIN_EMAILS" "" }}
+  emails:
+{{- range (getenv "DEX_DASHBOARD_ADMIN_EMAILS" | strings.Split ",") }}
+    - {{ . | strings.TrimSpace | quote }}
+{{- end }}
+{{- end }}
+  sessionTTL: {{ getenv "DEX_DASHBOARD_SESSION_TTL" "8h" }}

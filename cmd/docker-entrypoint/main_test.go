@@ -60,6 +60,33 @@ func TestRun(t *testing.T) {
 			args:         []string{"dex", "serve", "some/path/config.yaml"},
 			wantExecArgs: execArgs{gomplate: true, argPrefixes: []string{"dex", "serve", "/tmp/dex.config.yaml-"}},
 		},
+		{
+			// A bare "dex" used to index args[1] and panic.
+			name:         "dex with no subcommand",
+			args:         []string{"dex"},
+			wantExecArgs: execArgs{gomplate: false, argPrefixes: []string{"dex"}},
+		},
+		{
+			// The dashboard config carries the same kind of secrets as dex's, so
+			// it gets the same environment substitution.
+			name:         "dashboard config is templated",
+			args:         []string{"dex-dashboard", "--config", "/etc/dex/config.dashboard.docker.yaml"},
+			wantExecArgs: execArgs{gomplate: true, argPrefixes: []string{"dex-dashboard", "--config", "/tmp/dex.config.yaml-"}},
+		},
+		{
+			name:         "dashboard by full path",
+			args:         []string{"/usr/local/bin/dex-dashboard", "--config", "/etc/dex/config.dashboard.docker.yaml"},
+			whichReturns: "/usr/local/bin/dex-dashboard",
+			wantExecArgs: execArgs{gomplate: true, argPrefixes: []string{"/usr/local/bin/dex-dashboard", "--config", "/tmp/dex.config.yaml-"}},
+		},
+		{
+			// which() returning "" for an unknown command must not match an empty
+			// argument into a templating path.
+			name:         "unknown command with empty which",
+			args:         []string{"", "serve", "config.yaml"},
+			whichReturns: "",
+			wantExecArgs: execArgs{gomplate: false, argPrefixes: []string{"", "serve", "config.yaml"}},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -71,7 +98,15 @@ func TestRun(t *testing.T) {
 				return test.execReturns
 			}
 
-			fakeWhich := func(_ string) string { return test.whichReturns }
+			// Real which() resolves each name separately: asking for "dex" cannot
+			// hand back the dashboard's path. A fake that answers the same for
+			// every name would let one command match another's branch.
+			fakeWhich := func(name string) string {
+				if test.whichReturns != "" && strings.HasSuffix(test.whichReturns, "/"+name) {
+					return test.whichReturns
+				}
+				return ""
+			}
 
 			fakeGomplate := func(file string) (string, error) {
 				runsGomplate = true
