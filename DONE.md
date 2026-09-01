@@ -206,6 +206,40 @@
 
 ---
 
+### 26. 🎛️ Dashboard de administración
+
+Panel de administración en `cmd/dex-dashboard/`, binario aparte que habla gRPC con Dex.
+Cómo funciona: [documentacion/dashboard-administracion.md](documentacion/dashboard-administracion.md).
+Ejemplo listo para levantar: `Ejemplos/dashboard/`.
+
+- [x] **Fase 1 — Solo lectura.** Login OIDC contra el propio Dex con gate por grupo o email de
+      rescate. Vistas de clientes, conectores, usuarios locales, sesiones y versión. El token de
+      administración se queda en el servidor y nunca llega al navegador; las sesiones son
+      opacas y viven en memoria.
+- [x] **Fase 2 — Escritura con dos niveles.** `admin.groups` da entrada, `admin.writeGroups`
+      habilita los cambios, y con el segundo vacío el panel es de solo lectura para todos.
+      Revocación de refresh tokens, CRUD de clientes OAuth2 y de usuarios locales. Lo
+      destructivo pasa por una página de confirmación que explica qué se rompe. Las contraseñas
+      se hashean con bcrypt en el panel, así que el texto plano no llega a la API de Dex.
+- [x] **Auditoría con nombre.** La API gRPC autentica un token compartido, no a una persona, así
+      que su log solo podía decir «lo hizo el token». El panel manda `x-dex-actor` y Dex la
+      registra en cada operación que muta. No es identidad verificada por Dex: es un cliente ya
+      de plena confianza atestiguando quién pidió qué.
+- [x] **Fase 3 — Conectores.** Alta, edición y baja, más `ReloadConfig`. Los secretos se
+      muestran como `__unchanged__` y se restauran al guardar, de modo que editar un campo no
+      borra una contraseña. La configuración se valida contra la estructura real del tipo de
+      conector, porque Dex solo comprueba que el JSON parsea y una config equivocada rompe
+      todos los logins de ese conector.
+- [x] **Fase 4 — Operación.** Vista de Status con la salud de Dex, tráfico y errores por
+      endpoint, logins frenados por el rate limiter y contadores de Keystone, leídos del
+      endpoint de telemetría desde el servidor.
+- [x] **Búsqueda de sesiones sin pegar el `sub`.** Acepta también usuario + conector y construye
+      el subject con `server.EncodeSubject`, exportado para eso.
+- [x] **Docker.** El binario viaja en la misma imagen que Dex y corre como contenedor aparte;
+      su configuración se renderiza con gomplate como la de Dex.
+
+---
+
 ## 📋 Resumen de Estado
 
 | Área                                        | Estado | Notas                                     |
@@ -242,3 +276,5 @@
 | `sub` en formato de upstream                |   ✅   | ⚠️ incompatible, ver `CHANGELOG`          |
 | Contraseña fuera del paso TOTP              |   ✅   | el receipt basta, campo oculto eliminado  |
 | Re-port sobre upstream                      |   🚧   | keystone y rate limiter, ver `TODO.md`    |
+| Panel de administración                     |   ✅   | `cmd/dex-dashboard`, 4 fases entregadas   |
+| Auditoría con nombre en la API gRPC         |   ✅   | cabecera `x-dex-actor` registrada por dex |

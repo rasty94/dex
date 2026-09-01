@@ -57,70 +57,25 @@
 
 ### 6. 🎛️ Dashboard de administración
 
-> Estado: **fase 1 entregada** en `cmd/dex-dashboard/` (solo lectura). Las cinco decisiones
-> de abajo están tomadas: binario aparte en este repo, BFF en Go con `html/template`, el token
-> de administración solo en servidor, login OIDC contra el propio dex con gate por grupo, y
-> alcance de usuarios limitado al password DB. Ver `cmd/dex-dashboard/README.md`.
+> **Las cuatro fases están entregadas.** Lo hecho, con sus decisiones de diseño, está en
+> [DONE.md](DONE.md); cómo funciona, en
+> [documentacion/dashboard-administracion.md](documentacion/dashboard-administracion.md).
+> Aquí queda solo lo pendiente.
 
-**El problema no es la API, es quién la usa y cómo.** El API gRPC ya cubre casi todo lo que
-un dashboard necesita: `ListClients`/`Create`/`Update`/`DeleteClient`, `ListPasswords` y sus
-CRUD, `ListConnectors` y sus CRUD (tras el flag `api_connectors_crud`, apagado por defecto),
-`ListRefresh`/`RevokeRefresh`, `GetDiscovery`, `GetVersion` y `ReloadConfig`. Lo que falta es
-una interfaz, un modelo de identidad para los administradores y una pista de auditoría.
-
-#### Lo que hay que decidir antes de teclear
-
-1. **Dónde vive.** Recomendación: **servicio aparte**, no dentro del binario de dex. Dex es el
-   IdP; meterle un panel de administración en el mismo proceso amplía su superficie de ataque
-   y convierte cualquier fallo del panel en un fallo del IdP. Un binario separado que habla
-   gRPC con dex se despliega, se actualiza y se expone por separado.
-2. **Cómo llega el navegador al API.** gRPC no se llama desde un navegador. Hacen falta
-   grpc-web con proxy, o un **BFF** (backend for frontend) que exponga REST/JSON al navegador
-   y hable gRPC con dex. Recomendación: BFF, porque además resuelve el punto siguiente.
-3. **Dónde vive el token de administración.** Hoy el API se protege con **un único token
-   estático compartido** (`newAuthInterceptor` en `cmd/dex/serve.go`): quien lo tenga es
-   administrador total y no queda rastro de quién hizo qué. Ese token **no puede llegar nunca
-   al navegador**. El BFF lo guarda en servidor y nunca lo emite al cliente.
-4. **Quién entra al dashboard.** Los administradores se autentican contra **el propio dex** por
-   OIDC, y se autorizan por pertenencia a un grupo (`dex-admins` o el que se configure). Ojo al
-   problema del huevo y la gallina: si dex no arranca o el conector cae, nadie entra. Hace falta
-   una vía de rescate — un usuario local del password DB, o un flag de arranque.
-5. **Qué significa "añadir usuarios".** Este es el punto que más confusión va a generar y hay
-   que dejarlo escrito en la propia UI: el password DB de dex son **solo usuarios locales**. Los
-   usuarios de Keystone (o LDAP, o GitHub) viven en su proveedor y dex no los crea ni los borra.
-   El dashboard puede listar y gestionar los locales, y para el resto solo puede **consultar** y
-   revocar sesiones. Prometer "gestión de usuarios" a secas es prometer algo que no se puede
-   cumplir.
-
-#### Fases
-
-- [x] **Fase 1 — Solo lectura.** Entregada. Login OIDC contra dex con gate por grupo o email
-  de rescate, y vistas de clientes, conectores, usuarios locales, sesiones por `sub`, versión
-  y discovery. Sin escritura. Probada de extremo a extremo contra un dex real: un usuario
-  autenticado pero sin el grupo admin recibe 403 y queda en el log.
-  - Sin htmx todavía: fase 1 no tiene ni un formulario que lo justifique, así que no hay
-    JavaScript en el panel. Entrará con la primera escritura, junto con `script-src` en la CSP.
-- **Fase 2 — Escritura de bajo riesgo.** Alta/baja/edición de clientes OAuth2 y de usuarios
-  locales. Revocación de refresh tokens (útil de verdad en incidentes). Cada acción, a un log de
-  auditoría con la identidad OIDC del administrador, no con el token compartido.
-- **Fase 3 — Conectores.** Es la más delicada: la config de un conector es un blob JSON con
-  esquema distinto por tipo. **No** construir un generador de formularios genérico. Empezar por
-  un editor de JSON con validación contra el esquema del tipo y un botón de `ReloadConfig`, y
-  solo hacer formulario a medida para los dos o tres tipos que de verdad usemos.
-- **Fase 4 — Operación.** Métricas ya expuestas por Prometheus (incluidas las de keystone y las
-  del rate limiter de login), estado de salud, y visor de intentos de login fallidos.
-
-#### Requisitos que no son negociables
-
-- Toda escritura queda auditada con **quién** (identidad OIDC), **qué** y **cuándo**.
-- El dashboard no guarda credenciales de usuarios finales ni las muestra.
-- CSRF en todas las mutaciones y `SameSite` en la cookie de sesión del panel.
-- El panel se puede desplegar sin exponerlo a internet (bind separado), y así por defecto.
-
-#### Deuda previa que conviene cerrar antes de la fase 2
-
-- [ ] Un solo token sin identidad ni roles. Si el dashboard va a escribir, el API necesita al
-      menos distinguir varios tokens con nombre para que la auditoría signifique algo.
+- [ ] **Tokens con nombre en la API gRPC de dex.** Hoy es un único token compartido. El panel
+      manda `x-dex-actor` y dex lo registra, pero eso es el panel atestiguando, no una identidad
+      que dex verifique. Con varios tokens con nombre, un cliente distinto del panel también
+      quedaría identificado y se podrían revocar por separado.
+- [ ] **Visor de intentos de login fallidos.** No se puede hacer con la API actual: dex los
+      escribe en su log y no hay forma de consultarlos. Necesita un recolector de logs, no una
+      vista más. La de Status ya dice *cuántos*; falta el *quién* y el *cuándo*.
+- [ ] **Búsqueda y paginación en los listados.** Con dos docenas de clientes da igual; con
+      cientos, no.
+- [ ] **Sesiones compartidas entre réplicas.** Hoy viven en memoria del proceso: un reinicio
+      pide login otra vez y el panel no sobrevive a estar replicado. Va de la mano de la caché
+      distribuida de la sección 2.
+- [ ] **htmx.** El panel no sirve JavaScript y la CSP está en `default-src 'none'`. Entra
+      cuando alguna pantalla gane algo real con actualización parcial, no antes.
 
 ### 7. 🧹 Deuda técnica conocida
 
