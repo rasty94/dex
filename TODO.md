@@ -53,7 +53,17 @@
       - [ ] i18n y theming por cliente → `server/templates/`.
       - [ ] Trusted device sobre la maquinaria de cookies de upstream (ya cifradas), no sobre
             la cookie propia `dex_mfa_trust_*`.
-      - [ ] Flujo TOTP en el servidor (`ErrTOTPRequired`) → `server/authflow/`.
+      - [x] Flujo TOTP en el servidor (`ErrTOTPRequired`) → `server/authflow/`. El
+            `server/mfa` de upstream **no sirve** para esto: su MFA es posterior a la
+            identidad (corre tras `finalizeLogin`, con un usuario de dex y el secreto TOTP
+            guardado por dex), mientras que el nuestro pasa dentro del intercambio de
+            credenciales, sin identidad todavía y sin que dex vea nunca el secreto. Son
+            ortogonales, así que el flujo Keystone se queda en `handlePasswordLogin` y el
+            de upstream sigue intacto.
+            El estado propio de la pantalla viaja en un `templates.PasswordForm`, porque
+            juntar las dos firmas daba trece parámetros posicionales. El bloque TOTP entra
+            con el marcado de upstream y en inglés: portar la plantilla de master habría
+            revertido su tema nuevo y perdido `remember_me`.
       - [x] `.proto` y config dinámica de gRPC. Nuestra única extensión del `.proto`
             resultó ser `ReloadConfig`; el resto de la rebanada fueron los actualizadores
             de `storage/static.go` (upstream devuelve el envoltorio por valor y sin forma
