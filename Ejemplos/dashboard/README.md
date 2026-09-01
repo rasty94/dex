@@ -42,24 +42,22 @@ Quién es administrador se decide en `DEX_DASHBOARD_ADMIN_GROUPS`, dentro de
 | ----- | --------- |
 | Overview | versión de Dex y recuento de clientes, usuarios locales y conectores |
 | Clients | los clientes OAuth2 de `dex.yaml` |
-| Connectors | «—», porque el flag `api_connectors_crud` está apagado (ver abajo) |
+| Connectors | los conectores configurados: `mock` y `local` |
 | Local users | `admin@example.com` y `pepe@example.com` |
 | Sessions | refresh tokens de un usuario, buscando por su `sub` |
 
 **Nada de esto puede modificar Dex.** El panel es de solo lectura.
 
-### Ver también los conectores
+### El feature flag de los conectores
 
-El listado de conectores está detrás de un feature flag de Dex. Para activarlo,
-añade al servicio `dex` del compose:
+`ListConnectors` está detrás del flag `api_connectors_crud` de Dex, que viene
+apagado. Este ejemplo lo enciende con `DEX_API_CONNECTORS_CRUD=true` en el
+servicio `dex`; si lo quitas, el panel **no falla**: la vista avisa de que el
+flag está apagado y el contador del Overview muestra «—».
 
-```yaml
-        environment:
-            - DEX_API_CONNECTORS_CRUD=true
-```
-
-y `docker compose up -d`. Sin él, el panel avisa en la propia página en vez de
-fallar entera.
+Ten en cuenta que el flag habilita el CRUD completo de conectores en la API de
+Dex, no solo el listado. El panel es de solo lectura y únicamente lista, pero
+enciéndelo sabiendo qué abre.
 
 ---
 

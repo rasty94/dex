@@ -16,6 +16,11 @@ services:
         container_name: dex
         command: ["dex", "serve", "/etc/dex/config.yaml"]
         restart: unless-stopped
+        environment:
+            # Sin esto, ListConnectors responde que el flag esta apagado y la
+            # vista de conectores del panel sale vacia con un aviso. El flag
+            # habilita CRUD de conectores en la API; el panel solo lista.
+            - DEX_API_CONNECTORS_CRUD=true
         ports:
             # Dex, para el navegador y para las aplicaciones.
             - "127.0.0.1:5556:5556"
