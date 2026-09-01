@@ -13,7 +13,7 @@ from an email address.</p>
 <div class="card scroll">
   {{ if .Tokens }}
   <table>
-    <thead><tr><th>Token ID</th><th>Client</th><th>Created</th><th>Last used</th></tr></thead>
+    <thead><tr><th>Token ID</th><th>Client</th><th>Created</th><th>Last used</th>{{ if and $.Session $.Session.CanWrite }}<th></th>{{ end }}</tr></thead>
     <tbody>
     {{ range .Tokens }}
       <tr>
@@ -21,6 +21,16 @@ from an email address.</p>
         <td class="mono">{{ .ClientId }}</td>
         <td class="muted">{{ ts .CreatedAt }}</td>
         <td class="muted">{{ ts .LastUsed }}</td>
+        {{ if and $.Session $.Session.CanWrite }}
+        <td class="row-actions">
+          <form method="post" action="/sessions/revoke">
+            <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
+            <input type="hidden" name="sub" value="{{ $.Data.Subject }}">
+            <input type="hidden" name="client_id" value="{{ .ClientId }}">
+            <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
+          </form>
+        </td>
+        {{ end }}
       </tr>
     {{ end }}
     </tbody>

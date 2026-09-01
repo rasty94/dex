@@ -28,6 +28,7 @@ type session struct {
 	Email     string
 	Name      string
 	Groups    []string
+	CanWrite  bool
 	CSRFToken string
 	Expiry    time.Time
 }
@@ -146,15 +147,27 @@ func newAuthenticator(ctx context.Context, c *Config, logger *slog.Logger) (*aut
 	}, nil
 }
 
-// authorized reports whether these claims belong to an administrator.
-func (a *authenticator) authorized(email string, groups []string) bool {
-	for _, allowed := range a.admin.Emails {
-		if strings.EqualFold(allowed, email) {
-			return true
+// access reports what these claims may do: get in at all, and change anything
+// once in. Write permission is granted separately, never implied by read.
+func (a *authenticator) access(email string, groups []string) (canRead, canWrite bool) {
+	canRead = matches(email, groups, a.admin.Emails, a.admin.Groups)
+	canWrite = canRead && matches(email, groups, a.admin.WriteEmails, a.admin.WriteGroups)
+	return canRead, canWrite
+}
+
+// matches reports whether the identity is named by either allow list. Emails
+// compare case-insensitively; group names must match exactly, so "dex-admins"
+// does not admit "dex-admins-readonly".
+func matches(email string, groups, allowedEmails, allowedGroups []string) bool {
+	if email != "" {
+		for _, allowed := range allowedEmails {
+			if strings.EqualFold(allowed, email) {
+				return true
+			}
 		}
 	}
-	for _, allowed := range a.admin.Groups {
-		if slices.Contains(groups, allowed) {
+	for _, allowed := range allowedGroups {
+		if allowed != "" && slices.Contains(groups, allowed) {
 			return true
 		}
 	}
@@ -241,7 +254,8 @@ func (a *authenticator) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !a.authorized(claims.Email, claims.Groups) {
+	canRead, canWrite := a.access(claims.Email, claims.Groups)
+	if !canRead {
 		// Logged with the identity, because a refused administrative login is
 		// exactly the event someone will go looking for afterwards.
 		a.logger.Warn("refused dashboard access", "email", claims.Email, "groups", claims.Groups)
@@ -259,6 +273,7 @@ func (a *authenticator) handleCallback(w http.ResponseWriter, r *http.Request) {
 		Email:     claims.Email,
 		Name:      claims.Name,
 		Groups:    claims.Groups,
+		CanWrite:  canWrite,
 		CSRFToken: csrf,
 	})
 	if err != nil {
@@ -267,7 +282,7 @@ func (a *authenticator) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.logger.Info("dashboard login", "email", claims.Email)
+	a.logger.Info("dashboard login", "email", claims.Email, "can_write", canWrite)
 	http.SetCookie(w, a.cookie(sessionCookie, id, int(a.sessions.ttl/time.Second)))
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -306,6 +321,25 @@ func (a *authenticator) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		a.handleLogin(w, r)
+	}
+}
+
+// requireWrite gates every state-changing route. It sits behind requireCSRF, so
+// a request has to be authenticated, hold the right token and carry write
+// permission before anything happens.
+func (a *authenticator) requireWrite(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sess := sessionFrom(r.Context())
+		if sess == nil || !sess.CanWrite {
+			email := ""
+			if sess != nil {
+				email = sess.Email
+			}
+			a.logger.Warn("refused write without permission", "email", email, "path", r.URL.Path)
+			http.Error(w, "Your account has read-only access to this dashboard.", http.StatusForbidden)
+			return
+		}
+		next(w, r)
 	}
 }
 

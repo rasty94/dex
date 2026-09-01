@@ -223,6 +223,9 @@ func runServe(options serveOptions) error {
 		unaryInterceptors = append(unaryInterceptors, newAuthInterceptor(c.GRPC.Token))
 	}
 
+	// Appended after authentication so only accepted calls are recorded.
+	unaryInterceptors = append(unaryInterceptors, newAuditInterceptor(logger))
+
 	if len(unaryInterceptors) > 0 {
 		grpcOptions = append(grpcOptions, grpc.ChainUnaryInterceptor(unaryInterceptors...))
 	}
@@ -861,6 +864,55 @@ func loadTLSConfig(certFile, keyFile, caFile string, baseConfig *tls.Config) (*t
 // recordBuildInfo publishes information about Dex version and runtime info through an info metric (gauge).
 func recordBuildInfo() {
 	buildInfo.WithLabelValues(version, runtime.Version(), fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)).Set(1)
+}
+
+// actorHeader names the administrator a call is made on behalf of. The API
+// authenticates a shared token, not a person, so without it the audit trail can
+// only ever say "the token did it". A trusted client (the admin dashboard) sets
+// it; it is an attestation by that client, not an identity dex verified, and is
+// logged as such.
+const actorHeader = "x-dex-actor"
+
+// mutatingPrefixes are the method names worth an audit line. Reads are left out
+// on purpose: logging every ListClients would bury the handful of calls that
+// actually changed something.
+var mutatingPrefixes = []string{"Create", "Update", "Delete", "Revoke", "ReloadConfig"}
+
+// newAuditInterceptor records every state-changing gRPC call, with the actor
+// when the caller named one.
+func newAuditInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		method := info.FullMethod
+		if i := strings.LastIndex(method, "/"); i >= 0 {
+			method = method[i+1:]
+		}
+
+		mutating := false
+		for _, prefix := range mutatingPrefixes {
+			if strings.HasPrefix(method, prefix) {
+				mutating = true
+				break
+			}
+		}
+		if !mutating {
+			return handler(ctx, req)
+		}
+
+		actor := "unknown"
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if values := md.Get(actorHeader); len(values) > 0 && values[0] != "" {
+				actor = values[0]
+			}
+		}
+
+		resp, err := handler(ctx, req)
+		if err != nil {
+			logger.WarnContext(ctx, "gRPC API call failed", "method", method, "actor", actor, "err", err)
+			return resp, err
+		}
+		logger.InfoContext(ctx, "gRPC API call", "method", method, "actor", actor)
+		return resp, nil
+	}
 }
 
 func newAuthInterceptor(token string) grpc.UnaryServerInterceptor {

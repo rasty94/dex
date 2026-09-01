@@ -1,0 +1,15 @@
+{{ define "confirm.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+{{ with .Data }}
+<div class="danger-box">
+  <strong>{{ .Heading }}</strong>
+  <p style="margin:.6rem 0 0">{{ .Warning }}</p>
+</div>
+<form method="post" action="{{ .Action }}" class="actions">
+  <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
+  <input type="hidden" name="{{ .Field }}" value="{{ .Value }}">
+  <button type="submit" class="btn btn-danger">{{ .Confirm }}</button>
+  <a class="btn" href="{{ .Cancel }}">Cancel</a>
+</form>
+{{ end }}
+{{ end }}

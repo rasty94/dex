@@ -70,6 +70,39 @@ func run() error {
 	mux.HandleFunc("/users", auth.requireAdmin(d.handleUsers))
 	mux.HandleFunc("/sessions", auth.requireAdmin(d.handleSessions))
 
+	// Writes. Every one of them sits behind a session, the CSRF token and write
+	// permission; the GET forms behind a session and write permission, so a
+	// read-only account is never shown a button it cannot use.
+	write := func(h http.HandlerFunc) http.HandlerFunc {
+		return auth.requireAdmin(auth.requireWrite(auth.requireCSRF(h)))
+	}
+	form := func(h http.HandlerFunc) http.HandlerFunc {
+		return auth.requireAdmin(auth.requireWrite(h))
+	}
+	mux.HandleFunc("/sessions/revoke", write(d.handleRevokeRefresh))
+	mux.HandleFunc("/clients/new", form(d.handleClientForm))
+	mux.HandleFunc("/clients/edit", form(d.handleClientForm))
+	mux.HandleFunc("/clients/save", write(d.handleClientSave))
+	// Delete answers GET with a confirmation page and POST with the deletion, so
+	// only the POST carries the CSRF check.
+	mux.HandleFunc("/clients/delete", form(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			auth.requireCSRF(d.handleClientDelete)(w, r)
+			return
+		}
+		d.handleClientDelete(w, r)
+	}))
+	mux.HandleFunc("/users/new", form(d.handleUserForm))
+	mux.HandleFunc("/users/edit", form(d.handleUserForm))
+	mux.HandleFunc("/users/save", write(d.handleUserSave))
+	mux.HandleFunc("/users/delete", form(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			auth.requireCSRF(d.handleUserDelete)(w, r)
+			return
+		}
+		d.handleUserDelete(w, r)
+	}))
+
 	srv := &http.Server{
 		Addr:              c.Listen,
 		Handler:           securityHeaders(mux),

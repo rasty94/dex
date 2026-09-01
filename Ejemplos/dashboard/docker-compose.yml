@@ -73,7 +73,12 @@ services:
             # sería no tener puerta.
             #   dex-admins → admin@example.com
             #   authors    → el usuario del conector mock
-            - DEX_DASHBOARD_ADMIN_GROUPS=dex-admins,authors
+            - DEX_DASHBOARD_ADMIN_GROUPS=dex-admins,authors,solo-lectura
+            # Quien ademas puede cambiar cosas. Leer no implica escribir: si
+            # esto se deja vacio, el panel es de solo lectura para todos.
+            #   dex-admins    -> admin@example.com, lee y escribe
+            #   solo-lectura  -> lectura@example.com, solo mira
+            - DEX_DASHBOARD_ADMIN_WRITE_GROUPS=dex-admins,authors
             - DEX_DASHBOARD_SESSION_TTL=8h
 
 volumes:

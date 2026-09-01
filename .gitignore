@@ -2,6 +2,7 @@
 /.direnv/
 /.idea/
 /bin/
+/dex
 /dex-dashboard
 /docker-entrypoint
 /config.yaml

@@ -28,6 +28,7 @@ type dashboard struct {
 // pageTemplates are the views, each paired with the shared layout.
 var pageTemplates = []string{
 	"overview.html", "clients.html", "connectors.html", "users.html", "sessions.html",
+	"client_form.html", "user_form.html", "confirm.html",
 }
 
 var templateFuncs = template.FuncMap{
@@ -63,11 +64,17 @@ type page struct {
 	Nav     string
 	Session *session
 	Error   string
-	Data    any
+	// Notice carries the one-line result of a write, handed over in the query
+	// string by the redirect that followed it.
+	Notice string
+	Data   any
 }
 
 func (d *dashboard) render(w http.ResponseWriter, r *http.Request, name string, p page) {
 	p.Session = sessionFrom(r.Context())
+	if p.Notice == "" {
+		p.Notice = r.URL.Query().Get("msg")
+	}
 	t, ok := d.pages[name]
 	if !ok {
 		d.logger.Error("unknown template", "template", name)
@@ -85,14 +92,20 @@ func (d *dashboard) render(w http.ResponseWriter, r *http.Request, name string, 
 // renderList is the shape every read-only view shares: fetch, and on failure
 // render the page with the error instead of a blank 500. An admin panel that
 // says which call failed beats one that says "Internal Server Error".
-func (d *dashboard) renderList(w http.ResponseWriter, r *http.Request, name, title, nav string, fetch func() (any, error)) {
+// The variadic errMsg lets a failed write re-render its listing with the reason,
+// instead of leaving the operator on a bare error page with no way back.
+func (d *dashboard) renderList(w http.ResponseWriter, r *http.Request, name, title, nav string, fetch func() (any, error), errMsg ...string) {
+	msg := ""
+	if len(errMsg) > 0 {
+		msg = errMsg[0]
+	}
 	data, err := fetch()
 	if err != nil {
 		d.logger.Error("dex API call failed", "view", nav, "err", err)
 		d.render(w, r, name, page{Title: title, Nav: nav, Error: friendlyGRPCError(err)})
 		return
 	}
-	d.render(w, r, name, page{Title: title, Nav: nav, Data: data})
+	d.render(w, r, name, page{Title: title, Nav: nav, Error: msg, Data: data})
 }
 
 // friendlyGRPCError turns the common failures into something an operator can

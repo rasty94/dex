@@ -1,0 +1,49 @@
+{{ define "user_form.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+{{ with .Data }}
+<form method="post" action="/users/save">
+  <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
+  <input type="hidden" name="editing" value="{{ if .Editing }}1{{ else }}0{{ end }}">
+
+  <fieldset>
+    <label class="f" for="email">Email</label>
+    {{ if .Editing }}
+      <input type="text" id="email" name="email" value="{{ .Email }}" readonly>
+      <div class="hint">The email identifies the user and cannot be changed.</div>
+    {{ else }}
+      <input type="email" id="email" name="email" required autofocus>
+    {{ end }}
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="username">Username</label>
+    <input type="text" id="username" name="username" value="{{ .Username }}">
+  </fieldset>
+
+  {{ if not .Editing }}
+  <fieldset>
+    <label class="f" for="user_id">User ID</label>
+    <input type="text" id="user_id" name="user_id">
+    <div class="hint">Optional. Defaults to the email. It ends up in the token's subject, so changing it
+      later looks like a different person to every application.</div>
+  </fieldset>
+  {{ end }}
+
+  <fieldset>
+    <label class="f" for="password">{{ if .Editing }}New password{{ else }}Password{{ end }}</label>
+    <input type="password" id="password" name="password" required {{ if .Editing }}autofocus{{ end }}>
+    <div class="hint">Hashed with bcrypt in the dashboard. The plaintext never reaches dex.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="password_confirm">Repeat password</label>
+    <input type="password" id="password_confirm" name="password_confirm" required>
+  </fieldset>
+
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">{{ if .Editing }}Change password{{ else }}Create user{{ end }}</button>
+    <a class="btn" href="/users">Cancel</a>
+  </div>
+</form>
+{{ end }}
+{{ end }}

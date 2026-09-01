@@ -39,13 +39,23 @@ func newDexClient(c DexConfig) (*dexClient, error) {
 
 func (d *dexClient) Close() error { return d.conn.Close() }
 
-// authed attaches the admin token. The dashboard is the only thing that knows
-// it; browsers never see it.
+// ActorHeader names the administrator on whose behalf a call is made. dex's API
+// authenticates the token, not the person, so its log would otherwise only ever
+// say "the token did it". The dashboard is already fully trusted by that token;
+// this is it attesting who asked, so the audit trail names a human.
+const ActorHeader = "x-dex-actor"
+
+// authed attaches the admin token and, when the call is on behalf of a
+// signed-in administrator, their identity. The token never leaves this process;
+// browsers only ever see an opaque session id.
 func (d *dexClient) authed(ctx context.Context) context.Context {
-	if d.token == "" {
-		return ctx
+	if d.token != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+d.token)
 	}
-	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+d.token)
+	if sess := sessionFrom(ctx); sess != nil && sess.Email != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, ActorHeader, sess.Email)
+	}
+	return ctx
 }
 
 func (d *dexClient) listClients(ctx context.Context) ([]*api.ClientInfo, error) {
@@ -82,6 +92,70 @@ func (d *dexClient) listRefresh(ctx context.Context, subject string) ([]*api.Ref
 		return nil, err
 	}
 	return resp.RefreshTokens, nil
+}
+
+func (d *dexClient) revokeRefresh(ctx context.Context, subject, clientID string) (notFound bool, err error) {
+	resp, err := d.api.RevokeRefresh(d.authed(ctx), &api.RevokeRefreshReq{UserId: subject, ClientId: clientID})
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
+}
+
+func (d *dexClient) createClient(ctx context.Context, c *api.Client) (alreadyExists bool, err error) {
+	resp, err := d.api.CreateClient(d.authed(ctx), &api.CreateClientReq{Client: c})
+	if err != nil {
+		return false, err
+	}
+	return resp.AlreadyExists, nil
+}
+
+func (d *dexClient) updateClient(ctx context.Context, req *api.UpdateClientReq) (notFound bool, err error) {
+	resp, err := d.api.UpdateClient(d.authed(ctx), req)
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
+}
+
+func (d *dexClient) deleteClient(ctx context.Context, id string) (notFound bool, err error) {
+	resp, err := d.api.DeleteClient(d.authed(ctx), &api.DeleteClientReq{Id: id})
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
+}
+
+func (d *dexClient) getClient(ctx context.Context, id string) (*api.Client, error) {
+	resp, err := d.api.GetClient(d.authed(ctx), &api.GetClientReq{Id: id})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Client, nil
+}
+
+func (d *dexClient) createPassword(ctx context.Context, p *api.Password) (alreadyExists bool, err error) {
+	resp, err := d.api.CreatePassword(d.authed(ctx), &api.CreatePasswordReq{Password: p})
+	if err != nil {
+		return false, err
+	}
+	return resp.AlreadyExists, nil
+}
+
+func (d *dexClient) updatePassword(ctx context.Context, req *api.UpdatePasswordReq) (notFound bool, err error) {
+	resp, err := d.api.UpdatePassword(d.authed(ctx), req)
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
+}
+
+func (d *dexClient) deletePassword(ctx context.Context, email string) (notFound bool, err error) {
+	resp, err := d.api.DeletePassword(d.authed(ctx), &api.DeletePasswordReq{Email: email})
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
 }
 
 // ponytail: the refresh API keys on the "sub" claim, which is a base64 protobuf

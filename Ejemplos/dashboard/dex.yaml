@@ -55,6 +55,15 @@ staticPasswords:
       groups:
           - "dex-admins"
 
+    - email: "lectura@example.com"
+      # bcrypt de la cadena "password"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+      username: "lectura"
+      name: "Solo Lectura"
+      userID: "2f7b3d61-5e4a-4b2c-8d3e-6f7a8b9c0d1e"
+      groups:
+          - "solo-lectura"
+
     - email: "pepe@example.com"
       # bcrypt de la cadena "password"
       hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"

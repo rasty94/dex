@@ -3,16 +3,25 @@
 <p class="note"><strong>These are dex's local password users only.</strong>
 Users that sign in through Keystone, LDAP or any other connector live in that provider;
 dex neither stores nor manages them, so they cannot appear here.</p>
+{{ if and .Session .Session.CanWrite }}
+<div class="actions"><a class="btn btn-primary" href="/users/new">New local user</a></div>
+{{ end }}
 <div class="card scroll">
   {{ if .Data }}
   <table>
-    <thead><tr><th>Email</th><th>Username</th><th>User ID</th></tr></thead>
+    <thead><tr><th>Email</th><th>Username</th><th>User ID</th>{{ if and .Session .Session.CanWrite }}<th></th>{{ end }}</tr></thead>
     <tbody>
-    {{ range .Data }}
+    {{ range $.Data }}
       <tr>
         <td>{{ .Email }}</td>
         <td>{{ if .Username }}{{ .Username }}{{ else }}<span class="muted">—</span>{{ end }}</td>
         <td class="mono">{{ .UserId }}</td>
+        {{ if and $.Session $.Session.CanWrite }}
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/users/edit?email={{ .Email }}&amp;username={{ .Username }}">Password</a>
+          <a class="btn btn-sm btn-danger" href="/users/delete?email={{ .Email }}">Delete</a>
+        </td>
+        {{ end }}
       </tr>
     {{ end }}
     </tbody>

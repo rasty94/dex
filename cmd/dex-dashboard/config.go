@@ -54,7 +54,7 @@ type OIDCConfig struct {
 	Scopes []string `json:"scopes"`
 }
 
-// AdminConfig decides who gets in.
+// AdminConfig decides who gets in, and who may change anything once in.
 type AdminConfig struct {
 	// Groups lists the groups that grant access. A user needs one of them.
 	Groups []string `json:"groups"`
@@ -63,6 +63,16 @@ type AdminConfig struct {
 	// chicken-and-egg case: the connector that carries the admin group may be
 	// the one that is broken, and someone still has to get in and fix it.
 	Emails []string `json:"emails"`
+
+	// WriteGroups and WriteEmails grant permission to change things. Read
+	// access is not enough: a panel that lets everyone who can look also delete
+	// is one careless click from an outage, and plenty of people need to read
+	// dex's state without needing to edit it.
+	//
+	// Leaving both empty makes the panel read-only for everybody, which is the
+	// safe default for a console that administers the identity provider.
+	WriteGroups []string `json:"writeGroups"`
+	WriteEmails []string `json:"writeEmails"`
 
 	// SessionTTL bounds a dashboard session. Defaults to 8h.
 	SessionTTL time.Duration `json:"-"`

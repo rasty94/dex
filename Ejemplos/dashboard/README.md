@@ -19,9 +19,14 @@ identidades para que se vea la diferencia:
 
 | Cómo entrar | Grupos | Resultado |
 | ----------- | ------ | --------- |
-| Botón «Entrar como usuario de prueba» | `authors` | ✅ entra |
-| `admin@example.com` / `password` | `dex-admins` | ✅ entra |
+| Botón «Entrar como usuario de prueba» | `authors` | ✅ entra y **puede escribir** |
+| `admin@example.com` / `password` | `dex-admins` | ✅ entra y **puede escribir** |
+| `lectura@example.com` / `password` | `solo-lectura` | 👁 entra, **solo mira** |
 | `pepe@example.com` / `password` | `usuarios` | ❌ **403** |
+
+Entra con `lectura@example.com` y compara: no verás ni el botón «New client» ni
+las acciones de cada fila. Y no es solo que estén ocultas — prueba a ir directo a
+`/clients/delete?id=example-app` y te llevas un 403.
 
 Pepe existe a propósito: **se autentica correctamente y aun así el panel lo
 rechaza**, que es justo lo que tiene que pasar. El intento queda en el log con su
@@ -31,8 +36,10 @@ identidad y sus grupos:
 docker logs dex-dashboard | grep refused
 ```
 
-Quién es administrador se decide en `DEX_DASHBOARD_ADMIN_GROUPS`, dentro de
-`docker-compose.yml`.
+Quién entra se decide en `DEX_DASHBOARD_ADMIN_GROUPS`, y quién además puede
+cambiar cosas en `DEX_DASHBOARD_ADMIN_WRITE_GROUPS`, ambos en
+`docker-compose.yml`. **Leer no implica escribir**: si dejas el segundo vacío, el
+panel es de solo lectura para todo el mundo.
 
 ---
 
@@ -43,10 +50,24 @@ Quién es administrador se decide en `DEX_DASHBOARD_ADMIN_GROUPS`, dentro de
 | Overview | versión de Dex y recuento de clientes, usuarios locales y conectores |
 | Clients | los clientes OAuth2 de `dex.yaml` |
 | Connectors | los conectores configurados: `mock` y `local` |
-| Local users | `admin@example.com` y `pepe@example.com` |
+| Local users | los usuarios del password DB |
 | Sessions | refresh tokens de un usuario, buscando por su `sub` |
 
-**Nada de esto puede modificar Dex.** El panel es de solo lectura.
+Y con permiso de escritura: alta, edición y baja de clientes OAuth2, alta, cambio
+de contraseña y baja de usuarios locales, y revocación de refresh tokens.
+
+Lo destructivo pasa por una **página de confirmación** que explica qué se rompe,
+no por un diálogo del navegador. Borrar un cliente tumba el login de esa
+aplicación, y eso merece leerse antes de pulsar.
+
+Cada escritura queda registrada dos veces: en el log del panel con el
+administrador que la pidió, y en el de Dex, que ahora también nombra a la
+persona en vez de decir «el token»:
+
+```
+docker logs dex | grep "gRPC API call"
+  msg="gRPC API call" method=DeleteClient actor=admin@example.com
+```
 
 ### El feature flag de los conectores
 

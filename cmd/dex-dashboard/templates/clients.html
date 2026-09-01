@@ -1,17 +1,26 @@
 {{ define "clients.html" }}{{ template "layout" . }}{{ end }}
 {{ define "content" }}
+{{ if and .Session .Session.CanWrite }}
+<div class="actions"><a class="btn btn-primary" href="/clients/new">New client</a></div>
+{{ end }}
 <div class="card scroll">
   {{ if .Data }}
   <table>
-    <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Redirect URIs</th><th>Trusted peers</th></tr></thead>
+    <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Redirect URIs</th><th>Trusted peers</th>{{ if and .Session .Session.CanWrite }}<th></th>{{ end }}</tr></thead>
     <tbody>
-    {{ range .Data }}
+    {{ range $.Data }}
       <tr>
         <td class="mono">{{ .Id }}</td>
         <td>{{ if .Name }}{{ .Name }}{{ else }}<span class="muted">—</span>{{ end }}</td>
         <td>{{ if .Public }}public{{ else }}confidential{{ end }}</td>
         <td class="mono">{{ if .RedirectUris }}{{ join .RedirectUris ", " }}{{ else }}<span class="muted">—</span>{{ end }}</td>
         <td class="mono">{{ if .TrustedPeers }}{{ join .TrustedPeers ", " }}{{ else }}<span class="muted">—</span>{{ end }}</td>
+        {{ if and $.Session $.Session.CanWrite }}
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/clients/edit?id={{ .Id }}">Edit</a>
+          <a class="btn btn-sm btn-danger" href="/clients/delete?id={{ .Id }}">Delete</a>
+        </td>
+        {{ end }}
       </tr>
     {{ end }}
     </tbody>

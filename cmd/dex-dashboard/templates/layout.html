@@ -8,11 +8,13 @@
 :root {
   --bg: #f6f7f9; --panel: #fff; --fg: #1b1f24; --muted: #5b6672;
   --line: #dfe3e8; --accent: #2f6feb; --warn-bg: #fdf0ef; --warn-fg: #b3261e;
+  --ok-bg: #eef7ef; --ok-fg: #1a7f37;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #14171a; --panel: #1c2024; --fg: #e6e9ec; --muted: #98a2ae;
     --line: #2c3238; --accent: #6fa1ff; --warn-bg: #33201f; --warn-fg: #f29a94;
+    --ok-bg: #16281b; --ok-fg: #6fce86;
   }
 }
 * { box-sizing: border-box; }
@@ -43,6 +45,29 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .empty { padding: 2.5rem 1rem; text-align: center; color: var(--muted); }
 .err { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid currentColor;
   border-radius: 8px; padding: .8rem 1rem; margin-bottom: 1.25rem; }
+.ok { background: var(--ok-bg); color: var(--ok-fg); border: 1px solid currentColor;
+  border-radius: 8px; padding: .8rem 1rem; margin-bottom: 1.25rem; }
+.actions { display: flex; gap: .5rem; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.btn { font: inherit; font-size: 14px; padding: .45rem .9rem; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { color: #fff; opacity: .9; }
+.btn-danger { color: var(--warn-fg); border-color: var(--warn-fg); }
+.btn-danger:hover { background: var(--warn-bg); color: var(--warn-fg); }
+.btn-sm { font-size: 13px; padding: .25rem .6rem; }
+td.row-actions { white-space: nowrap; text-align: right; }
+fieldset { border: 0; padding: 0; margin: 0 0 1.1rem; }
+label.f { display: block; font-size: 13px; color: var(--muted); margin-bottom: .3rem; }
+input[type=text], input[type=password], input[type=email], textarea { width: 100%; font: inherit;
+  padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--fg); }
+textarea { min-height: 5.5rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.hint { font-size: 12px; color: var(--muted); margin-top: .3rem; }
+.check { display: flex; align-items: center; gap: .5rem; font-size: 14px; }
+.check input { width: auto; }
+.danger-box { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid currentColor;
+  border-radius: 10px; padding: 1.1rem 1.25rem; margin-bottom: 1.5rem; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
 .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; }
 .tile .n { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
@@ -59,7 +84,8 @@ form.lookup button { font: inherit; padding: .5rem 1rem; border: 0; border-radiu
 <body>
 <header>
   <div class="bar">
-    <span class="brand">dex</span> <span class="badge">read only</span>
+    <span class="brand">dex</span>
+    {{ if and .Session .Session.CanWrite }}<span class="badge">admin</span>{{ else }}<span class="badge">read only</span>{{ end }}
     <nav>
       <a href="/" {{ if eq .Nav "overview" }}class="on"{{ end }}>Overview</a>
       <a href="/clients" {{ if eq .Nav "clients" }}class="on"{{ end }}>Clients</a>
@@ -80,6 +106,7 @@ form.lookup button { font: inherit; padding: .5rem 1rem; border: 0; border-radiu
 </header>
 <main>
   <h1>{{ .Title }}</h1>
+  {{ with .Notice }}<div class="ok">{{ . }}</div>{{ end }}
   {{ with .Error }}<div class="err">{{ . }}</div>{{ end }}
   {{ template "content" . }}
 </main>

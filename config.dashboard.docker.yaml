@@ -33,4 +33,16 @@ admin:
     - {{ . | strings.TrimSpace | quote }}
 {{- end }}
 {{- end }}
+{{- if getenv "DEX_DASHBOARD_ADMIN_WRITE_GROUPS" "" }}
+  writeGroups:
+{{- range (getenv "DEX_DASHBOARD_ADMIN_WRITE_GROUPS" | strings.Split ",") }}
+    - {{ . | strings.TrimSpace | quote }}
+{{- end }}
+{{- end }}
+{{- if getenv "DEX_DASHBOARD_ADMIN_WRITE_EMAILS" "" }}
+  writeEmails:
+{{- range (getenv "DEX_DASHBOARD_ADMIN_WRITE_EMAILS" | strings.Split ",") }}
+    - {{ . | strings.TrimSpace | quote }}
+{{- end }}
+{{- end }}
   sessionTTL: {{ getenv "DEX_DASHBOARD_SESSION_TTL" "8h" }}
