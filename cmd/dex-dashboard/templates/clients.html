@@ -1,0 +1,23 @@
+{{ define "clients.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+<div class="card scroll">
+  {{ if .Data }}
+  <table>
+    <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Redirect URIs</th><th>Trusted peers</th></tr></thead>
+    <tbody>
+    {{ range .Data }}
+      <tr>
+        <td class="mono">{{ .Id }}</td>
+        <td>{{ if .Name }}{{ .Name }}{{ else }}<span class="muted">—</span>{{ end }}</td>
+        <td>{{ if .Public }}public{{ else }}confidential{{ end }}</td>
+        <td class="mono">{{ if .RedirectUris }}{{ join .RedirectUris ", " }}{{ else }}<span class="muted">—</span>{{ end }}</td>
+        <td class="mono">{{ if .TrustedPeers }}{{ join .TrustedPeers ", " }}{{ else }}<span class="muted">—</span>{{ end }}</td>
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">No clients registered.</div>
+  {{ end }}
+</div>
+{{ end }}

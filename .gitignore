@@ -2,6 +2,7 @@
 /.direnv/
 /.idea/
 /bin/
+/dex-dashboard
 /config.yaml
 /docker-compose.override.yaml
 /var/

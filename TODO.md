@@ -57,7 +57,10 @@
 
 ### 6. 🎛️ Dashboard de administración
 
-> Estado: **propuesta, sin empezar**. Requiere decisiones de arquitectura antes de escribir código.
+> Estado: **fase 1 entregada** en `cmd/dex-dashboard/` (solo lectura). Las cinco decisiones
+> de abajo están tomadas: binario aparte en este repo, BFF en Go con `html/template`, el token
+> de administración solo en servidor, login OIDC contra el propio dex con gate por grupo, y
+> alcance de usuarios limitado al password DB. Ver `cmd/dex-dashboard/README.md`.
 
 **El problema no es la API, es quién la usa y cómo.** El API gRPC ya cubre casi todo lo que
 un dashboard necesita: `ListClients`/`Create`/`Update`/`DeleteClient`, `ListPasswords` y sus
@@ -91,9 +94,12 @@ una interfaz, un modelo de identidad para los administradores y una pista de aud
 
 #### Fases
 
-- **Fase 1 — Solo lectura.** Login por OIDC contra dex, gate por grupo, y vistas de lectura:
-  clientes, conectores, usuarios locales, sesiones activas, versión y discovery. Sin escritura.
-  Entrega valor desde el primer día y el radio de daño de un fallo es cero.
+- [x] **Fase 1 — Solo lectura.** Entregada. Login OIDC contra dex con gate por grupo o email
+  de rescate, y vistas de clientes, conectores, usuarios locales, sesiones por `sub`, versión
+  y discovery. Sin escritura. Probada de extremo a extremo contra un dex real: un usuario
+  autenticado pero sin el grupo admin recibe 403 y queda en el log.
+  - Sin htmx todavía: fase 1 no tiene ni un formulario que lo justifique, así que no hay
+    JavaScript en el panel. Entrará con la primera escritura, junto con `script-src` en la CSP.
 - **Fase 2 — Escritura de bajo riesgo.** Alta/baja/edición de clientes OAuth2 y de usuarios
   locales. Revocación de refresh tokens (útil de verdad en incidentes). Cada acción, a un log de
   auditoría con la identidad OIDC del administrador, no con el token compartido.

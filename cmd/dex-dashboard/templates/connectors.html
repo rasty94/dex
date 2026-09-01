@@ -1,0 +1,24 @@
+{{ define "connectors.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+<p class="note">Connector configuration is a per-type JSON blob and is not shown here.
+Editing it is phase three of the dashboard plan.</p>
+<div class="card scroll">
+  {{ if .Data }}
+  <table>
+    <thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Config size</th></tr></thead>
+    <tbody>
+    {{ range .Data }}
+      <tr>
+        <td class="mono">{{ .Id }}</td>
+        <td class="mono">{{ .Type }}</td>
+        <td>{{ .Name }}</td>
+        <td class="muted">{{ len .Config }} bytes</td>
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">No connectors returned.</div>
+  {{ end }}
+</div>
+{{ end }}

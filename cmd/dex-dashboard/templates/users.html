@@ -1,0 +1,24 @@
+{{ define "users.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+<p class="note"><strong>These are dex's local password users only.</strong>
+Users that sign in through Keystone, LDAP or any other connector live in that provider;
+dex neither stores nor manages them, so they cannot appear here.</p>
+<div class="card scroll">
+  {{ if .Data }}
+  <table>
+    <thead><tr><th>Email</th><th>Username</th><th>User ID</th></tr></thead>
+    <tbody>
+    {{ range .Data }}
+      <tr>
+        <td>{{ .Email }}</td>
+        <td>{{ if .Username }}{{ .Username }}{{ else }}<span class="muted">—</span>{{ end }}</td>
+        <td class="mono">{{ .UserId }}</td>
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">No local users. Every user signs in through a connector.</div>
+  {{ end }}
+</div>
+{{ end }}
