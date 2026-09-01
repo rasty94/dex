@@ -57,7 +57,10 @@
 
 ### 6. 🎛️ Dashboard de administración
 
-> **Las cuatro fases están entregadas.** Lo hecho, con sus decisiones de diseño, está en
+> **Las cuatro fases están entregadas**, más un bloque de endurecimiento de seguridad
+> (re-autenticación, caducidad por inactividad, `__Host-`, límite de login), esqueletos de
+> conector, revocación masiva de sesiones, exportación de configuración y vista de discovery.
+> Lo hecho, con sus decisiones de diseño, está en
 > [DONE.md](DONE.md); cómo funciona, en
 > [documentacion/dashboard-administracion.md](documentacion/dashboard-administracion.md).
 > Aquí queda solo lo pendiente.

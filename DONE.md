@@ -235,6 +235,19 @@ Ejemplo listo para levantar: `Ejemplos/dashboard/`.
       endpoint de telemetría desde el servidor.
 - [x] **Búsqueda de sesiones sin pegar el `sub`.** Acepta también usuario + conector y construye
       el subject con `server.EncodeSubject`, exportado para eso.
+- [x] **Endurecimiento de sesión.** Caducidad por inactividad además de la absoluta,
+      re-autenticación obligatoria para lo destructivo (`prompt=login`, con vuelta a donde
+      ibas), prefijo `__Host-` en las cookies bajo HTTPS y límite de intentos en el login del
+      panel, que hasta entonces no tenía freno.
+- [x] **Esqueletos de conector por tipo**, sacados por reflexión del struct real y en orden de
+      struct, para que lo esencial salga primero.
+- [x] **Revocar todas las sesiones de un usuario** de una vez, que es el botón de un
+      offboarding o un portátil perdido.
+- [x] **Exportar la configuración** a YAML (clientes y conectores) para copia de seguridad,
+      con confirmación y auditoría porque el fichero lleva credenciales vivas.
+- [x] **Vista de Discovery**, lo que hay que entregar a quien integra una aplicación.
+- [x] **Filtro por texto** en clientes, conectores y usuarios, distinguiendo una lista vacía de
+      una lista filtrada.
 - [x] **Docker.** El binario viaja en la misma imagen que Dex y corre como contenedor aparte;
       su configuración se renderiza con gomplate como la de Dex.
 
