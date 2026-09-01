@@ -206,3 +206,37 @@ func TestFilteredListingReportsWhatItHid(t *testing.T) {
 		t.Error("the filter box lost the query")
 	}
 }
+
+// "No clients registered" is a lie when there are clients and the filter simply
+// hid them. The empty state has to tell the two situations apart.
+func TestEmptyStateDistinguishesFilterFromNothing(t *testing.T) {
+	d, err := newDashboard(nil, nil, nil, testLogger())
+	if err != nil {
+		t.Fatalf("newDashboard: %v", err)
+	}
+
+	render := func(url string, total int) string {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		d.renderFiltered(rr, req, "clients.html", "Clients", "clients", func() (any, int, error) {
+			return []*api.ClientInfo{}, total, nil
+		})
+		return rr.Body.String()
+	}
+
+	filtered := render("/clients?q=zzz", 2)
+	if !strings.Contains(filtered, "No clients match") {
+		t.Error("a filter with no matches should say so")
+	}
+	if strings.Contains(filtered, "No clients registered") {
+		t.Error("a filter with no matches must not claim there are no clients")
+	}
+	if !strings.Contains(filtered, "Show all 2") {
+		t.Error("the empty state should offer a way back to the full list")
+	}
+
+	empty := render("/clients", 0)
+	if !strings.Contains(empty, "No clients registered") {
+		t.Error("a genuinely empty list should say there are no clients")
+	}
+}

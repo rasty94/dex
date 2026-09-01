@@ -41,7 +41,10 @@
     </tbody>
   </table>
   {{ else }}
-  <div class="empty">No connectors returned.</div>
+  <div class="empty">
+    {{ if .Filter }}No connectors match “{{ .Filter }}”. <a href="{{ .SelfPath }}">Show all {{ .Total }}</a>.
+    {{ else }}No connectors returned.{{ end }}
+  </div>
   {{ end }}
 </div>
 {{ end }}

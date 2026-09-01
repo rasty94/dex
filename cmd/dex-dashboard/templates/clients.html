@@ -37,7 +37,10 @@
     </tbody>
   </table>
   {{ else }}
-  <div class="empty">No clients registered.</div>
+  <div class="empty">
+    {{ if .Filter }}No clients match “{{ .Filter }}”. <a href="{{ .SelfPath }}">Show all {{ .Total }}</a>.
+    {{ else }}No clients registered.{{ end }}
+  </div>
   {{ end }}
 </div>
 {{ end }}

@@ -39,7 +39,10 @@ dex neither stores nor manages them, so they cannot appear here.</p>
     </tbody>
   </table>
   {{ else }}
-  <div class="empty">No local users. Every user signs in through a connector.</div>
+  <div class="empty">
+    {{ if .Filter }}No local users match “{{ .Filter }}”. <a href="{{ .SelfPath }}">Show all {{ .Total }}</a>.
+    {{ else }}No local users. Every user signs in through a connector.{{ end }}
+  </div>
   {{ end }}
 </div>
 {{ end }}
