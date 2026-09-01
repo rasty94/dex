@@ -2,6 +2,9 @@
 
 A read-only administration panel for a dex server.
 
+> **Cómo funciona por dentro** — arquitectura, flujo de autenticación, sesiones,
+> operación y diagnóstico: [documentacion/dashboard-administracion.md](../../documentacion/dashboard-administracion.md).
+
 It is a **separate binary** from dex on purpose: dex is the identity provider, and
 a bug in a management UI should not be a bug in the IdP. The dashboard talks to
 dex over the gRPC API, keeps the admin token server-side, and authenticates its

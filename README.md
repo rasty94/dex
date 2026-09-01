@@ -37,6 +37,16 @@ docker pull ghcr.io/rasty94/dex:latest
 Auto-published on every push to `master`. Multi-arch: `linux/amd64` + `linux/arm64`.
 See [documentacion/despliegue-docker-tls.md](documentacion/despliegue-docker-tls.md) for the full deployment guide with TLS.
 
+### 🎛️ Admin dashboard
+
+A read-only administration panel ships as a separate binary in
+[cmd/dex-dashboard](cmd/dex-dashboard/): OAuth2 clients, connectors, local users and a
+user's refresh tokens, behind an OIDC login against dex itself. It holds the gRPC admin
+token server-side and never sends it to a browser.
+
+See [documentacion/dashboard-administracion.md](documentacion/dashboard-administracion.md)
+for how it works, and [cmd/dex-dashboard/README.md](cmd/dex-dashboard/README.md) to run it.
+
 ---
 
 ## ID Tokens
