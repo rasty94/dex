@@ -53,6 +53,14 @@
 </div>
 {{ end }}
 
+{{ if and $.Session $.Session.CanWrite }}
+<div class="actions" style="margin-top:1.5rem">
+  <a class="btn" href="/export">Export configuration…</a>
+</div>
+<p class="note" style="margin-top:-.6rem">Clients and connectors as YAML, for backup or version
+control. The file contains live credentials, so the download is confirmed and audited.</p>
+{{ end }}
+
 <p class="note" style="margin-top:1.5rem">Counters are totals since dex started, not rates.
 They answer «is anything happening and is it failing», not «how fast». For trends, point
 Prometheus at dex's telemetry endpoint directly.</p>

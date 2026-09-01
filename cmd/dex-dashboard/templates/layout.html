@@ -95,6 +95,7 @@ form.lookup button { font: inherit; padding: .5rem 1rem; border: 0; border-radiu
       <a href="/users" {{ if eq .Nav "users" }}class="on"{{ end }}>Local users</a>
       <a href="/sessions" {{ if eq .Nav "sessions" }}class="on"{{ end }}>Sessions</a>
       <a href="/status" {{ if eq .Nav "status" }}class="on"{{ end }}>Status</a>
+      <a href="/discovery" {{ if eq .Nav "discovery" }}class="on"{{ end }}>Discovery</a>
     </nav>
     {{ with .Session }}
     <div class="who">

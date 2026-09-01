@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ghodss/yaml"
+
 	api "github.com/dexidp/dex/api/v2"
 )
 
@@ -238,5 +240,40 @@ func TestEmptyStateDistinguishesFilterFromNothing(t *testing.T) {
 	empty := render("/clients", 0)
 	if !strings.Contains(empty, "No clients registered") {
 		t.Error("a genuinely empty list should say there are no clients")
+	}
+}
+
+// The export is the one place credentials leave the system, so what it contains
+// has to be exactly what a restore needs and nothing has to be silently lost.
+func TestExportBundleShape(t *testing.T) {
+	bundle := exportBundle{
+		ExportedAt: "2026-09-01T10:00:00Z",
+		ExportedBy: "jane@example.com",
+		Clients: []exportClient{
+			{ID: "app", Name: "App", Secret: "s3cret", RedirectURIs: []string{"https://app/callback"}},
+			{ID: "spa", Name: "SPA", Public: true},
+		},
+		Connectors: []map[string]any{
+			{"id": "ldap", "type": "ldap", "name": "LDAP", "config": map[string]any{"bindPW": "el-secreto"}},
+		},
+	}
+
+	out, err := yaml.Marshal(bundle)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(out)
+
+	// A backup without secrets cannot restore a confidential client, so they
+	// have to be in there. This is deliberate, and why the download is gated.
+	for _, want := range []string{"s3cret", "el-secreto", "staticClients", "connectors", "jane@example.com"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("export is missing %q:\n%s", want, got)
+		}
+	}
+	// A public client has no secret, and an empty one must not be written as a
+	// key at all: pasting `secret: ""` back into dex creates a broken client.
+	if strings.Contains(got, `secret: ""`) {
+		t.Errorf("an empty secret was written out:\n%s", got)
 	}
 }

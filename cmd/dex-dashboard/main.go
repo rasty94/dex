@@ -70,6 +70,7 @@ func run() error {
 	mux.HandleFunc("/users", auth.requireAdmin(d.handleUsers))
 	mux.HandleFunc("/sessions", auth.requireAdmin(d.handleSessions))
 	mux.HandleFunc("/status", auth.requireAdmin(d.handleStatus))
+	mux.HandleFunc("/discovery", auth.requireAdmin(d.handleDiscovery))
 
 	// Writes. Every one of them sits behind a session, the CSRF token and write
 	// permission; the GET forms behind a session and write permission, so a
@@ -115,6 +116,15 @@ func run() error {
 			return
 		}
 		d.handleUserDelete(w, r)
+	}))
+	// The export carries live credentials out of the system, so it needs write
+	// permission and a recent login, like a deletion.
+	mux.HandleFunc("/export", destructive(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			auth.requireCSRF(d.handleExport)(w, r)
+			return
+		}
+		d.handleExport(w, r)
 	}))
 	mux.HandleFunc("/connectors/new", form(d.handleConnectorForm))
 	mux.HandleFunc("/connectors/edit", form(d.handleConnectorForm))

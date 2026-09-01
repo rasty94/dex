@@ -253,6 +253,31 @@ persona. El interceptor solo registra métodos que mutan (`Create`, `Update`, `D
 Lo que sigue faltando es que Dex distinga **tokens con nombre**, para que un cliente
 distinto del panel también quede identificado. Está anotado en `TODO.md`.
 
+### Sesiones endurecidas
+
+Tres límites, no uno:
+
+- **Caducidad absoluta** (`admin.sessionTTL`, 8h por defecto).
+- **Caducidad por inactividad** (`admin.idleTTL`, 1h): una consola olvidada abierta en un
+  portátil desbloqueado es la amenaza realista, más que una cookie robada. Se comprueba al
+  leer la sesión, no solo por el `max-age` de la cookie.
+- **Re-autenticación para lo destructivo** (`admin.reauthWindow`, 15m): borrar un cliente, un
+  conector o un usuario, revocar todas las sesiones y exportar la configuración exigen un
+  login más reciente que esa ventana. Un `GET` rancio va a Dex con `prompt=login` —sin ese
+  parámetro Dex respondería desde su propia sesión y la comprobación no probaría nada— y
+  vuelve a donde iba. Un `POST` rancio se rechaza en vez de redirigirse, porque tras el viaje
+  de login su cuerpo ya no existe.
+
+Poner cualquiera de las dos últimas a `0` las desactiva.
+
+Las cookies llevan el prefijo **`__Host-`** cuando el panel va por HTTPS. El navegador rechaza
+una cookie con ese prefijo si no es `Secure`, host-only y `Path=/`, que es justo lo que impide
+a un subdominio hermano plantarla. Bajo HTTP el prefijo sería inválido, así que solo se usa
+donde funciona.
+
+El propio login del panel está limitado por dirección: sin eso, un cliente roto puede
+disparar redirecciones e intercambios de token contra Dex sin tope.
+
 ### Lo destructivo se confirma en una página
 
 Borrar un cliente, un conector o un usuario pasa por una página que explica qué se
@@ -298,6 +323,15 @@ más se rechaza en el formulario en vez de romper el login más tarde.
 Una diferencia de mayúsculas **no** es un error: el decodificador de Go casa nombres
 sin distinguirlas, igual que hace Dex al leer su YAML, así que `clientId` funciona
 donde el campo es `clientID`.
+
+### Esqueletos por tipo
+
+Al crear un conector se puede partir de la forma real de ese tipo, sacada por reflexión de su
+struct de configuración. Los campos salen en **orden de struct, no alfabético**: los configs
+se escriben con lo esencial primero (`issuer`, `clientID`, `clientSecret`), y ordenarlos
+alfabéticamente los entierra entre banderas de ajuste.
+
+La validación dice cuándo te equivocas; el esqueleto dice cómo debería ser.
 
 ### Recargar la configuración
 
@@ -463,6 +497,23 @@ conoce. En despliegue real, ambas van detrás del proxy con sus nombres público
 
 ---
 
+## 10. Exportar y Discovery
+
+**Exportar** vuelca clientes y conectores a YAML, con la forma de las secciones equivalentes
+del fichero de configuración de Dex, para copia de seguridad o control de versiones.
+
+El fichero **contiene credenciales vivas**: los secretos de cada cliente y lo que guarden las
+configuraciones de conector. Es el objetivo —una copia sin secretos no restaura nada— pero
+convierte esta descarga en el único punto por el que los secretos salen del sistema. Por eso
+exige permiso de escritura, login reciente, una página de confirmación que lo dice, y deja
+línea de auditoría con quién la descargó.
+
+**Discovery** muestra lo que este Dex anuncia: endpoints, scopes, claims, grant types y
+métodos de autenticación de cliente soportados. Es literalmente lo que hay que pasarle a quien
+va a integrar una aplicación.
+
+---
+
 ## 12. Rutas
 
 | Ruta | Protegida | Qué hace |
@@ -473,6 +524,8 @@ conoce. En despliegue real, ambas van detrás del proxy con sus nombres público
 | `/users` | sí | Usuarios del password DB |
 | `/sessions` | sí | Refresh tokens por `sub` |
 | `/status` | sí | Salud y métricas de Dex |
+| `/discovery` | sí | Documento de discovery de Dex |
+| `/export` | sí + escritura + login reciente | Descarga la configuración en YAML |
 | `/logout` | sí + CSRF | Cierra la sesión (`POST`) |
 | `/callback` | no | Retorno del login OIDC |
 | `/healthz` | no | Sonda de vida |
