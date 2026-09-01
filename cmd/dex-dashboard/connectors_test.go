@@ -207,3 +207,46 @@ func TestEncodeSubjectMatchesDex(t *testing.T) {
 		t.Error("subjects for different connectors collide")
 	}
 }
+
+// The skeleton exists so nobody has to write connector JSON against a schema
+// they cannot see. It has to be valid for the type it describes, and it has to
+// lead with the fields that matter.
+func TestConnectorSkeleton(t *testing.T) {
+	t.Run("every known type produces a valid skeleton", func(t *testing.T) {
+		for _, ct := range ConnectorTypes() {
+			skeleton, err := ConnectorSkeleton(ct)
+			if err != nil {
+				t.Errorf("%s: %v", ct, err)
+				continue
+			}
+			// A skeleton the panel would refuse to save is worse than none.
+			if err := validateConnectorConfig(ct, []byte(skeleton)); err != nil {
+				t.Errorf("%s: its own skeleton fails validation: %v", ct, err)
+			}
+		}
+	})
+
+	t.Run("fields keep struct order, not alphabetical", func(t *testing.T) {
+		skeleton, err := ConnectorSkeleton("oidc")
+		if err != nil {
+			t.Fatalf("ConnectorSkeleton: %v", err)
+		}
+		issuer := strings.Index(skeleton, `"issuer"`)
+		clientID := strings.Index(skeleton, `"clientID"`)
+		// "basicAuthUnsupported" sorts before both alphabetically; if it comes
+		// first, the ordering was lost and the essentials are buried.
+		tuning := strings.Index(skeleton, `"basicAuthUnsupported"`)
+		if issuer < 0 || clientID < 0 || tuning < 0 {
+			t.Fatalf("skeleton is missing expected fields:\n%s", skeleton)
+		}
+		if !(issuer < clientID && clientID < tuning) {
+			t.Errorf("fields are not in struct order:\n%s", skeleton)
+		}
+	})
+
+	t.Run("unknown type is refused", func(t *testing.T) {
+		if _, err := ConnectorSkeleton("noexiste"); err == nil {
+			t.Error("expected an error for an unknown connector type")
+		}
+	})
+}

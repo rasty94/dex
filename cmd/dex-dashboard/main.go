@@ -81,6 +81,13 @@ func run() error {
 		return auth.requireAdmin(auth.requireWrite(h))
 	}
 	mux.HandleFunc("/sessions/revoke", write(d.handleRevokeRefresh))
+	mux.HandleFunc("/sessions/revoke-all", form(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			auth.requireCSRF(d.handleRevokeAllRefresh)(w, r)
+			return
+		}
+		d.handleRevokeAllRefresh(w, r)
+	}))
 	mux.HandleFunc("/clients/new", form(d.handleClientForm))
 	mux.HandleFunc("/clients/edit", form(d.handleClientForm))
 	mux.HandleFunc("/clients/save", write(d.handleClientSave))

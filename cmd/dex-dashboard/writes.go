@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,7 +30,11 @@ func splitLines(s string) []string {
 // redirectWith sends the browser back to a listing with a one-line result.
 // Redirecting rather than rendering means a reload does not repeat the write.
 func redirectWith(w http.ResponseWriter, r *http.Request, path, msg string) {
-	http.Redirect(w, r, path+"?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	http.Redirect(w, r, path+sep+"msg="+url.QueryEscape(msg), http.StatusSeeOther)
 }
 
 // ─────────────────────────── sessions ───────────────────────────
@@ -60,6 +65,49 @@ func (d *dashboard) handleRevokeRefresh(w http.ResponseWriter, r *http.Request) 
 	}
 	d.logger.Info("refresh token revoked", "actor", sess.Email, "client_id", clientID)
 	redirectWith(w, r, "/sessions", "Revoked the refresh token for "+clientID+".")
+}
+
+// handleRevokeAllRefresh cuts every session a user holds. This is the offboarding
+// and lost-laptop button: going client by client during an incident is how one
+// gets missed.
+func (d *dashboard) handleRevokeAllRefresh(w http.ResponseWriter, r *http.Request) {
+	sub := strings.TrimSpace(r.FormValue("sub"))
+	if sub == "" {
+		http.Error(w, "Missing subject.", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		count := "every"
+		if tokens, err := d.dex.listRefresh(r.Context(), sub); err == nil {
+			count = fmt.Sprintf("all %d", len(tokens))
+		}
+		d.render(w, r, "confirm.html", page{
+			Title: "Revoke sessions", Nav: "sessions",
+			Data: confirmData{
+				Action:  "/sessions/revoke-all",
+				Field:   "sub",
+				Value:   sub,
+				Heading: "Revoke " + count + " of this user's refresh tokens?",
+				Warning: "Every application holding one has to send the user through a fresh login. Access tokens already issued keep working until they expire, so this is not instant lockout.",
+				Confirm: "Revoke them all",
+				Cancel:  "/sessions?sub=" + url.QueryEscape(sub),
+			},
+		})
+		return
+	}
+
+	sess := sessionFrom(r.Context())
+	revoked, err := d.dex.revokeAllRefresh(r.Context(), sub)
+	if err != nil {
+		d.logger.Error("failed to revoke all refresh tokens", "err", err, "actor", sess.Email, "revoked", revoked)
+		redirectWith(w, r, "/sessions?sub="+url.QueryEscape(sub),
+			fmt.Sprintf("Revoked %d before failing: %s", revoked, friendlyGRPCError(err)))
+		return
+	}
+	d.logger.Info("all refresh tokens revoked", "actor", sess.Email, "count", revoked)
+	redirectWith(w, r, "/sessions?sub="+url.QueryEscape(sub),
+		fmt.Sprintf("Revoked %d refresh token(s).", revoked))
 }
 
 // ─────────────────────────── clients ───────────────────────────
@@ -364,6 +412,21 @@ type connectorFormData struct {
 func (d *dashboard) handleConnectorForm(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	data := connectorFormData{Config: "{}", Types: ConnectorTypes()}
+
+	// Creating a connector with a type chosen: start from that type's real
+	// shape instead of an empty object. The form reloads through here when the
+	// operator picks a type, which is why this needs no JavaScript.
+	if id == "" {
+		if t := strings.TrimSpace(r.URL.Query().Get("type")); t != "" {
+			data.Type = t
+			if skeleton, err := ConnectorSkeleton(t); err == nil {
+				data.Config = skeleton
+			} else {
+				d.render(w, r, "connector_form.html", page{Title: "New connector", Nav: "connectors", Error: err.Error(), Data: data})
+				return
+			}
+		}
+	}
 
 	if id != "" {
 		conn, err := d.dex.connector(r.Context(), id)

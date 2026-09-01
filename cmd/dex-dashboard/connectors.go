@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -173,4 +174,124 @@ func indent(v any) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// ConnectorSkeleton builds a starting configuration for a connector type by
+// walking its real config struct. Writing this JSON by hand against a schema you
+// cannot see is the most error-prone thing left in the panel; the validator
+// already says when it is wrong, and this says what it should look like.
+//
+// Fields come out in struct order, not alphabetical. Connector configs are
+// written with the essentials first — issuer, clientID, clientSecret — and
+// sorting them scatters those among the tuning flags.
+func ConnectorSkeleton(connType string) (string, error) {
+	factory, ok := server.ConnectorsConfig[connType]
+	if !ok {
+		return "", fmt.Errorf("unknown connector type %q", connType)
+	}
+	b, err := json.MarshalIndent(skeletonFor(reflect.TypeOf(factory()), 0), "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// maxSkeletonDepth stops a config type that refers to itself, and keeps deeply
+// nested shapes from producing a wall of JSON nobody reads.
+const maxSkeletonDepth = 3
+
+// orderedFields marshals to a JSON object preserving insertion order, which a
+// map cannot do.
+type orderedFields []field
+
+type field struct {
+	name  string
+	value any
+}
+
+func (o orderedFields) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, f := range o {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		key, err := json.Marshal(f.name)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(key)
+		buf.WriteByte(':')
+		val, err := json.Marshal(f.value)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(val)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+func skeletonFor(t reflect.Type, depth int) any {
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil || depth > maxSkeletonDepth {
+		return nil
+	}
+
+	//nolint:exhaustive // Kinds that cannot appear in a JSON config (channels,
+	// funcs, complex numbers) fall through to nil on purpose.
+	switch t.Kind() {
+	case reflect.Struct:
+		out := orderedFields{}
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			if !f.IsExported() {
+				continue
+			}
+			name, ok := jsonFieldName(f)
+			if !ok {
+				continue
+			}
+			// Embedded structs without a json name are inlined, the way the
+			// decoder will read them.
+			if f.Anonymous && name == "" {
+				if inner, ok := skeletonFor(f.Type, depth).(orderedFields); ok {
+					out = append(out, inner...)
+				}
+				continue
+			}
+			out = append(out, field{name: name, value: skeletonFor(f.Type, depth+1)})
+		}
+		return out
+	case reflect.Slice, reflect.Array:
+		return []any{}
+	case reflect.Map:
+		return map[string]any{}
+	case reflect.String:
+		return ""
+	case reflect.Bool:
+		return false
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return 0
+	case reflect.Float32, reflect.Float64:
+		return 0.0
+	}
+	return nil
+}
+
+// jsonFieldName reads a struct tag, reporting the field's name and whether it
+// is serialized at all.
+func jsonFieldName(f reflect.StructField) (name string, ok bool) {
+	tag := f.Tag.Get("json")
+	if tag == "-" {
+		return "", false
+	}
+	name, _, _ = strings.Cut(tag, ",")
+	if name == "" && !f.Anonymous {
+		name = f.Name
+	}
+	return name, true
 }

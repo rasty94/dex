@@ -1,6 +1,19 @@
 {{ define "connector_form.html" }}{{ template "layout" . }}{{ end }}
 {{ define "content" }}
 {{ with .Data }}
+{{ if not .Editing }}
+<form method="get" action="/connectors/new" class="lookup" style="margin-bottom:1.25rem">
+  <select name="type">
+    <option value="">Start from a type…</option>
+    {{ $chosen := .Type }}
+    {{ range .Types }}<option value="{{ . }}" {{ if eq . $chosen }}selected{{ end }}>{{ . }}</option>{{ end }}
+  </select>
+  <button type="submit">Load template</button>
+</form>
+<p class="note" style="margin-top:-.9rem">Fills the configuration below with that connector's
+real fields, in the order its own config declares them, so the essentials come first.</p>
+{{ end }}
+
 <form method="post" action="/connectors/save">
   <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
   <input type="hidden" name="editing" value="{{ if .Editing }}1{{ else }}0{{ end }}">

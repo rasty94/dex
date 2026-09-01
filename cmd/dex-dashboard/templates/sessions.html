@@ -28,6 +28,11 @@ not the email address.</p>
 {{ if .Subject }}<p class="note">Subject: <code>{{ .Subject }}</code></p>{{ end }}
 
 {{ if .Searched }}
+{{ if and .Tokens $.Session $.Session.CanWrite }}
+<div class="actions">
+  <a class="btn btn-danger" href="/sessions/revoke-all?sub={{ .Subject }}">Revoke all sessions for this user</a>
+</div>
+{{ end }}
 <div class="card scroll">
   {{ if .Tokens }}
   <table>

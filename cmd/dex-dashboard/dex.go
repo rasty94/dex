@@ -102,6 +102,26 @@ func (d *dexClient) revokeRefresh(ctx context.Context, subject, clientID string)
 	return resp.NotFound, nil
 }
 
+// revokeAllRefresh cuts every refresh token a user holds. It reports how many
+// it revoked, and returns the first failure with what it had already done, so
+// the caller can say "revoked 3 of 5" instead of pretending nothing happened.
+func (d *dexClient) revokeAllRefresh(ctx context.Context, subject string) (revoked int, err error) {
+	tokens, err := d.listRefresh(ctx, subject)
+	if err != nil {
+		return 0, err
+	}
+	for _, t := range tokens {
+		notFound, err := d.revokeRefresh(ctx, subject, t.ClientId)
+		if err != nil {
+			return revoked, err
+		}
+		if !notFound {
+			revoked++
+		}
+	}
+	return revoked, nil
+}
+
 func (d *dexClient) createClient(ctx context.Context, c *api.Client) (alreadyExists bool, err error) {
 	resp, err := d.api.CreateClient(d.authed(ctx), &api.CreateClientReq{Client: c})
 	if err != nil {
