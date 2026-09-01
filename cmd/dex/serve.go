@@ -226,9 +226,13 @@ func runServe(options serveOptions) error {
 		grpcOptions = append(grpcOptions, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	}
 
-	if c.GRPC.Token != "" {
-		logger.Info("gRPC API authentication enabled with token")
-		unaryInterceptors = append(unaryInterceptors, newAuthInterceptor(c.GRPC.Token))
+	if grpcTokens := c.GRPC.authTokens(); len(grpcTokens) > 0 {
+		names := make([]string, 0, len(grpcTokens))
+		for _, t := range grpcTokens {
+			names = append(names, t.Name)
+		}
+		logger.Info("gRPC API token authentication enabled", "tokens", strings.Join(names, ","))
+		unaryInterceptors = append(unaryInterceptors, newAuthInterceptor(grpcTokens))
 	}
 
 	// Appended after authentication so only accepted calls are recorded.
@@ -643,7 +647,7 @@ func runServe(options serveOptions) error {
 	if c.GRPC.Addr != "" {
 		logger.Info("listening on", "server", "grpc", "address", c.GRPC.Addr)
 
-		if c.GRPC.TLSClientCA == "" && c.GRPC.Token == "" {
+		if c.GRPC.TLSClientCA == "" && len(c.GRPC.authTokens()) == 0 {
 			// The gRPC API grants full administrative access (client secret reads,
 			// password/connector/identity CRUD). Its only built-in caller
 			// authentication is mutual TLS via grpc.tlsClientCA; without it, anyone
@@ -651,7 +655,7 @@ func runServe(options serveOptions) error {
 			// setup only when a trusted front-facing service authenticates callers.
 			logger.Warn("grpc: API server has no caller authentication (neither grpc.tlsClientCA nor grpc.token is set); "+
 				"it exposes full administrative access. Ensure the port is only reachable by an authenticated, trusted service, "+
-				"set grpc.token, or set grpc.tlsClientCA to require mutual TLS.",
+				"set grpc.token or grpc.tokens, or set grpc.tlsClientCA to require mutual TLS.",
 				"tls", c.GRPC.TLSCert != "")
 		}
 
@@ -995,20 +999,24 @@ func buildMFAProviders(authenticators []MFAAuthenticator, issuerURL string, logg
 	return providers
 }
 
-// actorHeader names the administrator a call is made on behalf of. The API
-// authenticates a shared token, not a person, so without it the audit trail can
-// only ever say "the token did it". A trusted client (the admin dashboard) sets
-// it; it is an attestation by that client, not an identity dex verified, and is
-// logged as such.
+// actorHeader names the administrator a call is made on behalf of. The token
+// identifies the calling client, not the person behind it, so without this the
+// audit trail can only ever say which client did it. A trusted client (the admin
+// dashboard) sets it; it is an attestation by that client, not an identity dex
+// verified, and is logged as such.
 const actorHeader = "x-dex-actor"
+
+// callerKey carries the name of the token a call authenticated with, from the
+// auth interceptor to the audit interceptor.
+type callerKey struct{}
 
 // mutatingPrefixes are the method names worth an audit line. Reads are left out
 // on purpose: logging every ListClients would bury the handful of calls that
 // actually changed something.
 var mutatingPrefixes = []string{"Create", "Update", "Delete", "Revoke", "Terminate", "Reset", "ReloadConfig"}
 
-// newAuditInterceptor records every state-changing gRPC call, with the actor
-// when the caller named one.
+// newAuditInterceptor records every state-changing gRPC call, naming both the
+// token it came in on and the actor the caller claims to be acting for.
 func newAuditInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		method := info.FullMethod
@@ -1034,17 +1042,27 @@ func newAuditInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 			}
 		}
 
+		// Empty when no token interceptor ran, i.e. the deployment authenticates
+		// with mutual TLS instead. Saying "none" beats an absent field.
+		caller, _ := ctx.Value(callerKey{}).(string)
+		if caller == "" {
+			caller = "none"
+		}
+
 		resp, err := handler(ctx, req)
 		if err != nil {
-			logger.WarnContext(ctx, "gRPC API call failed", "method", method, "actor", actor, "err", err)
+			logger.WarnContext(ctx, "gRPC API call failed", "method", method, "caller", caller, "actor", actor, "err", err)
 			return resp, err
 		}
-		logger.InfoContext(ctx, "gRPC API call", "method", method, "actor", actor)
+		logger.InfoContext(ctx, "gRPC API call", "method", method, "caller", caller, "actor", actor)
 		return resp, nil
 	}
 }
 
-func newAuthInterceptor(token string) grpc.UnaryServerInterceptor {
+// newAuthInterceptor accepts any of the configured tokens and records which one
+// it was, so a call can be attributed to a client and a single client can be
+// cut off without re-issuing credentials to the rest.
+func newAuthInterceptor(tokens []GRPCToken) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
@@ -1066,12 +1084,20 @@ func newAuthInterceptor(token string) grpc.UnaryServerInterceptor {
 			providedToken = authHeader
 		}
 
-		// Constant-time comparison: this is a shared admin secret checked before
-		// any authentication, so a byte-by-byte compare would leak it via timing.
-		if subtle.ConstantTimeCompare([]byte(providedToken), []byte(token)) != 1 {
+		// Every token is compared, with no early exit. These are shared admin
+		// secrets checked before any authentication, so a byte-by-byte compare
+		// would leak them via timing — and stopping at the first match would
+		// leak an entry's position in the list the same way.
+		caller := ""
+		for _, t := range tokens {
+			if subtle.ConstantTimeCompare([]byte(providedToken), []byte(t.Token)) == 1 {
+				caller = t.Name
+			}
+		}
+		if caller == "" {
 			return nil, status.Errorf(codes.Unauthenticated, "invalid authorization token")
 		}
 
-		return handler(ctx, req)
+		return handler(context.WithValue(ctx, callerKey{}, caller), req)
 	}
 }

@@ -13,6 +13,17 @@ telemetry:
 
 grpc:
   addr: 127.0.0.1:5557
+  # Callers authenticate with a shared token. Naming them is what lets the audit
+  # log say which client made a call, and lets one be withdrawn without
+  # re-issuing credentials to the rest. A single unnamed `token:` still works and
+  # is logged as "default"; two entries may not share a secret, or the log could
+  # not tell them apart.
+  #
+  # tokens:
+  #   - name: dashboard
+  #     token: a-long-random-string
+  #   - name: ci
+  #     token: another-long-random-string
 
 staticClients:
   - id: example-app

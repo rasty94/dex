@@ -127,6 +127,10 @@ func (c Config) Validate() error {
 		return fmt.Errorf("invalid Config:\n\t-\t%s", strings.Join(checkErrors, "\n\t-\t"))
 	}
 
+	if err := c.GRPC.validateTokens(); err != nil {
+		return err
+	}
+
 	if c.Sessions != nil && !featureflags.SessionsEnabled.Enabled() {
 		return fmt.Errorf("sessions config requires sessions to be enabled (DEX_SESSIONS_ENABLED=true)")
 	}
@@ -378,8 +382,58 @@ type GRPC struct {
 	TLSMinVersion string `json:"tlsMinVersion"`
 	TLSMaxVersion string `json:"tlsMaxVersion"`
 	Reflection    bool   `json:"reflection"`
-	// Token is the authorization token required to access the gRPC API.
+	// Token is the authorization token required to access the gRPC API. It is
+	// accepted alongside Tokens and reported in the audit log as "default".
 	Token string `json:"token"`
+	// Tokens are named authorization tokens. Naming them is what lets the audit
+	// log say which client made a call, and lets one be withdrawn without
+	// re-issuing credentials to everyone else.
+	Tokens []GRPCToken `json:"tokens"`
+}
+
+// GRPCToken is a named authorization token for the gRPC API.
+type GRPCToken struct {
+	// Name identifies the caller in the audit log. It is not a secret.
+	Name string `json:"name"`
+	// Token is the shared secret the caller presents.
+	Token string `json:"token"`
+}
+
+// authTokens returns every accepted token, with the legacy single token folded
+// in under the name "default".
+func (g GRPC) authTokens() []GRPCToken {
+	var tokens []GRPCToken
+	if g.Token != "" {
+		tokens = append(tokens, GRPCToken{Name: "default", Token: g.Token})
+	}
+	return append(tokens, g.Tokens...)
+}
+
+// validateGRPCTokens rejects configurations where the audit log could not tell
+// callers apart: a token with no name, a name with no token, two entries under
+// the same name, or two names sharing one secret — that last one would let the
+// log attribute a call to whichever entry happened to be compared last.
+func (g GRPC) validateTokens() error {
+	tokens := g.authTokens()
+	byName := make(map[string]bool, len(tokens))
+	bySecret := make(map[string]string, len(tokens))
+
+	for i, t := range tokens {
+		switch {
+		case t.Name == "":
+			return fmt.Errorf("grpc.tokens[%d]: name is required", i)
+		case t.Token == "":
+			return fmt.Errorf("grpc.tokens[%q]: token is required", t.Name)
+		case byName[t.Name]:
+			return fmt.Errorf("grpc.tokens[%q]: duplicate name", t.Name)
+		}
+		if other, ok := bySecret[t.Token]; ok {
+			return fmt.Errorf("grpc.tokens[%q]: shares its token with %q, so the audit log could not tell them apart", t.Name, other)
+		}
+		byName[t.Name] = true
+		bySecret[t.Token] = t.Name
+	}
+	return nil
 }
 
 // Storage holds app's storage configuration.
