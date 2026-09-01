@@ -321,11 +321,31 @@ func (t *Templates) Login(r *http.Request, w http.ResponseWriter, connectors []C
 	return renderTemplate(w, t.loginTmpl, data)
 }
 
-func (t *Templates) Password(r *http.Request, w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid bool, backLink string, rememberMe *bool) error {
+// PasswordForm carries the extra state the password screen needs for connectors
+// whose second factor is part of the credential exchange itself, rather than a
+// separate step after an identity exists. It is passed as one value because the
+// alternative is five more positional arguments on an already long call.
+type PasswordForm struct {
+	// ShowDomain offers the domain selector, for connectors that authenticate
+	// against more than one (Keystone).
+	ShowDomain bool
+	// Domain is the value to carry over, so the user does not retype it between
+	// the credential step and the second-factor step.
+	Domain string
+	// RequireTOTP renders the second-factor step instead of the credential form.
+	RequireTOTP bool
+	// Receipt is the provider's proof that the password was already accepted. It
+	// is echoed back with the code, and without it the provider has no record
+	// that the first factor was cleared.
+	Receipt string
+}
+
+func (t *Templates) Password(r *http.Request, w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid bool, backLink string, rememberMe *bool, form PasswordForm) error {
 	if lastWasInvalid {
 		w.WriteHeader(http.StatusUnauthorized)
 	}
 	data := struct {
+		PasswordForm
 		PostURL           string
 		BackLink          string
 		Username          string
@@ -335,6 +355,7 @@ func (t *Templates) Password(r *http.Request, w http.ResponseWriter, postURL, la
 		ShowRememberMe    bool
 		RememberMeChecked bool
 	}{
+		PasswordForm:   form,
 		PostURL:        postURL,
 		BackLink:       backLink,
 		Username:       lastUsername,

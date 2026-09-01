@@ -4,13 +4,17 @@ package authflow
 // form and the credential check for password connectors.
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/url"
 
 	"github.com/gorilla/mux"
 
 	"github.com/dexidp/dex/connector"
+	"github.com/dexidp/dex/connector/keystone"
 	"github.com/dexidp/dex/server/ratelimit"
+	"github.com/dexidp/dex/server/templates"
 	"github.com/dexidp/dex/server/tokens"
 	"github.com/dexidp/dex/storage"
 )
@@ -64,6 +68,14 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 
 	rememberMe := h.Sessions.RememberMeDefault()
 
+	// The domain selector only makes sense for a connector that authenticates
+	// against more than one, which today means Keystone. Asking storage for the
+	// type is what keeps the template free of connector-specific logic.
+	form := templates.PasswordForm{}
+	if storageConn, serr := h.Storage.GetConnector(ctx, authReq.ConnectorID); serr == nil && storageConn.Type == "keystone" {
+		form.ShowDomain = true
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		// Before rendering the password form, allow connectors that support SPNEGO to try Kerberos auth.
@@ -93,13 +105,27 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err := h.Templates.Password(r, w, r.URL.String(), "", usernamePrompt(pwConn), false, backLink, rememberMe); err != nil {
+		if err := h.Templates.Password(r, w, r.URL.String(), "", usernamePrompt(pwConn), false, backLink, rememberMe, form); err != nil {
 			h.Logger.ErrorContext(r.Context(), "server template error", "err", err)
 		}
 	case http.MethodPost:
 		username := r.FormValue("login")
 		password := r.FormValue("password")
 		scopes := tokens.ParseScopes(authReq.Scopes)
+
+		// Keystone reads these off the context: the domain for this attempt, and
+		// the code plus receipt when the user is answering the second-factor
+		// step. Empty values are left off so the connector keeps its own default.
+		form.Domain = r.FormValue("domain")
+		if form.ShowDomain && form.Domain != "" {
+			r = r.WithContext(context.WithValue(r.Context(), keystone.DomainContextKey, form.Domain))
+		}
+		if totp := r.FormValue("totp"); totp != "" {
+			r = r.WithContext(context.WithValue(r.Context(), keystone.TOTPContextKey, totp))
+		}
+		if receipt := r.FormValue("receipt"); receipt != "" {
+			r = r.WithContext(context.WithValue(r.Context(), keystone.ReceiptContextKey, receipt))
+		}
 
 		// Throttle before hitting the upstream provider: a failed attempt is what
 		// an attacker repeats, and a successful login clears the counter below.
@@ -112,12 +138,33 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 
 		identity, ok, err := pwConn.Login(r.Context(), scopes, username, password)
 		if err != nil {
+			// Not a failure: the password was accepted and the provider wants a
+			// second factor. Re-render the form in its second-factor step,
+			// carrying the receipt that ties it to this exchange.
+			var errTOTP keystone.ErrTOTPRequired
+			if errors.As(err, &errTOTP) {
+				form.RequireTOTP = true
+				form.Receipt = errTOTP.Receipt
+				if err := h.Templates.Password(r, w, r.URL.String(), username, usernamePrompt(pwConn), false, backLink, rememberMe, form); err != nil {
+					h.Logger.ErrorContext(r.Context(), "server template error", "err", err)
+				}
+				return
+			}
+
 			h.Logger.ErrorContext(r.Context(), "failed to login user", "err", err)
 			h.renderError(r, w, http.StatusInternalServerError, ErrMsgLoginError)
 			return
 		}
 		if !ok {
-			if err := h.Templates.Password(r, w, r.URL.String(), username, usernamePrompt(pwConn), true, backLink, rememberMe); err != nil {
+			// A receipt in the request means the password step was already
+			// cleared, so what just failed was the code. Staying on the
+			// second-factor step lets the user retry it without re-entering the
+			// password; dropping back to the credential form would also throw
+			// away the receipt and force the whole exchange again.
+			if form.Receipt = r.FormValue("receipt"); form.Receipt != "" {
+				form.RequireTOTP = true
+			}
+			if err := h.Templates.Password(r, w, r.URL.String(), username, usernamePrompt(pwConn), true, backLink, rememberMe, form); err != nil {
 				h.Logger.ErrorContext(r.Context(), "server template error", "err", err)
 			}
 			h.Logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username)
