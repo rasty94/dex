@@ -23,6 +23,17 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Migración:** los clientes que indexen por `sub` deben re-mapear a los usuarios
     en su siguiente autenticación. No hay cambio de esquema en storage.
 
+- **Las sesiones Keystone anteriores a esta versión no refrescan.** `Refresh()` resuelve
+  ahora el usuario por el id real de Keystone, que se guarda en `identity.ConnectorData`
+  al autenticarse. Las sesiones creadas antes de ese cambio no lo llevan y caen al
+  fallback (`identity.UserID`), que con `userIDKey: email` o `username` es un UUID
+  sintético derivado del correo o del nombre, no un id que Keystone reconozca.
+  - **Impacto:** el refresh de esas sesiones falla contra Keystone. Afecta solo a los
+    despliegues que hubieran configurado `userIDKey`; con el valor por defecto el
+    `UserID` ya era el id real y no hay diferencia.
+  - **Migración:** ninguna automática. El usuario vuelve a autenticarse una vez y la
+    sesión nueva ya guarda el `ConnectorData` correcto.
+
 ### Seguridad
 
 - Binding del auth code en el callback del device flow (canje entre clientes)

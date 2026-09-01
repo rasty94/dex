@@ -33,6 +33,10 @@
 ### 5. 🔄 Sincronización con upstream — bloque F
 
 > Bloques A a E y G cerrados, con su detalle en [DONE.md](DONE.md).
+>
+> **Decidido: al terminar, la rama sustituye a `master`.** Eso convierte el re-port en la
+> línea principal, así que todo lo que hoy vive solo en `master` — el panel y la cadena
+> Docker — tiene que portarse antes de hacer el cambio.
 
 - [ ] **Re-port sobre `upstream/master`.** 🚧 **En marcha** en la rama
       `feat/upstream-sync-2026-08` (empujada a `origin`, partiendo de `upstream/master`).
@@ -52,6 +56,11 @@
       - [ ] Flujo TOTP en el servidor (`ErrTOTPRequired`) → `server/authflow/`.
       - [ ] `.proto` y config dinámica de gRPC: regenerar y reaplicar nuestras extensiones.
       - [ ] `web/`: CSS, temas y plantillas.
+      - [ ] **Portar `cmd/dex-dashboard` y la cadena Docker.** Decidido que la rama
+            sustituye a `master`, así que el panel tiene que viajar con ella: el binario,
+            `cmd/docker-entrypoint`, `config.dashboard.docker.yaml` y `Ejemplos/dashboard/`.
+            No es mecánico: el panel usa `server.ConnectorsConfig` y `server.EncodeSubject`,
+            y las dos se mueven de sitio en el re-port.
 
   Por qué no es un `git merge`: upstream troceó `server/` en subpaquetes y los seis ficheros donde vive nuestro trabajo (`handlers.go`, `oauth2.go`, `api.go`, `templates.go`, `refreshhandlers.go`, `deviceflowhandlers.go`) ya no existen allí, así que git los ve como modify/delete. No activar de golpe lo nuevo de upstream (sesiones, `sid`, back-channel logout, PKCE configurable, CEL, Kerberos).
 
@@ -69,6 +78,8 @@
       manda `x-dex-actor` y dex lo registra, pero eso es el panel atestiguando, no una identidad
       que dex verifique. Con varios tokens con nombre, un cliente distinto del panel también
       quedaría identificado y se podrían revocar por separado.
+      Se construye **dentro de la rebanada `.proto` del bloque F**, en la rama: toca el mismo
+      `.proto` y el mismo `serve.go` que el re-port, y hacerlo en `master` sería escribirlo dos veces.
 - [ ] **Visor de intentos de login fallidos.** No se puede hacer con la API actual: dex los
       escribe en su log y no hay forma de consultarlos. Necesita un recolector de logs, no una
       vista más. La de Status ya dice *cuántos*; falta el *quién* y el *cuándo*.
@@ -80,8 +91,3 @@
       distribuida de la sección 2.
 - [ ] **htmx.** El panel no sirve JavaScript y la CSP está en `default-src 'none'`. Entra
       cuando alguna pantalla gane algo real con actualización parcial, no antes.
-
-### 7. 🧹 Deuda técnica conocida
-
-- [ ] **Sesiones Keystone antiguas con `userIDKey: email`/`username`**: `Refresh()` usa ahora el id real de Keystone guardado en `identity.ConnectorData`. Las sesiones creadas antes de ese cambio no lo tienen y caen al fallback (`identity.UserID`, que es el UUID sintético), así que seguirán fallando el refresh hasta que el usuario vuelva a autenticarse. Anotarlo en el `CHANGELOG` de la próxima release.
-- [ ] **`Ejemplos/` en solo lectura**: el directorio está como `dr-xr-xr-x` en algunos entornos de desarrollo, lo que hace fallar `git checkout` sobre `Ejemplos/config.yaml` con "Permission denied". Se arregla con `chmod u+w Ejemplos`.
