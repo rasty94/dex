@@ -26,6 +26,7 @@ import (
 	"github.com/dexidp/dex/server/logout"
 	"github.com/dexidp/dex/server/mfa"
 	"github.com/dexidp/dex/server/oauth2"
+	"github.com/dexidp/dex/server/ratelimit"
 	"github.com/dexidp/dex/server/router"
 	"github.com/dexidp/dex/server/session"
 	"github.com/dexidp/dex/server/templates"
@@ -233,6 +234,21 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 	// rest.
 	sessions := s.sessions
 
+	// One limiter shared by the login form and the password grant, so failures on
+	// either path count against the same budget.
+	loginLimiter := ratelimit.New(c.LoginRateLimit, rc.now)
+	if loginLimiter != nil && c.PrometheusRegistry != nil {
+		rejected := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "dex_login_rate_limited_total",
+			Help: "Number of password login attempts refused by the login rate limiter.",
+		})
+		if err := c.PrometheusRegistry.Register(rejected); err == nil {
+			loginLimiter.SetRejectedCounter(rejected)
+		} else {
+			s.logger.Warn("failed to register login rate limit metric", "err", err)
+		}
+	}
+
 	for _, h := range []router.Handler{
 		s.discovery,
 		&grants.Handler{
@@ -246,6 +262,7 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 			Sessions:            sessions,
 			SessionsEnabled:     c.SessionConfig != nil,
 			SupportedGrantTypes: rc.grantTypes,
+			LoginLimiter:        loginLimiter,
 		},
 		&userinfo.Handler{
 			Issuer: s.issuerURL.String(),
@@ -294,6 +311,7 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 			MFAEnabled:             len(c.MFAProviders) > 0,
 			DefaultMFAChain:        c.DefaultMFAChain,
 			SkipApproval:           c.SkipApprovalScreen,
+			LoginLimiter:           loginLimiter,
 		},
 		&mfa.Handler{
 			Storage:         s.storage,

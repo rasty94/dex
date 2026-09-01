@@ -15,6 +15,7 @@ import (
 	"github.com/dexidp/dex/server/connectors"
 	"github.com/dexidp/dex/server/internal"
 	"github.com/dexidp/dex/server/oauth2"
+	"github.com/dexidp/dex/server/ratelimit"
 	"github.com/dexidp/dex/server/router"
 	"github.com/dexidp/dex/server/session"
 	"github.com/dexidp/dex/server/tokens"
@@ -162,6 +163,10 @@ type Handler struct {
 	SessionsEnabled     bool
 	SupportedGrantTypes []string
 
+	// LoginLimiter throttles failed password logins, shared with the interactive
+	// auth flow. A nil limiter allows everything.
+	LoginLimiter *ratelimit.Limiter
+
 	grants map[string]Grant
 }
 
@@ -180,7 +185,7 @@ func (h *Handler) Mount(m router.Mux) {
 	h.grants = map[string]Grant{}
 	h.register(h.SupportedGrantTypes,
 		&clientCredentials{issuer: h.Issuer, logger: h.Logger},
-		&password{issuer: h.Issuer, logger: h.Logger, connectorID: h.PasswordConnector},
+		&password{issuer: h.Issuer, logger: h.Logger, connectorID: h.PasswordConnector, limiter: h.LoginLimiter},
 		&tokenExchange{issuer: h.Issuer, logger: h.Logger},
 		&authorizationCode{issuer: h.Issuer, storage: h.Storage, connectors: h.Connectors, now: h.Now, logger: h.Logger},
 		&refresh{storage: h.Storage, issuer: h.Issuer, policy: h.RefreshPolicy, sessions: h.Sessions, sessionsEnabled: h.SessionsEnabled, now: h.Now, logger: h.Logger},

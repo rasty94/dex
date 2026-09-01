@@ -1,6 +1,7 @@
 package router
 
 import (
+	"net"
 	"net/http"
 	"path"
 
@@ -67,11 +68,17 @@ func (m mountMux) wrap(name string, h http.Handler) http.HandlerFunc {
 		}
 		// Context values are used for logging purposes with the log/slog logger.
 		rCtx := reqctx.WithRequestID(r.Context())
+		// The remote IP is always attached, so consumers that key on it (the
+		// session audit record, the login rate limiter) get an address whether or
+		// not a real-IP header is configured. Without one, the socket address is
+		// the only trustworthy answer anyway.
+		remoteIP := remoteAddr(r)
 		if m.c.RealIPHeader != "" && m.c.RealIP != nil {
 			if realIP, err := m.c.RealIP(r); err == nil {
-				rCtx = reqctx.WithRemoteIP(rCtx, realIP)
+				remoteIP = realIP
 			}
 		}
+		rCtx = reqctx.WithRemoteIP(rCtx, remoteIP)
 		m.c.Instrument(name, h)(w, r.WithContext(rCtx))
 	}
 }
@@ -97,4 +104,14 @@ func (m mountMux) HandleCORS(p string, h http.HandlerFunc) {
 		handler = cors(handler)
 	}
 	m.Handle(p, handler)
+}
+
+// remoteAddr is the host part of the connection's remote address. The ephemeral
+// source port identifies the connection rather than the client, so it is
+// stripped; an address that does not parse is returned verbatim.
+func remoteAddr(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

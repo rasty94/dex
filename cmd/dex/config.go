@@ -48,6 +48,10 @@ type Config struct {
 
 	Frontend server.WebConfig `json:"frontend"`
 
+	// LoginRateLimit throttles failed password logins before they reach the
+	// upstream identity provider.
+	LoginRateLimit LoginRateLimit `json:"loginRateLimit"`
+
 	// Signer configuration controls signing of JWT tokens issued by Dex.
 	Signer Signer `json:"signer"`
 
@@ -252,6 +256,19 @@ type OAuth2 struct {
 	PasswordConnector string `json:"passwordConnector"`
 	// PKCE configuration
 	PKCE PKCE `json:"pkce"`
+}
+
+// LoginRateLimit throttles failed password logins on both the login form and
+// the password grant.
+type LoginRateLimit struct {
+	Enabled bool `json:"enabled"`
+
+	// Failed attempts allowed per Window, for each IP and username pair.
+	// Defaults to 10.
+	Attempts int `json:"attempts"`
+
+	// Window is a duration, e.g. "1m". Defaults to 1m.
+	Window string `json:"window"`
 }
 
 // PKCE holds the PKCE (Proof Key for Code Exchange) configuration.

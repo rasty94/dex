@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dexidp/dex/server/connectors"
+	"github.com/dexidp/dex/server/ratelimit"
 	"github.com/dexidp/dex/storage"
 )
 
@@ -236,4 +237,50 @@ func TestHandlePasswordAllowedConnectors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The rate limit must hold on the password grant, not just on the login form:
+// a machine-to-machine path is the easier one to brute force.
+func TestHandlePasswordGrantRateLimit(t *testing.T) {
+	httpServer, s := newTestServer(t, func(c *Config) {
+		c.PasswordConnector = "test"
+		c.Now = time.Now
+		c.LoginRateLimit = ratelimit.Config{Enabled: true, Attempts: 2, Window: time.Minute}
+	})
+	defer httpServer.Close()
+
+	mockConnectorDataTestStorage(t, s.storage)
+
+	makeReq := func(username, password string) *httptest.ResponseRecorder {
+		u, err := url.Parse(s.issuerURL.String())
+		require.NoError(t, err)
+
+		u.Path = path.Join(u.Path, "/token")
+		v := url.Values{}
+		v.Add("scope", "openid email")
+		v.Add("grant_type", "password")
+		v.Add("username", username)
+		v.Add("password", password)
+
+		req, _ := http.NewRequest("POST", u.String(), bytes.NewBufferString(v.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
+		req.SetBasicAuth("test", "barfoo")
+
+		rr := httptest.NewRecorder()
+		s.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// The configured budget of failures is spent, then the limiter takes over
+	// and the connector is no longer consulted.
+	require.Equal(t, 401, makeReq("test", "wrong").Code)
+	require.Equal(t, 401, makeReq("test", "wrong").Code)
+	require.Equal(t, http.StatusTooManyRequests, makeReq("test", "wrong").Code)
+
+	// Even the correct password is refused while the budget is spent: the point
+	// is to stop the guessing, and by now the attacker has guessed right.
+	require.Equal(t, http.StatusTooManyRequests, makeReq("test", "test").Code)
+
+	// A different username has its own budget.
+	require.Equal(t, 401, makeReq("other", "wrong").Code)
 }

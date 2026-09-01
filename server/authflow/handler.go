@@ -8,6 +8,7 @@ import (
 
 	"github.com/dexidp/dex/server/connectors"
 	"github.com/dexidp/dex/server/oauth2"
+	"github.com/dexidp/dex/server/ratelimit"
 	"github.com/dexidp/dex/server/router"
 	"github.com/dexidp/dex/server/session"
 	"github.com/dexidp/dex/server/signer"
@@ -48,6 +49,10 @@ type Handler struct {
 	DefaultMFAChain []string
 	// SkipApproval disables the consent screen server-wide (see consent.Satisfied).
 	SkipApproval bool
+
+	// LoginLimiter throttles failed password logins. A nil limiter allows
+	// everything, which is what a disabled configuration produces.
+	LoginLimiter *ratelimit.Limiter
 }
 
 // Mount registers the login routes. The /auth endpoint is both the entry

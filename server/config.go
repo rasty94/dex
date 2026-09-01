@@ -18,6 +18,7 @@ import (
 	"github.com/dexidp/dex/server/authflow"
 	"github.com/dexidp/dex/server/mfa"
 	"github.com/dexidp/dex/server/oauth2"
+	"github.com/dexidp/dex/server/ratelimit"
 	"github.com/dexidp/dex/server/session"
 	"github.com/dexidp/dex/server/signer"
 	"github.com/dexidp/dex/server/templates"
@@ -72,6 +73,10 @@ type Config struct {
 
 	// If set, the server will use this connector to handle password grants
 	PasswordConnector string
+
+	// LoginRateLimit throttles failed password logins on both the login form and
+	// the password grant. Disabled by default.
+	LoginRateLimit ratelimit.Config
 
 	// PKCE configuration
 	PKCE authflow.PKCEConfig

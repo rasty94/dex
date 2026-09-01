@@ -8,6 +8,7 @@ import (
 	"github.com/dexidp/dex/connector"
 	"github.com/dexidp/dex/server/connectors"
 	"github.com/dexidp/dex/server/oauth2"
+	"github.com/dexidp/dex/server/ratelimit"
 	"github.com/dexidp/dex/server/tokens"
 	"github.com/dexidp/dex/storage"
 )
@@ -18,6 +19,9 @@ type password struct {
 	issuer      *tokens.Issuer
 	logger      *slog.Logger
 	connectorID string
+	// limiter throttles failed attempts, shared with the interactive login form
+	// so an attacker cannot reset their budget by switching path.
+	limiter *ratelimit.Limiter
 }
 
 func (g *password) GrantType() string {
@@ -56,6 +60,14 @@ func (g *password) Authorize(ctx context.Context, req *Request, client storage.C
 		return nil, &oauth2.Error{Type: oauth2.InvalidRequest, Description: "Requested password connector does not correct type.", Status: http.StatusBadRequest}
 	}
 
+	// Throttle before hitting the upstream provider. The same key as the login
+	// form, so failures on either path count together.
+	limitKey := ratelimit.Key(ctx, req.Username)
+	if !g.limiter.Allow(limitKey) {
+		g.logger.WarnContext(ctx, "login rate limit exceeded", "user", req.Username)
+		return nil, &oauth2.Error{Type: oauth2.InvalidRequest, Description: "Too many login attempts. Please try again later.", Status: http.StatusTooManyRequests}
+	}
+
 	identity, ok, err := passwordConnector.Login(ctx, tokens.ParseScopes(req.Scopes), req.Username, req.Password)
 	if err != nil {
 		g.logger.ErrorContext(ctx, "failed to login user", "err", err)
@@ -64,6 +76,7 @@ func (g *password) Authorize(ctx context.Context, req *Request, client storage.C
 	if !ok {
 		return nil, &oauth2.Error{Type: oauth2.AccessDenied, Description: "Invalid username or password", Status: http.StatusUnauthorized}
 	}
+	g.limiter.Reset(limitKey)
 
 	auth := tokens.Authorization{
 		Client:        client,
