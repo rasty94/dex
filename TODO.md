@@ -196,11 +196,17 @@
 - [x] **Bloque E — El `sub` plano.** Decidido: cedemos al formato de upstream. El `sub` vuelve a ser el par `(userID, connectorID)` en protobuf-base64, y con él se va el escaneo de conectores de `api.go`, que solo existía para compensarlo. Es un cambio incompatible para quien indexe por `sub`; documentado en el `CHANGELOG`. A cambio quedamos alineados para heredar `sid`, back-channel logout y revocación con alcance de sesión en el bloque F.
 - [ ] **Bloque F — Re-port sobre `upstream/master`.** 🚧 **En marcha** en la rama
       `feat/upstream-sync-2026-08` (empujada a `origin`, partiendo de `upstream/master`).
+      Worktree en `../dex-upstream-sync`, para no mezclarla con `master`.
       - [x] `connector/keystone/` completo, más el registro de sus colectores en `cmd/dex`.
             Entró **sin una sola edición**: compila contra el layout nuevo tal cual, y el árbol
             queda construyendo con los 14 paquetes de conectores en verde. Confirma la
             estimación de coste cero para esta pieza.
-      - [ ] Rate limiting de login → `server/authflow/password.go` y `server/grants/password.go`.
+      - [x] Rate limiting de login, ahora en un paquete propio `server/ratelimit` compartido
+            por el flujo interactivo y el grant de password, con test de extremo a extremo del
+            throttling en el grant. Dos mejoras sobre el original: la IP se lee del resolutor
+            de upstream (nuestro `clientIP` se fiaba del primer `X-Forwarded-For`, spoofeable),
+            y los valores por defecto viven dentro de `ratelimit.New`. El router adjunta ahora
+            siempre una IP al contexto, si no todos los clientes compartirían bucket.
       - [ ] i18n y theming por cliente → `server/templates/`.
       - [ ] Trusted device sobre la maquinaria de cookies de upstream (ya cifradas), no sobre
             la cookie propia `dex_mfa_trust_*`.
