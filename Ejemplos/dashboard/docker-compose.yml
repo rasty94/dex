@@ -82,6 +82,11 @@ services:
             #   solo-lectura  -> lectura@example.com, solo mira
             - DEX_DASHBOARD_ADMIN_WRITE_GROUPS=dex-admins,authors
             - DEX_DASHBOARD_SESSION_TTL=8h
+            # Caducidad por inactividad, y ventana tras la cual lo destructivo
+            # exige volver a autenticarse. Puestas cortas a proposito para que
+            # se vea el comportamiento al probar.
+            - DEX_DASHBOARD_IDLE_TTL=30m
+            - DEX_DASHBOARD_REAUTH_WINDOW=5m
 
 volumes:
     dex-data:

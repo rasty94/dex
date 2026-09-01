@@ -53,3 +53,13 @@ admin:
 
     # How long a dashboard session lasts. Defaults to 8h.
     sessionTTL: 8h
+
+    # A session untouched for this long ends, on top of sessionTTL. The threat
+    # is a console left open on an unlocked laptop, not a stolen cookie.
+    # Defaults to 1h; 0 disables it.
+    idleTTL: 1h
+
+    # Destructive actions (deleting a client, a connector or a user, revoking
+    # every session) demand a login newer than this. Defaults to 15m; 0
+    # disables the check.
+    reauthWindow: 15m

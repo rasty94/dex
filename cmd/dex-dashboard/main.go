@@ -80,8 +80,14 @@ func run() error {
 	form := func(h http.HandlerFunc) http.HandlerFunc {
 		return auth.requireAdmin(auth.requireWrite(h))
 	}
+	// destructive additionally demands a recent login. Deleting a client or
+	// cutting every session for a user should not be reachable from a console
+	// that was left open hours ago.
+	destructive := func(h http.HandlerFunc) http.HandlerFunc {
+		return auth.requireAdmin(auth.requireWrite(auth.requireFreshAuth(h)))
+	}
 	mux.HandleFunc("/sessions/revoke", write(d.handleRevokeRefresh))
-	mux.HandleFunc("/sessions/revoke-all", form(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/sessions/revoke-all", destructive(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			auth.requireCSRF(d.handleRevokeAllRefresh)(w, r)
 			return
@@ -93,7 +99,7 @@ func run() error {
 	mux.HandleFunc("/clients/save", write(d.handleClientSave))
 	// Delete answers GET with a confirmation page and POST with the deletion, so
 	// only the POST carries the CSRF check.
-	mux.HandleFunc("/clients/delete", form(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/clients/delete", destructive(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			auth.requireCSRF(d.handleClientDelete)(w, r)
 			return
@@ -103,7 +109,7 @@ func run() error {
 	mux.HandleFunc("/users/new", form(d.handleUserForm))
 	mux.HandleFunc("/users/edit", form(d.handleUserForm))
 	mux.HandleFunc("/users/save", write(d.handleUserSave))
-	mux.HandleFunc("/users/delete", form(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/users/delete", destructive(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			auth.requireCSRF(d.handleUserDelete)(w, r)
 			return
@@ -114,7 +120,7 @@ func run() error {
 	mux.HandleFunc("/connectors/edit", form(d.handleConnectorForm))
 	mux.HandleFunc("/connectors/save", write(d.handleConnectorSave))
 	mux.HandleFunc("/connectors/reload", write(d.handleReloadConfig))
-	mux.HandleFunc("/connectors/delete", form(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/connectors/delete", destructive(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			auth.requireCSRF(d.handleConnectorDelete)(w, r)
 			return

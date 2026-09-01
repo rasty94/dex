@@ -49,3 +49,5 @@ admin:
 {{- end }}
 {{- end }}
   sessionTTL: {{ getenv "DEX_DASHBOARD_SESSION_TTL" "8h" }}
+  idleTTL: {{ getenv "DEX_DASHBOARD_IDLE_TTL" "1h" }}
+  reauthWindow: {{ getenv "DEX_DASHBOARD_REAUTH_WINDOW" "15m" }}

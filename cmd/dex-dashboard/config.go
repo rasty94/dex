@@ -84,6 +84,19 @@ type AdminConfig struct {
 	SessionTTL time.Duration `json:"-"`
 	// SessionTTLRaw is the YAML form, e.g. "8h".
 	SessionTTLRaw string `json:"sessionTTL"`
+
+	// IdleTTL ends a session that has gone untouched for this long, on top of
+	// the absolute SessionTTL. A console left open on an unlocked laptop is the
+	// realistic threat here, not a stolen cookie. Defaults to 1h; 0 disables it.
+	IdleTTL    time.Duration `json:"-"`
+	IdleTTLRaw string        `json:"idleTTL"`
+
+	// ReauthWindow requires a fresh login before a destructive action when the
+	// administrator authenticated longer ago than this. Deleting a connector
+	// eight hours into a session should cost more than two clicks.
+	// Defaults to 15m; 0 disables the check.
+	ReauthWindow    time.Duration `json:"-"`
+	ReauthWindowRaw string        `json:"reauthWindow"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -114,6 +127,26 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.Admin.SessionTTL <= 0 {
 		c.Admin.SessionTTL = 8 * time.Hour
+	}
+
+	for _, d := range []struct {
+		raw   string
+		field *time.Duration
+		name  string
+		def   time.Duration
+	}{
+		{c.Admin.IdleTTLRaw, &c.Admin.IdleTTL, "admin.idleTTL", time.Hour},
+		{c.Admin.ReauthWindowRaw, &c.Admin.ReauthWindow, "admin.reauthWindow", 15 * time.Minute},
+	} {
+		if d.raw == "" {
+			*d.field = d.def
+			continue
+		}
+		parsed, err := time.ParseDuration(d.raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s %q: %w", d.name, d.raw, err)
+		}
+		*d.field = parsed
 	}
 	if c.Listen == "" {
 		c.Listen = "127.0.0.1:5556"
