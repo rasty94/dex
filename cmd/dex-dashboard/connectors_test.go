@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/dexidp/dex/server"
 )
 
 func TestRedactSecrets(t *testing.T) {
@@ -178,5 +180,30 @@ func TestValidateConnectorConfig(t *testing.T) {
 				t.Errorf("error = %v, want it to mention %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// The sessions view builds a subject from a user id and a connector id. If that
+// encoding ever drifts from the one dex puts in the "sub" claim, the lookup
+// silently returns nothing for every user, so it is pinned here against dex's
+// own encoder rather than against a hardcoded string.
+func TestEncodeSubjectMatchesDex(t *testing.T) {
+	got, err := server.EncodeSubject("08a8684b-db88-4b73-90a9-3cd1661f5466", "local")
+	if err != nil {
+		t.Fatalf("EncodeSubject: %v", err)
+	}
+	if got == "" {
+		t.Fatal("EncodeSubject returned an empty subject")
+	}
+
+	// The same pair must always encode the same way, and a different connector
+	// must not collide with it: both halves have to reach the wire.
+	same, _ := server.EncodeSubject("08a8684b-db88-4b73-90a9-3cd1661f5466", "local")
+	if same != got {
+		t.Errorf("encoding is not stable: %q then %q", got, same)
+	}
+	other, _ := server.EncodeSubject("08a8684b-db88-4b73-90a9-3cd1661f5466", "keystone")
+	if other == got {
+		t.Error("subjects for different connectors collide")
 	}
 }

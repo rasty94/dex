@@ -194,21 +194,27 @@ Lo que sí se puede hacer con ellos, y llegará en la fase 2, es **revocar sus s
 
 ## 8. La vista de sesiones y el `sub`
 
-`ListRefresh` de Dex se indexa por el claim `sub`, que **no es un email ni un nombre de
+`ListRefresh` se indexa por el claim `sub`, que **no es un email ni un nombre de
 usuario**: es un protobuf en base64 que codifica el par `(userID, connectorID)`.
 
-El panel **no lo deriva**. El codificador vive en `server/internal`, un paquete que
-`cmd/` no puede importar por las reglas de Go, y duplicar aquí un formato de wire
-interno crearía un acoplamiento que se rompería en silencio el día que cambie.
+La vista ofrece las dos formas de llegar a él:
 
-Así que el formulario pide el `sub` tal cual, que es lo que un operador tiene delante
-cuando investiga un incidente: el token del usuario. Si algún día buscar por nombre se
-vuelve el caso común, la solución correcta es exponer un codificador desde Dex, no
-copiar el formato.
+- **Pegar un `sub`**, tal cual sale del token del usuario. Es lo que un operador tiene
+  delante cuando investiga un incidente.
+- **Dar las dos mitades**, el id del usuario en el conector y el conector, y que el
+  panel construya el `sub`. Para un usuario local el id está en la propia página de
+  *Local users*, que además enlaza directamente a sus sesiones; para Keystone o LDAP
+  es el id en ese proveedor, **no** el email.
+
+El codificador es el mismo que usa Dex al emitir el token: la vista llama a
+`server.EncodeSubject`, exportado en `server/oauth2.go` justo para esto. Duplicar aquí
+el formato de wire habría creado un acoplamiento que se rompe en silencio el día que
+cambie, y el fallo sería «este usuario no tiene sesiones» para todo el mundo. Hay un
+test que fija que las dos codificaciones no se separen.
 
 Un `sub` mal formado devuelve un aviso claro, no el error de protobuf en crudo.
 
----
+Con permiso de escritura, cada fila trae un botón para revocar ese refresh token.
 
 ## 9. Escritura: permisos y auditoría
 

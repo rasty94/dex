@@ -6,10 +6,13 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
 	api "github.com/dexidp/dex/api/v2"
+	"github.com/dexidp/dex/server"
 )
 
 //go:embed templates/*.html
@@ -177,18 +180,47 @@ func (d *dashboard) handleUsers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleSessions looks up a user's refresh tokens by subject. The dex API keys
-// on the "sub" claim, so the form asks for one instead of guessing.
+// handleSessions looks up a user's refresh tokens. dex keys them on the "sub"
+// claim, which encodes (userID, connectorID), so the form offers both ways in:
+// paste a sub straight from a token, or give the two halves an operator
+// normally has and let the dashboard build it.
 func (d *dashboard) handleSessions(w http.ResponseWriter, r *http.Request) {
-	sub := strings.TrimSpace(r.URL.Query().Get("sub"))
-	data := struct {
-		Subject  string
-		Tokens   []*api.RefreshTokenRef
-		Searched bool
-	}{Subject: sub}
+	q := r.URL.Query()
+	sub := strings.TrimSpace(q.Get("sub"))
+	userID := strings.TrimSpace(q.Get("user_id"))
+	connID := strings.TrimSpace(q.Get("conn_id"))
+
+	data := sessionsData{Subject: sub, UserID: userID, ConnID: connID}
+	if conns, err := d.dex.listConnectors(r.Context()); err == nil {
+		for _, c := range conns {
+			data.Connectors = append(data.Connectors, c.Id)
+		}
+	}
+	// The local password DB is always available as a connector id, even when
+	// listing connectors is gated behind the feature flag.
+	if !slices.Contains(data.Connectors, "local") {
+		data.Connectors = append(data.Connectors, "local")
+	}
+	sort.Strings(data.Connectors)
+
+	render := func(p page) {
+		p.Data = data
+		d.render(w, r, "sessions.html", p)
+	}
+
+	if sub == "" && userID != "" && connID != "" {
+		encoded, err := server.EncodeSubject(userID, connID)
+		if err != nil {
+			d.logger.Error("failed to encode subject", "err", err)
+			render(page{Title: "Sessions", Nav: "sessions", Error: "Could not build a subject from that user and connector."})
+			return
+		}
+		sub = encoded
+		data.Subject = sub
+	}
 
 	if sub == "" {
-		d.render(w, r, "sessions.html", page{Title: "Sessions", Nav: "sessions", Data: data})
+		render(page{Title: "Sessions", Nav: "sessions"})
 		return
 	}
 
@@ -197,10 +229,20 @@ func (d *dashboard) handleSessions(w http.ResponseWriter, r *http.Request) {
 		// Searched stays false so the page shows the error alone, rather than an
 		// empty result table next to it saying the user has no sessions.
 		d.logger.Error("failed to list refresh tokens", "err", err)
-		d.render(w, r, "sessions.html", page{Title: "Sessions", Nav: "sessions", Error: friendlyGRPCError(err), Data: data})
+		render(page{Title: "Sessions", Nav: "sessions", Error: friendlyGRPCError(err)})
 		return
 	}
 	data.Tokens = tokens
 	data.Searched = true
-	d.render(w, r, "sessions.html", page{Title: "Sessions", Nav: "sessions", Data: data})
+	render(page{Title: "Sessions", Nav: "sessions"})
+}
+
+// sessionsData drives the sessions view.
+type sessionsData struct {
+	Subject    string
+	UserID     string
+	ConnID     string
+	Connectors []string
+	Tokens     []*api.RefreshTokenRef
+	Searched   bool
 }

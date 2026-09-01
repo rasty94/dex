@@ -303,6 +303,15 @@ func getAudience(clientID string, scopes []string) audience {
 	return aud
 }
 
+// EncodeSubject builds the "sub" claim for a (userID, connectorID) pair, the
+// same value the refresh gRPC API keys on. It is exported so tooling in this
+// repo — the admin dashboard — can look a user's sessions up from the two
+// halves an operator actually has, instead of asking them to paste a base64
+// protobuf copied out of a token.
+func EncodeSubject(userID, connID string) (string, error) {
+	return genSubject(userID, connID)
+}
+
 func genSubject(userID string, connID string) (string, error) {
 	sub := &internal.IDTokenSubject{
 		UserId: userID,

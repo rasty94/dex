@@ -1,13 +1,31 @@
 {{ define "sessions.html" }}{{ template "layout" . }}{{ end }}
 {{ define "content" }}
 {{ with .Data }}
-<form class="lookup" method="get" action="/sessions">
-  <input type="text" name="sub" value="{{ .Subject }}" placeholder="sub claim from the user's ID token" autofocus>
-  <button type="submit">Look up</button>
-</form>
+<div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1.25rem">
+  <form method="get" action="/sessions" class="lookup" style="margin-bottom:.9rem">
+    <input type="text" name="sub" value="{{ .Subject }}" placeholder="sub claim from the user's ID token">
+    <button type="submit">Look up by sub</button>
+  </form>
+
+  <div class="muted" style="font-size:13px; margin:.2rem 0 .9rem">or</div>
+
+  <form method="get" action="/sessions" class="lookup" style="margin-bottom:0">
+    <input type="text" name="user_id" value="{{ .UserID }}" placeholder="user ID in the connector">
+    <select name="conn_id">
+      {{ $current := .ConnID }}
+      {{ range .Connectors }}<option value="{{ . }}" {{ if eq . $current }}selected{{ end }}>{{ . }}</option>{{ end }}
+    </select>
+    <button type="submit">Look up by user</button>
+  </form>
+</div>
+
 <p class="note">dex keys refresh tokens on the <code>sub</code> claim, which encodes the user
-and the connector they came from. Take it from the user's ID token; it cannot be derived
-from an email address.</p>
+<em>and</em> the connector they came from. Either paste one from a token, or give the two
+halves and the dashboard builds it. For a local user the ID is the one on the
+<a href="/users">Local users</a> page; for Keystone or LDAP it is the ID in that provider,
+not the email address.</p>
+
+{{ if .Subject }}<p class="note">Subject: <code>{{ .Subject }}</code></p>{{ end }}
 
 {{ if .Searched }}
 <div class="card scroll">

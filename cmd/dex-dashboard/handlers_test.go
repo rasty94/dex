@@ -26,12 +26,6 @@ func TestPagesRenderTheirOwnContent(t *testing.T) {
 		t.Fatalf("newDashboard: %v", err)
 	}
 
-	type sessionsData struct {
-		Subject  string
-		Tokens   []*api.RefreshTokenRef
-		Searched bool
-	}
-
 	cases := []struct {
 		name     string
 		data     any
@@ -58,9 +52,10 @@ func TestPagesRenderTheirOwnContent(t *testing.T) {
 		{
 			name: "sessions.html",
 			data: sessionsData{
-				Subject:  "CgExEgR0ZXN0",
-				Searched: true,
-				Tokens:   []*api.RefreshTokenRef{{Id: "tok-1", ClientId: "example-app", CreatedAt: 1700000000}},
+				Subject:    "CgExEgR0ZXN0",
+				Connectors: []string{"local", "mock"},
+				Searched:   true,
+				Tokens:     []*api.RefreshTokenRef{{Id: "tok-1", ClientId: "example-app", CreatedAt: 1700000000}},
 			},
 			contains: []string{"Look up", "CgExEgR0ZXN0", "tok-1", "2023-11-14"},
 		},

@@ -9,19 +9,20 @@ dex neither stores nor manages them, so they cannot appear here.</p>
 <div class="card scroll">
   {{ if .Data }}
   <table>
-    <thead><tr><th>Email</th><th>Username</th><th>User ID</th>{{ if and .Session .Session.CanWrite }}<th></th>{{ end }}</tr></thead>
+    <thead><tr><th>Email</th><th>Username</th><th>User ID</th><th></th></tr></thead>
     <tbody>
     {{ range $.Data }}
       <tr>
         <td>{{ .Email }}</td>
         <td>{{ if .Username }}{{ .Username }}{{ else }}<span class="muted">—</span>{{ end }}</td>
         <td class="mono">{{ .UserId }}</td>
-        {{ if and $.Session $.Session.CanWrite }}
         <td class="row-actions">
+          <a class="btn btn-sm" href="/sessions?user_id={{ .UserId }}&amp;conn_id=local">Sessions</a>
+        {{ if and $.Session $.Session.CanWrite }}
           <a class="btn btn-sm" href="/users/edit?email={{ .Email }}&amp;username={{ .Username }}">Password</a>
           <a class="btn btn-sm btn-danger" href="/users/delete?email={{ .Email }}">Delete</a>
-        </td>
         {{ end }}
+        </td>
       </tr>
     {{ end }}
     </tbody>
