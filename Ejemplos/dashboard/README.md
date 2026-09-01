@@ -53,8 +53,15 @@ panel es de solo lectura para todo el mundo.
 | Local users | los usuarios del password DB |
 | Sessions | refresh tokens de un usuario, buscando por su `sub` |
 
-Y con permiso de escritura: alta, edición y baja de clientes OAuth2, alta, cambio
-de contraseña y baja de usuarios locales, y revocación de refresh tokens.
+Y con permiso de escritura: alta, edición y baja de clientes OAuth2, conectores y
+usuarios locales, cambio de contraseña, revocación de refresh tokens y recarga de
+la configuración de Dex.
+
+Al editar un conector **los secretos aparecen como `__unchanged__`**: déjalos así
+para conservarlos, o escribe encima para rotarlos. Y la configuración se valida
+contra el tipo real del conector antes de guardarla, así que un campo mal escrito
+se rechaza en el formulario en vez de romper los logins después. Pruébalo: edita
+el conector `local` y mete un campo inventado.
 
 Lo destructivo pasa por una **página de confirmación** que explica qué se rompe,
 no por un diálogo del navegador. Borrar un cliente tumba el login de esa

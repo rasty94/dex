@@ -341,7 +341,181 @@ func (d *dashboard) renderResult(w http.ResponseWriter, r *http.Request, nav, ms
 		d.renderList(w, r, "users.html", "Local users", "users", func() (any, error) {
 			return d.dex.listPasswords(r.Context())
 		}, msg)
+	case "connectors":
+		d.renderList(w, r, "connectors.html", "Connectors", "connectors", func() (any, error) {
+			return d.dex.listConnectors(r.Context())
+		}, msg)
 	default:
 		http.Error(w, msg, http.StatusBadRequest)
 	}
+}
+
+// ─────────────────────────── connectors ───────────────────────────
+
+type connectorFormData struct {
+	ID      string
+	Type    string
+	Name    string
+	Config  string
+	Editing bool
+	Types   []string
+}
+
+func (d *dashboard) handleConnectorForm(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	data := connectorFormData{Config: "{}", Types: ConnectorTypes()}
+
+	if id != "" {
+		conn, err := d.dex.connector(r.Context(), id)
+		if err != nil {
+			d.logger.Error("failed to get connector", "err", err, "connector_id", id)
+			d.render(w, r, "connector_form.html", page{Title: "Connector", Nav: "connectors", Error: friendlyGRPCError(err), Data: data})
+			return
+		}
+		if conn == nil {
+			d.renderResult(w, r, "connectors", "No connector with ID "+id+".")
+			return
+		}
+		shown, err := redactSecrets(conn.Config)
+		if err != nil {
+			d.logger.Error("failed to render connector config", "err", err, "connector_id", id)
+			shown = string(conn.Config)
+		}
+		data = connectorFormData{ID: conn.Id, Type: conn.Type, Name: conn.Name, Config: shown, Editing: true, Types: data.Types}
+	}
+
+	title := "New connector"
+	if data.Editing {
+		title = "Edit " + data.ID
+	}
+	d.render(w, r, "connector_form.html", page{Title: title, Nav: "connectors", Data: data})
+}
+
+func (d *dashboard) handleConnectorSave(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFrom(r.Context())
+	id := strings.TrimSpace(r.FormValue("id"))
+	connType := strings.TrimSpace(r.FormValue("type"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	submitted := []byte(strings.TrimSpace(r.FormValue("config")))
+	editing := r.FormValue("editing") == "1"
+
+	if id == "" || connType == "" || name == "" {
+		d.renderResult(w, r, "connectors", "A connector needs an ID, a type and a name.")
+		return
+	}
+
+	// Put back any secret the operator left as the marker, using what is
+	// already stored, so editing an unrelated field does not wipe a password.
+	var stored []byte
+	if editing {
+		conn, err := d.dex.connector(r.Context(), id)
+		if err != nil {
+			d.renderResult(w, r, "connectors", friendlyGRPCError(err))
+			return
+		}
+		if conn == nil {
+			d.renderResult(w, r, "connectors", "No connector with ID "+id+".")
+			return
+		}
+		stored = conn.Config
+	}
+
+	config, err := restoreSecrets(submitted, stored)
+	if err != nil {
+		d.renderResult(w, r, "connectors", err.Error())
+		return
+	}
+
+	// dex only checks that the JSON parses. A config that parses but is wrong
+	// is accepted and then breaks every login through this connector, so the
+	// dashboard checks it against the real type first.
+	if err := validateConnectorConfig(connType, config); err != nil {
+		d.renderResult(w, r, "connectors", err.Error())
+		return
+	}
+
+	if editing {
+		notFound, err := d.dex.updateConnector(r.Context(), &api.UpdateConnectorReq{
+			Id: id, NewType: connType, NewName: name, NewConfig: config,
+		})
+		if err != nil {
+			d.logger.Error("failed to update connector", "err", err, "connector_id", id)
+			d.renderResult(w, r, "connectors", friendlyGRPCError(err))
+			return
+		}
+		if notFound {
+			d.renderResult(w, r, "connectors", "No connector with ID "+id+".")
+			return
+		}
+		d.logger.Info("connector updated", "actor", sess.Email, "connector_id", id)
+		redirectWith(w, r, "/connectors", "Updated "+id+".")
+		return
+	}
+
+	exists, err := d.dex.createConnector(r.Context(), &api.Connector{
+		Id: id, Type: connType, Name: name, Config: config,
+	})
+	if err != nil {
+		d.logger.Error("failed to create connector", "err", err, "connector_id", id)
+		d.renderResult(w, r, "connectors", friendlyGRPCError(err))
+		return
+	}
+	if exists {
+		d.renderResult(w, r, "connectors", "A connector with ID "+id+" already exists.")
+		return
+	}
+	d.logger.Info("connector created", "actor", sess.Email, "connector_id", id)
+	redirectWith(w, r, "/connectors", "Created "+id+".")
+}
+
+func (d *dashboard) handleConnectorDelete(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.FormValue("id"))
+	if id == "" {
+		http.Error(w, "Missing connector id.", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		d.render(w, r, "confirm.html", page{
+			Title: "Delete connector", Nav: "connectors",
+			Data: confirmData{
+				Action:  "/connectors/delete",
+				Field:   "id",
+				Value:   id,
+				Heading: "Delete connector " + id + "?",
+				Warning: "Nobody can sign in through this connector any more, and the option disappears from the login screen. Users who signed in through it keep their sessions until those expire.",
+				Confirm: "Delete connector",
+				Cancel:  "/connectors",
+			},
+		})
+		return
+	}
+
+	notFound, err := d.dex.deleteConnector(r.Context(), id)
+	if err != nil {
+		d.logger.Error("failed to delete connector", "err", err, "connector_id", id)
+		d.renderResult(w, r, "connectors", friendlyGRPCError(err))
+		return
+	}
+	sess := sessionFrom(r.Context())
+	if notFound {
+		redirectWith(w, r, "/connectors", "No connector with ID "+id+".")
+		return
+	}
+	d.logger.Info("connector deleted", "actor", sess.Email, "connector_id", id)
+	redirectWith(w, r, "/connectors", "Deleted "+id+".")
+}
+
+// handleReloadConfig asks dex to re-read its configuration file. Useful right
+// after editing something that came from the file rather than from storage.
+func (d *dashboard) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFrom(r.Context())
+	msg, err := d.dex.reloadConfig(r.Context())
+	if err != nil {
+		d.logger.Error("failed to reload dex configuration", "err", err)
+		d.renderResult(w, r, "connectors", friendlyGRPCError(err))
+		return
+	}
+	d.logger.Info("dex configuration reloaded", "actor", sess.Email)
+	redirectWith(w, r, "/connectors", msg)
 }

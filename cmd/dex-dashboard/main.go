@@ -102,6 +102,17 @@ func run() error {
 		}
 		d.handleUserDelete(w, r)
 	}))
+	mux.HandleFunc("/connectors/new", form(d.handleConnectorForm))
+	mux.HandleFunc("/connectors/edit", form(d.handleConnectorForm))
+	mux.HandleFunc("/connectors/save", write(d.handleConnectorSave))
+	mux.HandleFunc("/connectors/reload", write(d.handleReloadConfig))
+	mux.HandleFunc("/connectors/delete", form(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			auth.requireCSRF(d.handleConnectorDelete)(w, r)
+			return
+		}
+		d.handleConnectorDelete(w, r)
+	}))
 
 	srv := &http.Server{
 		Addr:              c.Listen,

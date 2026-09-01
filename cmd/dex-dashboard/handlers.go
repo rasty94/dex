@@ -28,7 +28,7 @@ type dashboard struct {
 // pageTemplates are the views, each paired with the shared layout.
 var pageTemplates = []string{
 	"overview.html", "clients.html", "connectors.html", "users.html", "sessions.html",
-	"client_form.html", "user_form.html", "confirm.html",
+	"client_form.html", "user_form.html", "connector_form.html", "confirm.html",
 }
 
 var templateFuncs = template.FuncMap{

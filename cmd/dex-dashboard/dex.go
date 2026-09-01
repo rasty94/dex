@@ -134,6 +134,56 @@ func (d *dexClient) getClient(ctx context.Context, id string) (*api.Client, erro
 	return resp.Client, nil
 }
 
+func (d *dexClient) createConnector(ctx context.Context, c *api.Connector) (alreadyExists bool, err error) {
+	resp, err := d.api.CreateConnector(d.authed(ctx), &api.CreateConnectorReq{Connector: c})
+	if err != nil {
+		return false, err
+	}
+	return resp.AlreadyExists, nil
+}
+
+func (d *dexClient) updateConnector(ctx context.Context, req *api.UpdateConnectorReq) (notFound bool, err error) {
+	resp, err := d.api.UpdateConnector(d.authed(ctx), req)
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
+}
+
+func (d *dexClient) deleteConnector(ctx context.Context, id string) (notFound bool, err error) {
+	resp, err := d.api.DeleteConnector(d.authed(ctx), &api.DeleteConnectorReq{Id: id})
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
+}
+
+// connector returns one connector by id. The API has no Get, so this filters
+// the listing; there are never many connectors.
+func (d *dexClient) connector(ctx context.Context, id string) (*api.Connector, error) {
+	conns, err := d.listConnectors(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range conns {
+		if c.Id == id {
+			return c, nil
+		}
+	}
+	return nil, nil
+}
+
+func (d *dexClient) reloadConfig(ctx context.Context) (string, error) {
+	resp, err := d.api.ReloadConfig(d.authed(ctx), &api.ReloadConfigReq{})
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success {
+		return "", fmt.Errorf("%s", resp.Error)
+	}
+	return "Configuration reloaded.", nil
+}
+
 func (d *dexClient) createPassword(ctx context.Context, p *api.Password) (alreadyExists bool, err error) {
 	resp, err := d.api.CreatePassword(d.authed(ctx), &api.CreatePasswordReq{Password: p})
 	if err != nil {

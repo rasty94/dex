@@ -210,19 +210,93 @@ Un `sub` mal formado devuelve un aviso claro, no el error de protobuf en crudo.
 
 ---
 
-## 9. Lo que bloquea la escritura
+## 9. Escritura: permisos y auditoría
 
-El panel registra qué administrador hace cada cosa. **Dex no.**
+### Leer no implica escribir
 
-La API gRPC se protege con un **único token estático compartido**
-(`newAuthInterceptor`, en `cmd/dex/serve.go`). Quien lo tenga es administrador total, y
-desde el lado de Dex todas las acciones son del mismo actor: «el token». Una auditoría
-que solo puede decir «lo hizo el token» no sirve de nada cuando hay que averiguar
-quién borró un cliente.
+`admin.groups` da entrada. `admin.writeGroups` habilita los cambios. Son dos listas
+distintas a propósito: mucha gente necesita consultar el estado de Dex sin necesitar
+editarlo, y un panel donde todo el que mira puede además borrar está a un clic
+descuidado de una caída.
 
-Por eso la fase 1 es de solo lectura y la fase 2 no empieza hasta que la API
-distinga tokens con nombre. El orden no es prudencia excesiva: es que la pista de
-auditoría tiene que existir **antes** de que haya algo que auditar.
+**Si `writeGroups` y `writeEmails` se dejan vacíos, el panel es de solo lectura para
+todo el mundo.** Es el valor por defecto seguro para una consola que administra el
+proveedor de identidad.
+
+Ocultar los botones a quien no puede escribir es presentación. La puerta es
+`requireWrite`, que corre en cada ruta de escritura: un `POST` directo a
+`/clients/delete` desde una cuenta de solo lectura se lleva un `403` y queda en el log.
+
+### Quién hizo qué
+
+La API gRPC autentica un **token compartido, no a una persona**, así que su log solo
+podía decir «lo hizo el token». El panel manda ahora en cada llamada una cabecera
+`x-dex-actor` con el administrador autenticado, y Dex la registra junto a toda
+operación que cambia estado:
+
+```
+msg="gRPC API call" method=DeleteConnector actor=jane@example.com
+```
+
+Conviene ser preciso sobre qué es esto: **Dex no verifica esa identidad**. Es un
+cliente que ya tiene poder total atestiguando quién pidió la acción. No cede nada que
+el token no cediera ya, y convierte una auditoría inútil en una que nombra a una
+persona. El interceptor solo registra métodos que mutan (`Create`, `Update`, `Delete`,
+`Revoke`, `ReloadConfig`); registrar cada `ListClients` enterraría lo que importa.
+
+Lo que sigue faltando es que Dex distinga **tokens con nombre**, para que un cliente
+distinto del panel también quede identificado. Está anotado en `TODO.md`.
+
+### Lo destructivo se confirma en una página
+
+Borrar un cliente, un conector o un usuario pasa por una página que explica qué se
+rompe: al borrar un cliente, toda aplicación que entre por él deja de funcionar. No es
+un `confirm()` del navegador, que no explica nada y se pulsa sin leer. Como efecto
+secundario, **el panel sigue sin servir una sola línea de JavaScript**.
+
+---
+
+## 9 bis. Conectores
+
+Editar un conector es la operación más delicada del panel, y tiene dos protecciones
+que Dex no da por sí solo.
+
+### Los secretos no se muestran
+
+La configuración de un conector lleva credenciales: el `bindPW` de LDAP, el
+`clientSecret` de OIDC, el `adminPassword` de Keystone. Al abrir el formulario, cada
+campo cuyo nombre parece un secreto se sustituye por `__unchanged__`. Al guardar,
+todo lo que siga siendo el marcador se restaura desde lo ya almacenado, y lo que se
+haya escrito encima se guarda tal cual, de forma que rotar una credencial funciona.
+
+Esto **no es una frontera de seguridad**: quien puede editar conectores puede
+normalmente leer esa configuración por otra vía. Evita que las contraseñas acaben en
+una ventana del navegador, en una captura de pantalla o en el botón de retroceso, que
+es por donde se escapan sin que nadie ataque nada.
+
+El criterio es una heurística sobre el nombre del campo (`secret`, `password`,
+`token`, `credential`, `bindPW`…), no un esquema. Un campo secreto con un nombre que
+no reconozca **se mostrará entero**: al añadir un conector con un nombre inusual, hay
+que ampliar la lista en `cmd/dex-dashboard/connectors.go`.
+
+### La configuración se valida contra el tipo real
+
+Dex solo comprueba que el JSON **parsea** (`json.Valid` en `server/api.go`). Una
+configuración sintácticamente correcta pero equivocada se guarda tan tranquila y
+después rompe todos los logins de ese conector.
+
+El panel decodifica el JSON en la estructura de configuración real del tipo elegido,
+rechazando campos que no existan, antes de mandarlo a Dex. Así un `clientSecrets` de
+más se rechaza en el formulario en vez de romper el login más tarde.
+
+Una diferencia de mayúsculas **no** es un error: el decodificador de Go casa nombres
+sin distinguirlas, igual que hace Dex al leer su YAML, así que `clientId` funciona
+donde el campo es `clientID`.
+
+### Recargar la configuración
+
+El botón «Reload dex config» llama a `ReloadConfig`, útil justo después de cambiar
+algo que viene del fichero de configuración en lugar del almacén.
 
 ---
 
