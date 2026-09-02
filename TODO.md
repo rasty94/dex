@@ -38,7 +38,7 @@
 > línea principal, así que todo lo que hoy vive solo en `master` — el panel y la cadena
 > Docker — tiene que portarse antes de hacer el cambio.
 
-- [ ] **Re-port sobre `upstream/master`.** 🚧 **En marcha** en la rama
+- [x] **Re-port sobre `upstream/master`.** ✅ **Todas las rebanadas cerradas** en la rama
       `feat/upstream-sync-2026-08` (empujada a `origin`, partiendo de `upstream/master`).
       Worktree en `../dex-upstream-sync`, para no mezclarla con `master`.
       - [x] `connector/keystone/` completo, más el registro de sus colectores en `cmd/dex`.
@@ -95,9 +95,17 @@
             suma `Terminate` y `Reset`, métodos nuevos de upstream que destruyen sesiones
             y segundos factores y habrían pasado sin auditoría; y tanto los actualizadores
             como los interceptores tienen ya test, que no tenían en `master`.
-      - [ ] **Portar el tooling del fork**: `.pre-commit-config.yaml` no está en la rama,
-            así que ahora mismo los commits allí van sin hooks y el lint hay que lanzarlo
-            a mano. Van con él los objetivos del `Makefile` que compilan los tres binarios.
+      - [x] **Portar el tooling del fork**: `.pre-commit-config.yaml`, el objetivo del
+            `Makefile` que compila los tres binarios y `sonar-project.properties`.
+      - [x] **Portar la documentación del fork**: `CHANGELOG.md`, `TODO.md`, `DONE.md`,
+            `SECURITY_FIXES.md` y `documentacion/`. **No** se restauran `.envrc`,
+            `.gitpod.yml`, `flake.nix`, `flake.lock` ni `MAINTAINERS`: son ficheros de un
+            upstream antiguo que el fork heredó y que upstream ya sustituyó por `devenv`.
+            Tampoco `fix_signatures.py`, un script de migración de un solo uso ya
+            consumido — conviene borrarlo también de `master`.
+      - [ ] **Hacer el cambio: que la rama pase a ser `master`.** Es lo único que queda.
+            Antes conviene un repaso de la imagen desplegada de extremo a extremo, y
+            decidir cómo se hace el cambio de rama en `origin`.
       - [x] `web/`: CSS, temas y plantillas. **Casi nada había que portar.** Los doce
             SVG de conector ya están en upstream byte a byte idénticos, y su mecanismo
             para pintarlos (reglas CSS por tipo con `dex-btn-icon--{{ $c.Type }}`) es
@@ -112,7 +120,7 @@
             en vez del efecto. Ahora el botón primario, su hover y el foco del campo leen
             las variables con el hex del tema como respaldo, y el test lo exige por
             selector.
-      - [ ] **Portar `cmd/dex-dashboard` y la cadena Docker.** Inventariado: ~30
+      - [x] **Portar `cmd/dex-dashboard` y la cadena Docker.** Inventariado: ~30
             ficheros, ~5100 líneas, de las que ~4800 son acarreo directo. `api/v2` no se
             mueve y los mensajes nuevos son aditivos, así que los literales con campos
             nombrados siguen compilando. Lo que necesita decisión real:
@@ -129,6 +137,13 @@
             - `cmd/docker-entrypoint` **ya existe** en upstream: es una mezcla, no un
               alta. Hay que llevar `needsTemplating`/`isCommand` y reconciliar los dos
               `main_test.go`.
+
+            Resuelto todo. Dos hallazgos no previstos: el linter de la rama destapó que
+            `handleLogin` era código muerto sin ruta que lo montara, y `.gitignore`
+            ignoraba `.pre-commit-config.yaml` **a propósito** — no faltaba por descuido,
+            upstream no lo versiona. Al pasarlo a versionado, `go mod tidy` pidió
+            reclasificar tres dependencias de indirectas a directas; no entra ninguna
+            nueva. Verificado construyendo la imagen y arrancando dex con ella.
       - [ ] **Decidir qué hacer con `api_connectors_crud`.** Upstream mete las cuatro RPC
             de conector detrás de ese feature flag, que viene apagado. Sin él la pestaña
             de Conectores del panel **no funciona**: es el mismo error que ya vimos en el
