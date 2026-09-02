@@ -78,7 +78,7 @@
 
   function formatError(err) {
     if (err.name === "NotAllowedError") {
-      return {{ .Tr.webauthn_cancelled }};
+      return {{ .Tr.webauthn_canceled }};
     }
     if (err.name === "SecurityError") {
       return {{ .Tr.webauthn_not_allowed }};

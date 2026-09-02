@@ -36,7 +36,7 @@ func TestWebAuthnScriptStringsAreValidJS(t *testing.T) {
 			// apostrophe may arrive raw or as \u0027 depending on how the value
 			// is emitted; both read back as the same string in JavaScript, so the
 			// test accepts either rather than pinning one form.
-			for _, key := range []string{"webauthn_cancelled", "webauthn_not_allowed", "webauthn_unexpected"} {
+			for _, key := range []string{"webauthn_canceled", "webauthn_not_allowed", "webauthn_unexpected"} {
 				raw := tr[key]
 				escaped := strings.ReplaceAll(raw, "'", `\u0027`)
 				if !strings.Contains(body, raw) && !strings.Contains(body, escaped) {
@@ -45,7 +45,7 @@ func TestWebAuthnScriptStringsAreValidJS(t *testing.T) {
 			}
 
 			// What must never happen is HTML escaping inside the script: the user
-			// would read "l&#39;utilisation" in the error box.
+			// would read the escape sequence itself in the error box.
 			if strings.Contains(body, "&#39;") {
 				t.Errorf("a script string was HTML-escaped instead of JS-escaped")
 			}

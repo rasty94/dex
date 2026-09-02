@@ -62,7 +62,7 @@
 }
 
 .theme-btn--primary {
-  background-color: #3d3f47;
+  background-color: var(--primary-color, #3d3f47);
   border: none;
   color: #e8eaed;
   min-width: 200px;
@@ -70,7 +70,7 @@
 }
 
 .theme-btn--primary:hover {
-  background-color: #4a4c55;
+  background-color: var(--primary-hover, #4a4c55);
   color: #fff;
 }
 
@@ -106,7 +106,7 @@
 
 .theme-form-input:focus,
 .theme-form-input:active {
-  border-color: #5a9bb5;
+  border-color: var(--primary-color, #5a9bb5);
   box-shadow: 0 0 0 3px rgba(90, 155, 181, 0.15);
   color: #dcdfe5;
   outline: none;
