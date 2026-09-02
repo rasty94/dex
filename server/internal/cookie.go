@@ -22,7 +22,7 @@ func SessionCookieValue(sessionID, secret string, encryptionKey []byte) string {
 		panic(fmt.Sprintf("marshal session cookie: %v", err))
 	}
 	if len(encryptionKey) > 0 {
-		val, err = encryptCookieValue(val, encryptionKey)
+		val, err = EncryptCookieValue(val, encryptionKey)
 		if err != nil {
 			panic(fmt.Sprintf("encrypt session cookie: %v", err))
 		}
@@ -34,7 +34,7 @@ func SessionCookieValue(sessionID, secret string, encryptionKey []byte) string {
 // provided, the value is decrypted first.
 func ParseSessionCookie(value string, encryptionKey []byte) (sessionID, secret string, err error) {
 	if len(encryptionKey) > 0 {
-		value, err = decryptCookieValue(value, encryptionKey)
+		value, err = DecryptCookieValue(value, encryptionKey)
 		if err != nil {
 			return "", "", fmt.Errorf("decrypt session cookie: %w", err)
 		}
@@ -46,8 +46,10 @@ func ParseSessionCookie(value string, encryptionKey []byte) (sessionID, secret s
 	return cookie.SessionId, cookie.Secret, nil
 }
 
-// encryptCookieValue encrypts plaintext with AES-GCM and returns base64url-encoded ciphertext.
-func encryptCookieValue(plaintext string, key []byte) (string, error) {
+// EncryptCookieValue encrypts plaintext with AES-GCM and returns
+// base64url-encoded ciphertext. Exported so cookies other than the session one
+// share this implementation rather than growing a second.
+func EncryptCookieValue(plaintext string, key []byte) (string, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
@@ -64,8 +66,8 @@ func encryptCookieValue(plaintext string, key []byte) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(ciphertext), nil
 }
 
-// decryptCookieValue decodes base64url and decrypts AES-GCM ciphertext.
-func decryptCookieValue(encrypted string, key []byte) (string, error) {
+// DecryptCookieValue decodes base64url and decrypts AES-GCM ciphertext.
+func DecryptCookieValue(encrypted string, key []byte) (string, error) {
 	data, err := base64.RawURLEncoding.DecodeString(encrypted)
 	if err != nil {
 		return "", err

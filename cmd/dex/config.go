@@ -52,6 +52,9 @@ type Config struct {
 	// upstream identity provider.
 	LoginRateLimit LoginRateLimit `json:"loginRateLimit"`
 
+	// MFATrust offers "remember this device" on the second-factor step.
+	MFATrust MFATrust `json:"mfaTrust"`
+
 	// Signer configuration controls signing of JWT tokens issued by Dex.
 	Signer Signer `json:"signer"`
 
@@ -260,6 +263,20 @@ type OAuth2 struct {
 	PasswordConnector string `json:"passwordConnector"`
 	// PKCE configuration
 	PKCE PKCE `json:"pkce"`
+}
+
+// MFATrust offers "remember this device" on the second-factor step, for
+// connectors whose provider enforces the factor itself.
+type MFATrust struct {
+	Enabled bool `json:"enabled"`
+
+	// Maximum lifetime of the trust cookie, e.g. "720h". The effective lifetime
+	// is still bounded by the provider's token expiry. Defaults to 720h.
+	Duration string `json:"duration"`
+
+	// EncryptionKey seals the cookie: 16, 24 or 32 bytes for AES-128/192/256.
+	// Required when enabled, because the cookie holds a live provider token.
+	EncryptionKey string `json:"encryptionKey"`
 }
 
 // LoginRateLimit throttles failed password logins on both the login form and

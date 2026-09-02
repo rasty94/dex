@@ -53,6 +53,10 @@ type Handler struct {
 	// LoginLimiter throttles failed password logins. A nil limiter allows
 	// everything, which is what a disabled configuration produces.
 	LoginLimiter *ratelimit.Limiter
+
+	// MFATrust configures "remember this device" on the second-factor step. See
+	// mfatrust.go for the trust model.
+	MFATrust MFATrustConfig
 }
 
 // Mount registers the login routes. The /auth endpoint is both the entry

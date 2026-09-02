@@ -2,6 +2,7 @@ package authflow
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"github.com/dexidp/dex/connector"
 	"github.com/dexidp/dex/connector/keystone"
 	"github.com/dexidp/dex/server/connectors"
+	"github.com/dexidp/dex/server/internal"
 	"github.com/dexidp/dex/storage"
 )
 
@@ -28,6 +30,13 @@ type totpConnector struct {
 
 	// acceptCode is the code that completes the login. Any other code fails.
 	acceptCode string
+
+	// issuesToken is the provider token Login hands back through the context
+	// after a successful second factor; validToken is the one TokenIdentity
+	// still accepts, so a test can revoke it upstream by making them differ.
+	issuesToken     string
+	validToken      string
+	seenRevalidated string
 }
 
 func (c *totpConnector) Close() error   { return nil }
@@ -39,16 +48,20 @@ func (c *totpConnector) Login(ctx context.Context, _ connector.Scopes, username,
 	c.seenReceipt, _ = ctx.Value(keystone.ReceiptContextKey).(string)
 
 	if c.seenReceipt == "" {
-		// First factor. Accept the password, then ask for the code.
 		if password != "correct-password" {
 			return connector.Identity{}, false, nil
 		}
-		return connector.Identity{}, false, keystone.ErrTOTPRequired{Receipt: "receipt-abc"}
-	}
-
-	// Second factor: the receipt proves the password step already passed.
-	if c.seenTOTP != c.acceptCode {
+		// "nofactor" stands for a user the provider does not challenge, which is
+		// the only way a login completes without a code.
+		if username != "nofactor" {
+			return connector.Identity{}, false, keystone.ErrTOTPRequired{Receipt: "receipt-abc"}
+		}
+	} else if c.seenTOTP != c.acceptCode {
+		// Second factor: the receipt proves the password step already passed.
 		return connector.Identity{}, false, nil
+	}
+	if out, ok := ctx.Value(keystone.IssuedTokenContextKey).(*string); ok && out != nil {
+		*out = c.issuesToken
 	}
 	return connector.Identity{UserID: "user-1", Username: username, Email: "user@example.com"}, true, nil
 }
@@ -185,4 +198,194 @@ func TestPasswordLoginDomainField(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Contains(t, w.Body.String(), `name="domain"`)
 	require.Contains(t, w.Body.String(), `name="password"`)
+}
+
+// --- trusted devices ---
+
+// trustKey is a 32-byte AES key for the trust cookie in tests.
+var trustKey = []byte("0123456789abcdef0123456789abcdef")
+
+// TokenIdentity makes totpConnector a TokenIdentityConnector, which is what
+// makes a device trustable: the token can be revalidated later.
+func (c *totpConnector) TokenIdentity(ctx context.Context, subjectTokenType, token string) (connector.Identity, error) {
+	c.seenRevalidated = token
+	if token != c.validToken {
+		return connector.Identity{}, errors.New("token rejected by the provider")
+	}
+	return connector.Identity{UserID: "user-1", Username: "alice", Email: "user@example.com"}, nil
+}
+
+// enableTrust turns on trusted devices and tells the fake which token it issues
+// on a successful second factor.
+func enableTrust(t *testing.T, server *testServer, conn *totpConnector, issued string) {
+	t.Helper()
+	server.MFATrust = MFATrustConfig{Enabled: true, EncryptionKey: trustKey}
+	conn.issuesToken = issued
+	conn.validToken = issued
+}
+
+// trustCookie returns the trust cookie from a response, or nil.
+func trustCookie(w *httptest.ResponseRecorder) *http.Cookie {
+	for _, c := range w.Result().Cookies() {
+		if c.Name == mfaTrustCookieName("keystone") {
+			return c
+		}
+	}
+	return nil
+}
+
+// The cookie holds a live provider token, so it must never be readable. This is
+// the reason the slice exists: master wrote it in the clear.
+func TestTrustCookieIsEncrypted(t *testing.T) {
+	server, conn, authID := newTOTPTest(t)
+	enableTrust(t, server, conn, "keystone-token-xyz")
+
+	w := post(t, server, authID, url.Values{
+		"login": {"alice"}, "receipt": {"receipt-abc"},
+		"totp": {"123456"}, "trust_device": {"1"},
+	})
+	require.Equal(t, http.StatusSeeOther, w.Code)
+
+	c := trustCookie(w)
+	require.NotNil(t, c, "a trusted login must set the cookie")
+	require.NotContains(t, c.Value, "keystone-token-xyz", "the provider token must not be readable in the cookie")
+	require.True(t, c.HttpOnly)
+
+	// It must still open with the right key, or the trust would be useless.
+	got, err := internal.DecryptCookieValue(c.Value, trustKey)
+	require.NoError(t, err)
+	require.Equal(t, "keystone-token-xyz", got)
+}
+
+// A login that completes on the password alone must not mint a trust cookie:
+// the cookie's whole purpose is to skip the second factor, so issuing one to a
+// login that never passed it would turn trust into a bypass. This is why the
+// handler requires a code in the request, not merely a successful login.
+func TestTrustRequiresPassingTheSecondFactor(t *testing.T) {
+	server, conn, authID := newTOTPTest(t)
+	enableTrust(t, server, conn, "keystone-token-xyz")
+
+	w := post(t, server, authID, url.Values{
+		"login": {"nofactor"}, "password": {"correct-password"}, "trust_device": {"1"},
+	})
+
+	require.Equal(t, http.StatusSeeOther, w.Code, "the login itself must succeed")
+	require.Nil(t, trustCookie(w), "a login that never passed the second factor must not be trusted")
+}
+
+// The second-factor step, on the other hand, is not a completed login, so it
+// must not set a cookie either.
+func TestTrustNotSetOnTheSecondFactorStep(t *testing.T) {
+	server, conn, authID := newTOTPTest(t)
+	enableTrust(t, server, conn, "keystone-token-xyz")
+
+	w := post(t, server, authID, url.Values{
+		"login": {"alice"}, "password": {"correct-password"}, "trust_device": {"1"},
+	})
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Nil(t, trustCookie(w))
+	require.Contains(t, w.Body.String(), "Remember this device", "the checkbox belongs on the second-factor step")
+}
+
+// With the cookie present, a GET revalidates the token with the provider and
+// skips the form entirely.
+func TestTrustedDeviceSkipsLogin(t *testing.T) {
+	server, conn, authID := newTOTPTest(t)
+	enableTrust(t, server, conn, "keystone-token-xyz")
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/keystone/login?state="+authID, nil)
+	req.AddCookie(&http.Cookie{
+		Name:  mfaTrustCookieName("keystone"),
+		Value: mustSeal(t, "keystone-token-xyz"),
+	})
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusSeeOther, w.Code, "a trusted device must not see the login form")
+	require.Equal(t, "keystone-token-xyz", conn.seenRevalidated, "the token must be revalidated with the provider")
+
+	got, err := server.Storage.GetAuthRequest(t.Context(), authID)
+	require.NoError(t, err)
+	require.True(t, got.LoggedIn)
+}
+
+// Trust lasts only while the provider honors the token. Revoking it upstream
+// must end the trust on the next login, not merely at cookie expiry.
+func TestTrustEndsWhenProviderRejectsTheToken(t *testing.T) {
+	server, conn, authID := newTOTPTest(t)
+	enableTrust(t, server, conn, "keystone-token-xyz")
+	conn.validToken = "some-other-token" // revoked upstream
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/keystone/login?state="+authID, nil)
+	req.AddCookie(&http.Cookie{
+		Name:  mfaTrustCookieName("keystone"),
+		Value: mustSeal(t, "keystone-token-xyz"),
+	})
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `name="password"`, "a rejected token must fall back to the credential form")
+
+	c := trustCookie(w)
+	require.NotNil(t, c)
+	require.Equal(t, -1, c.MaxAge, "the stale cookie must be cleared")
+}
+
+// A cookie sealed with another key (rotated, or forged) must not be honored,
+// and must not crash the login either.
+func TestTamperedTrustCookieFallsBackToLogin(t *testing.T) {
+	server, conn, authID := newTOTPTest(t)
+	enableTrust(t, server, conn, "keystone-token-xyz")
+
+	for name, value := range map[string]string{
+		"not base64":     "@@@not-base64@@@",
+		"wrong key":      mustSealWith(t, "keystone-token-xyz", []byte("ffffffffffffffffffffffffffffffff")),
+		"random garbage": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/auth/keystone/login?state="+authID, nil)
+			req.AddCookie(&http.Cookie{Name: mfaTrustCookieName("keystone"), Value: value})
+			w := httptest.NewRecorder()
+			server.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Contains(t, w.Body.String(), `name="password"`, "an unopenable cookie must ask for credentials")
+			require.Empty(t, conn.seenRevalidated, "a cookie that does not open must never reach the provider")
+		})
+	}
+}
+
+// Trust is scoped per connector: trusting one provider must not trust another.
+func TestTrustCookieIsScopedPerConnector(t *testing.T) {
+	require.NotEqual(t, mfaTrustCookieName("keystone"), mfaTrustCookieName("keystone-2"))
+	// Connector IDs are user-supplied, so anything outside the charset folds to "_".
+	require.Equal(t, "dex_mfa_trust_a_b", mfaTrustCookieName("a/b"))
+}
+
+// With trust disabled the checkbox must not appear and no cookie may be set,
+// even if the form asks for it.
+func TestTrustDisabled(t *testing.T) {
+	server, conn, authID := newTOTPTest(t)
+	conn.issuesToken = "keystone-token-xyz"
+
+	w := post(t, server, authID, url.Values{
+		"login": {"alice"}, "receipt": {"receipt-abc"},
+		"totp": {"123456"}, "trust_device": {"1"},
+	})
+	require.Equal(t, http.StatusSeeOther, w.Code)
+	require.Nil(t, trustCookie(w), "no cookie may be set while trusted devices are disabled")
+}
+
+func mustSeal(t *testing.T, token string) string {
+	t.Helper()
+	return mustSealWith(t, token, trustKey)
+}
+
+func mustSealWith(t *testing.T, token string, key []byte) string {
+	t.Helper()
+	v, err := internal.EncryptCookieValue(token, key)
+	require.NoError(t, err)
+	return v
 }

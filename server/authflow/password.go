@@ -76,8 +76,34 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		form.ShowDomain = true
 	}
 
+	// A device can only be trusted if the connector can later revalidate the
+	// token it issued, which is the whole mechanism by which the second factor
+	// gets skipped. Without that, trusting would just be dex deciding on its own
+	// to stop asking.
+	tiConn, canTrustDevice := conn.Connector.(connector.TokenIdentityConnector)
+	canTrustDevice = canTrustDevice && h.MFATrust.Enabled
+
 	switch r.Method {
 	case http.MethodGet:
+		// A trusted device short-circuits the whole form: revalidate the stored
+		// token with the provider and, if it still holds, the user is in.
+		if token := h.mfaTrustToken(r, authReq.ConnectorID); canTrustDevice && token != "" {
+			identity, err := tiConn.TokenIdentity(ctx, "", token)
+			if err == nil {
+				authReq, err := h.finalizeLogin(ctx, identity, authReq, conn.Connector)
+				if err != nil {
+					h.Logger.ErrorContext(ctx, "failed to finalize login", "err", err)
+					h.renderError(r, w, http.StatusInternalServerError, "Login error.")
+					return
+				}
+				http.Redirect(w, r, h.buildContinueURL(authReq), http.StatusSeeOther)
+				return
+			}
+			// Expired or revoked upstream: drop the cookie and ask for credentials.
+			h.Logger.InfoContext(ctx, "trusted device token rejected, falling back to the login form", "err", err)
+			h.clearMFATrustCookie(w, authReq.ConnectorID)
+		}
+
 		// Before rendering the password form, allow connectors that support SPNEGO to try Kerberos auth.
 		if sp, ok := pwConn.(connector.SPNEGOAware); ok {
 			scopes := tokens.ParseScopes(authReq.Scopes)
@@ -127,6 +153,14 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			r = r.WithContext(context.WithValue(r.Context(), keystone.ReceiptContextKey, receipt))
 		}
 
+		// Only a login that actually cleared the second factor may trust the
+		// device: requiring a code here is what stops a plain password login
+		// from minting a cookie that skips the factor it never passed.
+		var issuedToken string
+		if canTrustDevice && r.FormValue("trust_device") != "" && r.FormValue("totp") != "" {
+			r = r.WithContext(context.WithValue(r.Context(), keystone.IssuedTokenContextKey, &issuedToken))
+		}
+
 		// Throttle before hitting the upstream provider: a failed attempt is what
 		// an attacker repeats, and a successful login clears the counter below.
 		limitKey := ratelimit.Key(ctx, username)
@@ -145,6 +179,7 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			if errors.As(err, &errTOTP) {
 				form.RequireTOTP = true
 				form.Receipt = errTOTP.Receipt
+				form.OfferTrust = canTrustDevice
 				if err := h.Templates.Password(r, w, r.URL.String(), username, usernamePrompt(pwConn), false, backLink, rememberMe, form); err != nil {
 					h.Logger.ErrorContext(r.Context(), "server template error", "err", err)
 				}
@@ -163,6 +198,7 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			// away the receipt and force the whole exchange again.
 			if form.Receipt = r.FormValue("receipt"); form.Receipt != "" {
 				form.RequireTOTP = true
+				form.OfferTrust = canTrustDevice
 			}
 			if err := h.Templates.Password(r, w, r.URL.String(), username, usernamePrompt(pwConn), true, backLink, rememberMe, form); err != nil {
 				h.Logger.ErrorContext(r.Context(), "server template error", "err", err)
@@ -171,6 +207,10 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.LoginLimiter.Reset(limitKey)
+
+		if issuedToken != "" {
+			h.setMFATrustCookie(w, authReq.ConnectorID, issuedToken)
+		}
 
 		authReq, err = h.finalizeLogin(r.Context(), identity, authReq, conn.Connector)
 		if err != nil {

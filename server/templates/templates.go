@@ -338,6 +338,9 @@ type PasswordForm struct {
 	// is echoed back with the code, and without it the provider has no record
 	// that the first factor was cleared.
 	Receipt string
+	// OfferTrust shows the "remember this device" checkbox on the second-factor
+	// step, for connectors whose token can later be revalidated.
+	OfferTrust bool
 }
 
 func (t *Templates) Password(r *http.Request, w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid bool, backLink string, rememberMe *bool, form PasswordForm) error {

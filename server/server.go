@@ -312,6 +312,7 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 			DefaultMFAChain:        c.DefaultMFAChain,
 			SkipApproval:           c.SkipApprovalScreen,
 			LoginLimiter:           loginLimiter,
+			MFATrust:               c.MFATrust,
 		},
 		&mfa.Handler{
 			Storage:         s.storage,

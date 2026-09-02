@@ -81,6 +81,10 @@ type Config struct {
 	// PKCE configuration
 	PKCE authflow.PKCEConfig
 
+	// MFATrust configures "remember this device" on the second-factor step.
+	// Disabled by default.
+	MFATrust authflow.MFATrustConfig
+
 	GCFrequency time.Duration // Defaults to 5 minutes
 
 	// If specified, the server will use this function for determining time.

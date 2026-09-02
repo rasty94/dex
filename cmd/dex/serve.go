@@ -442,6 +442,28 @@ func runServe(options serveOptions) error {
 		}
 		serverConfig.LoginRateLimit.Window = loginRateLimitWindow
 	}
+	if c.MFATrust.Enabled {
+		// The cookie carries a live provider token, so refuse to start rather
+		// than write one in the clear.
+		switch len(c.MFATrust.EncryptionKey) {
+		case 16, 24, 32:
+		case 0:
+			return fmt.Errorf("invalid config: mfaTrust.encryptionKey is required when mfaTrust is enabled")
+		default:
+			return fmt.Errorf("invalid config: mfaTrust.encryptionKey must be 16, 24, or 32 bytes (AES-128/192/256), got %d", len(c.MFATrust.EncryptionKey))
+		}
+		serverConfig.MFATrust.Enabled = true
+		serverConfig.MFATrust.EncryptionKey = []byte(c.MFATrust.EncryptionKey)
+		if c.MFATrust.Duration != "" {
+			mfaTrustDuration, err := time.ParseDuration(c.MFATrust.Duration)
+			if err != nil {
+				return fmt.Errorf("invalid config value %q for mfaTrust duration: %v", c.MFATrust.Duration, err)
+			}
+			serverConfig.MFATrust.Duration = mfaTrustDuration
+		}
+		logger.Info("config mfa trusted devices", "duration", c.MFATrust.Duration)
+	}
+
 	if c.LoginRateLimit.Enabled {
 		logger.Info("config login rate limit", "attempts", c.LoginRateLimit.Attempts, "window", c.LoginRateLimit.Window)
 	}

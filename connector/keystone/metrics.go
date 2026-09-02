@@ -8,7 +8,7 @@ import (
 // instead of per-connector fields because ConnectorConfig.Open does not receive
 // the server's registry; cmd/dex registers Collectors() on it at startup.
 //
-// ponytail: labelled by result, not one counter per outcome. Adding an outcome
+// ponytail: labeled by result, not one counter per outcome. Adding an outcome
 // is a new label value, not a new metric.
 var (
 	loginAttempts = prometheus.NewCounterVec(prometheus.CounterOpts{

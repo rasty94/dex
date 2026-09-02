@@ -25,6 +25,18 @@ grpc:
   #   - name: ci
   #     token: another-long-random-string
 
+# "Remember this device" on the second-factor step, for connectors whose
+# provider enforces the factor itself (Keystone). The cookie holds the token the
+# provider issued, and the next login revalidates it instead of asking for the
+# password and code again — so revoking that token upstream ends the trust
+# immediately, and the encryption key is required rather than optional because
+# the cookie carries a live provider credential.
+#
+# mfaTrust:
+#   enabled: true
+#   duration: 720h
+#   encryptionKey: a-32-byte-key-for-aes-256-here!!
+
 staticClients:
   - id: example-app
     redirectURIs:
