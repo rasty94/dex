@@ -8,6 +8,20 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+Nada todavía.
+
+---
+
+## [2.0.0] — 2026-09-02
+
+Re-port completo del fork sobre el layout nuevo de dexidp/dex. Es un mayor por dos
+cambios incompatibles y porque la base cambia de arriba abajo: upstream troceó el
+paquete `server` en subpaquetes, así que **no fue una fusión sino una reescritura
+rebanada a rebanada** sobre su árbol.
+
+El estado anterior queda recuperable en la rama `master-pre-upstream-sync` y en la
+etiqueta `pre-upstream-sync-2026-09-02`.
+
 ### ⚠️ Cambios incompatibles
 
 - **El claim `sub` vuelve al formato de upstream.** Este fork emitía un `sub` plano
@@ -53,10 +67,46 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - La contraseña ya no se re-inyecta en un campo oculto durante el paso TOTP
 - Dependencias de criptografía, JOSE y SAML al día con upstream
 
-### En progreso
+### ✨ Heredado de upstream
 
-- Tests unitarios TOTP con mocking del endpoint Keystone
-- Externalización opcional de traducciones desde volumen en tiempo de ejecución
+Al reasentarse sobre su árbol, el fork incorpora todo lo que upstream construyó desde
+la divergencia. Buena parte llega **apagada tras feature flags**, a propósito: activarlo
+de golpe habría hecho el re-port imposible de revisar.
+
+- Sesiones de navegador con SSO entre clientes, página de sesión, pantalla de logout,
+  *remember me*, claim `sid`, back-channel logout y revocación con alcance de sesión.
+  Tras `sessions_enabled`, apagado.
+- MFA nativo de dex: TOTP con protección contra reutilización del código, y WebAuthn con
+  llaves de seguridad. Es **independiente** del segundo factor que impone Keystone: aquél
+  ocurre dentro del intercambio de credenciales y dex nunca ve el secreto; éste es
+  posterior a la identidad y lo guarda dex.
+- API gRPC de sesiones e identidades (`ListAuthSessions`, `TerminateSessionsByUser`,
+  `ResetMFA`, `ListMFADevices`, `RevokeConsent`, purga RGPD de identidad). Tras
+  `api_sessions_identities_crud`, apagado.
+- Kerberos/SPNEGO, PKCE configurable y políticas CEL.
+
+### 🔧 Cambiado
+
+- **i18n reconstruida sobre el marcado de upstream**, en vez de sustituirlo por el del
+  fork. Se conservan así su tema, el *remember me* y las páginas que el fork no tenía. 66
+  claves en cinco idiomas, y una mejora sobre la versión anterior: una clave sin traducir
+  cae al inglés en vez de renderizar una cadena vacía.
+- **Theming por cliente**: el `client_id` viaja por el contexto de la petición en lugar de
+  por la firma de cada plantilla. `frontend.clientThemes` no cambia.
+- **API gRPC con tokens con nombre**: `grpc.tokens` acepta pares nombre/token y la línea
+  de auditoría añade `caller`. El `grpc.token` de siempre sigue valiendo y se registra
+  como `default`.
+- El pie de página interpola el año. Antes mostraba un `%d` literal.
+
+### 🐛 Corregido
+
+- El `primaryColor` por cliente no pintaba nada: la variable CSS se definía y ningún
+  selector la leía.
+- La etiqueta del formulario de credenciales salía en inglés con el resto de la página
+  traducida.
+- `docker-entrypoint` ya no falla con un `dex` sin subcomando, y plantilla también la
+  configuración del panel.
+- Las llamadas `TerminateSessionsByUser` y `ResetMFA` no dejaban línea de auditoría.
 
 ---
 
