@@ -8,6 +8,11 @@
 /vendor/
 *.db
 
+# Binarios compilados en la raiz por `go build` sin -o.
+/dex
+/dex-dashboard
+/docker-entrypoint
+
 # Devenv
 .devenv*
 devenv.local.nix
@@ -16,5 +21,11 @@ devenv.local.yaml
 # direnv
 .direnv
 
-# pre-commit
-.pre-commit-config.yaml
+# graphify
+/graphify-out/
+.graphifyignore
+
+# claude
+/.claude/
+CLAUDE.md
+.gitattributes

@@ -33,13 +33,13 @@ COPY . .
 ARG VERSION
 RUN make release-binary
 
-RUN xx-verify /go/bin/dex && xx-verify /go/bin/docker-entrypoint
+RUN xx-verify /go/bin/dex && xx-verify /go/bin/dex-dashboard && xx-verify /go/bin/docker-entrypoint
 
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS stager
 
 RUN mkdir -p /var/dex
 RUN mkdir -p /etc/dex
-COPY config.docker.yaml /etc/dex/
+COPY config.docker.yaml config.dashboard.docker.yaml /etc/dex/
 
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS gomplate
 
@@ -82,6 +82,9 @@ COPY --from=builder /usr/local/src/dex/go.mod /usr/local/src/dex/go.sum /usr/loc
 COPY --from=builder /usr/local/src/dex/api/v2/go.mod /usr/local/src/dex/api/v2/go.sum /usr/local/src/dex/api/v2/
 
 COPY --from=builder /go/bin/dex /usr/local/bin/dex
+# The admin dashboard ships in the same image but runs as its own container:
+# same build and publish pipeline, separate process and separate exposure.
+COPY --from=builder /go/bin/dex-dashboard /usr/local/bin/dex-dashboard
 COPY --from=builder /go/bin/docker-entrypoint /usr/local/bin/docker-entrypoint
 COPY --from=builder /usr/local/src/dex/web /srv/dex/web
 

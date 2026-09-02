@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  dex:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+#    image: ghcr.io/dexidp/dex:latest
+    image: ghcr.io/rasty94/dex:latest
+    container_name: dex
+    ports:
+      - "5554:5554"
+      - "5556:5556"
+      - "5558:5558"
+      - "5557:5557"
+    volumes:
+      - ./config.yaml:/etc/dex/config.yaml:ro
+      - ./server-cert.pem:/etc/dex/server-cert.pem:ro
+      - ./server-key.pem:/etc/dex/server-key.pem:ro
+      - dex-data:/var/dex
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    restart: unless-stopped
+    environment:
+     - DEX_API_CONNECTORS_CRUD=true
+    networks:
+      - dex-network
+
+  dashboard:
+    # Mismo binario e imagen que dex, proceso y exposicion separados.
+    image: ghcr.io/rasty94/dex:latest
+    container_name: dex-dashboard
+    depends_on:
+      - dex
+    ports:
+      # Publicado solo en loopback: esto administra el proveedor de identidad
+      # y no deberia estar accesible desde fuera del host.
+      - "127.0.0.1:5560:5560"
+    command: ["dex-dashboard", "--config", "/etc/dex/config.dashboard.docker.yaml"]
+    restart: unless-stopped
+    environment:
+      # La URL publica del panel. El redirect URI se construye con ella y tiene
+      # que estar registrado en el cliente dex-dashboard de config.yaml.
+      - DEX_DASHBOARD_BASE_URL=http://127.0.0.1:5560
+      - DEX_DASHBOARD_OIDC_ISSUER=https://dex:5556/dex
+      - DEX_DASHBOARD_OIDC_CLIENT_ID=dex-dashboard
+      - DEX_DASHBOARD_OIDC_CLIENT_SECRET=${DEX_DASHBOARD_OIDC_CLIENT_SECRET:?falta el secreto del cliente}
+      - DEX_DASHBOARD_GRPC_ADDRESS=dex:5557
+      # Si la API gRPC lleva token, el mismo valor va aqui.
+      - DEX_DASHBOARD_GRPC_TOKEN=${DEX_API_TOKEN:-}
+      # Sin grupo ni email el panel se niega a arrancar, a proposito.
+      - DEX_DASHBOARD_ADMIN_GROUPS=${DEX_DASHBOARD_ADMIN_GROUPS:-dex-admins}
+    networks:
+      - dex-network
+
+volumes:
+  dex-data:
+
+networks:
+  dex-network:
+    driver: bridge

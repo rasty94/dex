@@ -1,0 +1,92 @@
+# Ejemplo completo: Dex más el panel de administración de solo lectura.
+#
+#   docker compose up -d --build
+#   → panel en http://127.0.0.1:5560
+#
+# Los dos servicios salen de la MISMA imagen. El panel es un binario aparte que
+# corre como su propio contenedor: mismo build y mismo publicado, pero proceso,
+# ciclo de vida y exposición separados.
+
+services:
+    dex:
+        build:
+            context: ../../
+            dockerfile: Dockerfile
+        image: dex-con-panel:local
+        container_name: dex
+        command: ["dex", "serve", "/etc/dex/config.yaml"]
+        restart: unless-stopped
+        environment:
+            # Sin esto, ListConnectors responde que el flag esta apagado y la
+            # vista de conectores del panel sale vacia con un aviso. El flag
+            # habilita CRUD de conectores en la API; el panel solo lista.
+            - DEX_API_CONNECTORS_CRUD=true
+        ports:
+            # Dex, para el navegador y para las aplicaciones.
+            - "127.0.0.1:5556:5556"
+            # El panel. Se publica aquí, y no en el servicio dashboard, porque
+            # comparte con éste el espacio de red (ver network_mode más abajo).
+            - "127.0.0.1:5560:5560"
+        volumes:
+            - ./dex.yaml:/etc/dex/config.yaml:ro
+            - dex-data:/var/dex
+        healthcheck:
+            test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5556/dex/.well-known/openid-configuration"]
+            interval: 5s
+            timeout: 3s
+            retries: 12
+
+    dashboard:
+        image: dex-con-panel:local
+        container_name: dex-dashboard
+        command: ["dex-dashboard", "--config", "/etc/dex/config.dashboard.docker.yaml"]
+        restart: unless-stopped
+        depends_on:
+            dex:
+                condition: service_healthy
+
+        # Comparte el espacio de red con Dex, de forma que 127.0.0.1 significa lo
+        # mismo dentro del contenedor que en el navegador del host. Es lo que
+        # permite que este ejemplo funcione sin tocar /etc/hosts ni montar un
+        # proxy: el issuer que ve el navegador y el que resuelve el panel son
+        # literalmente la misma URL.
+        #
+        # EN PRODUCCIÓN NO SE HACE ASÍ: allí cada servicio tiene su red, y el
+        # issuer y el baseURL son nombres públicos detrás del proxy inverso.
+        # Ver la sección correspondiente del README.
+        network_mode: "service:dex"
+
+        environment:
+            # URL pública del panel. El redirect URI se construye con ella y
+            # tiene que estar registrado en el cliente dex-dashboard de dex.yaml.
+            - DEX_DASHBOARD_BASE_URL=http://127.0.0.1:5560
+            - DEX_DASHBOARD_OIDC_ISSUER=http://127.0.0.1:5556/dex
+            - DEX_DASHBOARD_OIDC_CLIENT_ID=dex-dashboard
+            - DEX_DASHBOARD_OIDC_CLIENT_SECRET=secreto-de-ejemplo-cambiame
+
+            # La API gRPC de Dex, en el mismo espacio de red.
+            - DEX_DASHBOARD_GRPC_ADDRESS=127.0.0.1:5557
+            - DEX_DASHBOARD_GRPC_TOKEN=token-de-ejemplo-cambiame
+            # Telemetria de dex, para la vista de Status.
+            - DEX_DASHBOARD_TELEMETRY_URL=http://127.0.0.1:5558
+
+            # Quién es administrador. Sin grupo ni email el panel se niega a
+            # arrancar, a propósito: admitir a cualquier usuario autenticado
+            # sería no tener puerta.
+            #   dex-admins → admin@example.com
+            #   authors    → el usuario del conector mock
+            - DEX_DASHBOARD_ADMIN_GROUPS=dex-admins,authors,solo-lectura
+            # Quien ademas puede cambiar cosas. Leer no implica escribir: si
+            # esto se deja vacio, el panel es de solo lectura para todos.
+            #   dex-admins    -> admin@example.com, lee y escribe
+            #   solo-lectura  -> lectura@example.com, solo mira
+            - DEX_DASHBOARD_ADMIN_WRITE_GROUPS=dex-admins,authors
+            - DEX_DASHBOARD_SESSION_TTL=8h
+            # Caducidad por inactividad, y ventana tras la cual lo destructivo
+            # exige volver a autenticarse. Puestas cortas a proposito para que
+            # se vea el comportamiento al probar.
+            - DEX_DASHBOARD_IDLE_TTL=30m
+            - DEX_DASHBOARD_REAUTH_WINDOW=5m
+
+volumes:
+    dex-data:

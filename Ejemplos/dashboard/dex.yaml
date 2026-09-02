@@ -1,0 +1,79 @@
+# Configuración de Dex para el ejemplo del panel de administración.
+# Pensada para probar en local. NO usar tal cual en producción.
+
+issuer: http://127.0.0.1:5556/dex
+
+storage:
+    type: sqlite3
+    config:
+        file: /var/dex/dex.db
+
+web:
+    http: 0.0.0.0:5556
+
+# Metricas y health check. El panel las lee para su vista de Status. Este
+# endpoint no lleva autenticacion propia: no debe publicarse fuera.
+telemetry:
+    http: 0.0.0.0:5558
+
+# La API gRPC es lo que administra el panel. Viene apagada por defecto en la
+# imagen; aquí se enciende a propósito.
+grpc:
+    addr: 0.0.0.0:5557
+    # Quien tenga este token es administrador total de Dex. En un despliegue de
+    # verdad va en un secreto, no en un fichero versionado.
+    token: "token-de-ejemplo-cambiame"
+
+oauth2:
+    skipApprovalScreen: true
+
+staticClients:
+    # El cliente del panel. No viene en la imagen a propósito: publicar un
+    # secreto conocido para la consola de administración sería un regalo.
+    - id: dex-dashboard
+      name: 'Panel de administración'
+      secret: secreto-de-ejemplo-cambiame
+      redirectURIs:
+          - 'http://127.0.0.1:5560/callback'
+
+    - id: example-app
+      name: 'Example App'
+      secret: ZXhhbXBsZS1hcHAtc2VjcmV0
+      redirectURIs:
+          - 'http://127.0.0.1:5555/callback'
+
+connectors:
+    # Entra sin pedir nada, como usuario del grupo "authors".
+    - type: mockCallback
+      id: mock
+      name: Entrar como usuario de prueba
+
+enablePasswordDB: true
+
+staticPasswords:
+    - email: "admin@example.com"
+      # bcrypt de la cadena "password"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+      username: "admin"
+      name: "Admin User"
+      userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+      groups:
+          - "dex-admins"
+
+    - email: "lectura@example.com"
+      # bcrypt de la cadena "password"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+      username: "lectura"
+      name: "Solo Lectura"
+      userID: "2f7b3d61-5e4a-4b2c-8d3e-6f7a8b9c0d1e"
+      groups:
+          - "solo-lectura"
+
+    - email: "pepe@example.com"
+      # bcrypt de la cadena "password"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+      username: "pepe"
+      name: "Pepe Sin Permisos"
+      userID: "1e6a2c50-4d3f-4a1b-9c2d-5e6f7a8b9c0d"
+      groups:
+          - "usuarios"

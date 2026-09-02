@@ -69,11 +69,7 @@ func realGomplate(path string) (string, error) {
 }
 
 func run(args []string, execFunc func(...string) error, whichFunc func(string) string, gomplateFunc func(string) (string, error)) error {
-	if args[0] != "dex" && args[0] != whichFunc("dex") {
-		return execFunc(args...)
-	}
-
-	if args[1] != "serve" {
+	if !needsTemplating(args, whichFunc) {
 		return execFunc(args...)
 	}
 
@@ -92,6 +88,31 @@ func run(args []string, execFunc func(...string) error, whichFunc func(string) s
 	}
 
 	return execFunc(newArgs...)
+}
+
+// needsTemplating reports whether this command takes a config file worth running
+// through gomplate: "dex serve", and the dashboard, whose config carries the
+// same kind of secrets and deserves the same environment substitution.
+func needsTemplating(args []string, whichFunc func(string) string) bool {
+	switch {
+	case isCommand(args[0], "dex", whichFunc):
+		// Only "serve" takes a config; every other subcommand is passed through.
+		// The length check matters: a bare "dex" used to panic here.
+		return len(args) > 1 && args[1] == "serve"
+	case isCommand(args[0], "dex-dashboard", whichFunc):
+		return true
+	}
+	return false
+}
+
+// isCommand matches an argument against a command name or its resolved path.
+// An unresolvable name yields "", which must not match anything.
+func isCommand(arg, name string, whichFunc func(string) string) bool {
+	if arg == name {
+		return true
+	}
+	full := whichFunc(name)
+	return full != "" && arg == full
 }
 
 func hasSuffixes(s string, suffixes ...string) bool {

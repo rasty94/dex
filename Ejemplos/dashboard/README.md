@@ -1,0 +1,157 @@
+# Ejemplo — Dex con panel de administración
+
+Levanta Dex y el panel de administración de solo lectura, listos para probar.
+
+```bash
+docker compose up -d --build
+```
+
+Panel: **<http://127.0.0.1:5560>** · Dex: <http://127.0.0.1:5556/dex>
+
+La primera vez tarda unos minutos porque construye la imagen desde el repo.
+
+---
+
+## Con qué usuario entrar
+
+El panel exige pertenecer a un grupo administrador. Este ejemplo trae tres
+identidades para que se vea la diferencia:
+
+| Cómo entrar | Grupos | Resultado |
+| ----------- | ------ | --------- |
+| Botón «Entrar como usuario de prueba» | `authors` | ✅ entra y **puede escribir** |
+| `admin@example.com` / `password` | `dex-admins` | ✅ entra y **puede escribir** |
+| `lectura@example.com` / `password` | `solo-lectura` | 👁 entra, **solo mira** |
+| `pepe@example.com` / `password` | `usuarios` | ❌ **403** |
+
+Entra con `lectura@example.com` y compara: no verás ni el botón «New client» ni
+las acciones de cada fila. Y no es solo que estén ocultas — prueba a ir directo a
+`/clients/delete?id=example-app` y te llevas un 403.
+
+Pepe existe a propósito: **se autentica correctamente y aun así el panel lo
+rechaza**, que es justo lo que tiene que pasar. El intento queda en el log con su
+identidad y sus grupos:
+
+```bash
+docker logs dex-dashboard | grep refused
+```
+
+Quién entra se decide en `DEX_DASHBOARD_ADMIN_GROUPS`, y quién además puede
+cambiar cosas en `DEX_DASHBOARD_ADMIN_WRITE_GROUPS`, ambos en
+`docker-compose.yml`. **Leer no implica escribir**: si dejas el segundo vacío, el
+panel es de solo lectura para todo el mundo.
+
+---
+
+## Qué se ve
+
+| Vista | Contenido |
+| ----- | --------- |
+| Overview | versión de Dex y recuento de clientes, usuarios locales y conectores |
+| Clients | los clientes OAuth2 de `dex.yaml` |
+| Connectors | los conectores configurados: `mock` y `local` |
+| Local users | los usuarios del password DB |
+| Sessions | refresh tokens de un usuario, por `sub` o por usuario + conector |
+| Status | salud de Dex, tráfico por endpoint, errores y logins frenados |
+
+Y con permiso de escritura: alta, edición y baja de clientes OAuth2, conectores y
+usuarios locales, cambio de contraseña, revocación de refresh tokens y recarga de
+la configuración de Dex.
+
+Al editar un conector **los secretos aparecen como `__unchanged__`**: déjalos así
+para conservarlos, o escribe encima para rotarlos. Y la configuración se valida
+contra el tipo real del conector antes de guardarla, así que un campo mal escrito
+se rechaza en el formulario en vez de romper los logins después. Pruébalo: edita
+el conector `local` y mete un campo inventado.
+
+Lo destructivo pasa por una **página de confirmación** que explica qué se rompe,
+no por un diálogo del navegador. Borrar un cliente tumba el login de esa
+aplicación, y eso merece leerse antes de pulsar.
+
+Cada escritura queda registrada dos veces: en el log del panel con el
+administrador que la pidió, y en el de Dex, que ahora también nombra a la
+persona en vez de decir «el token»:
+
+```
+docker logs dex | grep "gRPC API call"
+  msg="gRPC API call" method=DeleteClient actor=admin@example.com
+```
+
+### El feature flag de los conectores
+
+`ListConnectors` está detrás del flag `api_connectors_crud` de Dex, que viene
+apagado. Este ejemplo lo enciende con `DEX_API_CONNECTORS_CRUD=true` en el
+servicio `dex`; si lo quitas, el panel **no falla**: la vista avisa de que el
+flag está apagado y el contador del Overview muestra «—».
+
+Ten en cuenta que el flag habilita el CRUD completo de conectores en la API de
+Dex, no solo el listado. El panel es de solo lectura y únicamente lista, pero
+enciéndelo sabiendo qué abre.
+
+---
+
+## Por qué comparten espacio de red
+
+El servicio `dashboard` lleva `network_mode: "service:dex"`. Es lo que hace que
+`127.0.0.1` signifique lo mismo dentro del contenedor que en el navegador del
+host, y por eso el ejemplo funciona sin tocar `/etc/hosts` ni montar un proxy.
+
+Es la trampa más habitual al desplegar esto: **el `issuer` y el `baseURL` tienen
+que ser URLs que resuelva el navegador**, no nombres internos de la red de
+Docker. Con `issuer: http://dex:5556/dex` el panel arranca sin quejarse y el
+login redirige a un host que el operador no conoce.
+
+### Cómo se hace en producción
+
+Ahí no se comparte espacio de red. Cada servicio tiene el suyo, y ambos van
+detrás de un proxy inverso con nombres públicos:
+
+```yaml
+    dex:
+        # sin ports: solo alcanzable desde la red interna y el proxy
+        networks: [interna]
+
+    dashboard:
+        networks: [interna]
+        environment:
+            - DEX_DASHBOARD_BASE_URL=https://panel.example.com
+            - DEX_DASHBOARD_OIDC_ISSUER=https://dex.example.com/dex
+            - DEX_DASHBOARD_GRPC_ADDRESS=dex:5557
+```
+
+Con `baseURL` en HTTPS, la cookie de sesión del panel pasa a `Secure`
+automáticamente.
+
+---
+
+## Lo que hay que cambiar antes de usarlo de verdad
+
+Este ejemplo tiene secretos escritos en ficheros versionados, y eso está bien
+para probar en local y solo para eso:
+
+- `grpc.token` en `dex.yaml` — **quien lo tenga es administrador total de Dex**.
+- El `secret` del cliente `dex-dashboard`.
+- Los usuarios estáticos con contraseña `password`.
+
+En un despliegue real van en secretos del orquestador. El panel además acepta
+`DEX_DASHBOARD_GRPC_TOKEN_FILE` para leer el token de un fichero montado en vez
+de una variable de entorno.
+
+Y el panel se publica aquí solo en `127.0.0.1` a propósito: administra el
+proveedor de identidad y no debería estar accesible desde fuera del host.
+
+---
+
+## Parar y limpiar
+
+```bash
+docker compose down            # para los contenedores
+docker compose down -v         # y borra también la base de datos de Dex
+```
+
+---
+
+## Más
+
+- Cómo funciona por dentro: [../../documentacion/dashboard-administracion.md](../../documentacion/dashboard-administracion.md)
+- Configuración del panel: [../../cmd/dex-dashboard/README.md](../../cmd/dex-dashboard/README.md)
