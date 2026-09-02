@@ -59,11 +59,25 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
 
 ### 0.1 🗂️ API de sesiones e identidades (`api_sessions_identities_crud`)
 
-- [ ] **Exponerla en el panel.** Hoy la vista de Sesiones solo sabe de refresh tokens.
-      Tras ese flag hay `ListAuthSessions`, `DeleteAuthSession`, `TerminateSessionsByUser`,
-      `TerminateSessionsByConnector`, `ListUserIdentities`, `RevokeConsent`, `ResetMFA`,
-      `ListMFADevices` y una purga RGPD de identidad completa. Va detrás de encender
-      sesiones, porque sin ellas no hay sesiones que listar.
+- [x] **Expuesta en el panel, lo principal.** La vista de Sesiones muestra ahora, en
+      secciones separadas: la identidad del usuario (correo, grupos, último acceso,
+      segundos factores y **si la cuenta está bloqueada**), sus consentimientos con la
+      acción de retirarlos por cliente, sus navegadores con sesión, y los refresh tokens
+      de siempre. Navegadores y tokens van aparte a propósito: cerrar una sesión revoca
+      los tokens que salieron de ella, revocar un token no cierra la sesión. Acciones:
+      cerrar un navegador, cerrarlos todos, y **cerrar todos los de un conector** desde la
+      página de Conectores, para retirar un proveedor de identidad.
+      Hizo falta exportar `tokens.ParseSubject`: las sesiones se buscan por el par
+      `(userID, connectorID)` y `server/internal` no es importable desde `cmd/`.
+- [ ] **Purga RGPD de una identidad** (`DeleteUserIdentity`). Borra identidad, sesión,
+      refresh tokens y sesiones offline de una vez, y **no tiene vuelta atrás**. El panel
+      ya tiene la maquinaria que necesita —confirmación, re-autenticación reciente, CSRF y
+      auditoría—, así que es más una decisión que un desarrollo: ¿lo queremos en el panel,
+      o es una operación que debe pedir dos personas?
+- [ ] **Gestión de dispositivos MFA** (`ResetMFA`, `DeleteMFASecret`,
+      `DeleteWebAuthnCredential`). El panel ya *muestra* los segundos factores
+      registrados; falta poder quitarlos, que es el caso de «he perdido el móvil». Va
+      detrás de decidir si encendemos el MFA nativo.
 
 ---
 
