@@ -57,9 +57,10 @@
             plantilla ahora hay cadenas con marcador y `printf`, porque concatenar
             funcionaba en inglés y español por casualidad y se rompe en cuanto un idioma
             cambia el orden. 54 claves × 5 idiomas, con respaldo al inglés clave a clave.
-      - [ ] **Traducir `webauthn_verify.html`.** Fuera de la rebanada de i18n a
-            propósito: sus cadenas viven dentro del `<script>`, entre mensajes de error
-            de la API del navegador, así que es otro mecanismo y no un `{{ .Tr }}` más.
+      - [x] **Traducir `webauthn_verify.html`.** El mecanismo ya estaba en el propio
+            fichero (`const mode = {{ .Mode }}`): `html/template` trata ese bloque como
+            contexto JavaScript, así que un apóstrofo sale como apóstrofo dentro de
+            comillas dobles en vez de como `&#39;`. 66 claves en total.
       - [x] **Theming por cliente** (`LogoURL`, `PrimaryColor` por `client_id`) →
             `server/templates/`. El `client_id` viaja por contexto y solo lo marcan los
             tres sitios que renderizan una página de un cliente concreto; reproducir el
@@ -97,12 +98,47 @@
       - [ ] **Portar el tooling del fork**: `.pre-commit-config.yaml` no está en la rama,
             así que ahora mismo los commits allí van sin hooks y el lint hay que lanzarlo
             a mano. Van con él los objetivos del `Makefile` que compilan los tres binarios.
-      - [ ] `web/`: CSS, temas y plantillas.
-      - [ ] **Portar `cmd/dex-dashboard` y la cadena Docker.** Decidido que la rama
-            sustituye a `master`, así que el panel tiene que viajar con ella: el binario,
-            `cmd/docker-entrypoint`, `config.dashboard.docker.yaml` y `Ejemplos/dashboard/`.
-            No es mecánico: el panel usa `server.ConnectorsConfig` y `server.EncodeSubject`,
-            y las dos se mueven de sitio en el re-port.
+      - [x] `web/`: CSS, temas y plantillas. **Casi nada había que portar.** Los doce
+            SVG de conector ya están en upstream byte a byte idénticos, y su mecanismo
+            para pintarlos (reglas CSS por tipo con `dex-btn-icon--{{ $c.Type }}`) es
+            mejor que la cadena `if/else` del fork, que no cubría `local` ni los mock y
+            perdía los colores de marca. El resto del CSS del fork es de su propio
+            maquetado, el que la reescritura de upstream sustituyó, y no lo referencia
+            ninguna plantilla. Solo entró el pie de página, con un fallo corregido: en
+            `master` la cadena lleva `%d` y la plantilla no lo interpola.
+      - [x] **Arreglado un defecto propio**: el `primaryColor` por cliente no pintaba
+            nada. `header.html` definía `--primary-color` y ningún selector del CSS de
+            upstream la leía. El test comprobaba el mecanismo (que el `<style>` aparece)
+            en vez del efecto. Ahora el botón primario, su hover y el foco del campo leen
+            las variables con el hex del tema como respaldo, y el test lo exige por
+            selector.
+      - [ ] **Portar `cmd/dex-dashboard` y la cadena Docker.** Inventariado: ~30
+            ficheros, ~5100 líneas, de las que ~4800 son acarreo directo. `api/v2` no se
+            mueve y los mensajes nuevos son aditivos, así que los literales con campos
+            nombrados siguen compilando. Lo que necesita decisión real:
+            - `server.EncodeSubject` **no existe** en upstream. Su equivalente exacto es
+              `server/tokens.GenSubject(userID, connID)` — verificado, misma firma y
+              mismo `internal.Marshal`. Es cambiar un import y una llamada.
+            - `server.ConnectorsConfig` **sí** sigue en `github.com/dexidp/dex/server`;
+              lo que se movió es la interfaz `ConnectorConfig` a `server/connectors`. El
+              panel nunca la nombra, solo llama a la factoría, así que no le afecta.
+            - **`config.docker.yaml` choca de verdad**: upstream sustituyó
+              `expiry.signingKeys` por un bloque `signer:` completo. Hay que rehacer la
+              mezcla sobre su estructura, sin perder nuestro `web.headers` ni el bloque
+              `grpc:`, del que el panel depende para existir.
+            - `cmd/docker-entrypoint` **ya existe** en upstream: es una mezcla, no un
+              alta. Hay que llevar `needsTemplating`/`isCommand` y reconciliar los dos
+              `main_test.go`.
+      - [ ] **Decidir qué hacer con `api_connectors_crud`.** Upstream mete las cuatro RPC
+            de conector detrás de ese feature flag, que viene apagado. Sin él la pestaña
+            de Conectores del panel **no funciona**: es el mismo error que ya vimos en el
+            despliegue. Hay que activarlo en la cadena Docker cuando el panel esté
+            encendido, o documentarlo como requisito.
+      - [ ] **Campos nuevos de `Client` y `Connector` en los formularios del panel.**
+            Upstream ha añadido `allowedConnectors`, `ssoSharedWith`,
+            `backchannelLogoutURI`, `postLogoutRedirectURIs`, `refreshTokenLifetime` y
+            `grantTypes`. No rompen nada — el handler de upstream solo aplica los campos
+            presentes — pero el panel no los sabe editar.
 
   Por qué no es un `git merge`: upstream troceó `server/` en subpaquetes y los seis ficheros donde vive nuestro trabajo (`handlers.go`, `oauth2.go`, `api.go`, `templates.go`, `refreshhandlers.go`, `deviceflowhandlers.go`) ya no existen allí, así que git los ve como modify/delete. No activar de golpe lo nuevo de upstream (sesiones, `sid`, back-channel logout, PKCE configurable, CEL, Kerberos).
 
