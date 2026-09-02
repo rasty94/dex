@@ -50,7 +50,19 @@
             de upstream (nuestro `clientIP` se fiaba del primer `X-Forwarded-For`, spoofeable),
             y los valores por defecto viven dentro de `ratelimit.New`. El router adjunta ahora
             siempre una IP al contexto, si no todos los clientes compartirían bucket.
-      - [ ] i18n y theming por cliente → `server/templates/`.
+      - [x] **i18n** → `server/templates/`. Las traducciones se aplican al marcado de
+            upstream en vez de sustituirlo por el de master, así se conservan su tema,
+            el `remember_me` y las páginas que el fork no tenía (logout, home,
+            totp_verify). El juego de claves se rehace: donde el fork concatenaba en la
+            plantilla ahora hay cadenas con marcador y `printf`, porque concatenar
+            funcionaba en inglés y español por casualidad y se rompe en cuanto un idioma
+            cambia el orden. 54 claves × 5 idiomas, con respaldo al inglés clave a clave.
+      - [ ] **Traducir `webauthn_verify.html`.** Fuera de la rebanada de i18n a
+            propósito: sus cadenas viven dentro del `<script>`, entre mensajes de error
+            de la API del navegador, así que es otro mecanismo y no un `{{ .Tr }}` más.
+      - [ ] **Theming por cliente** (`LogoURL`, `PrimaryColor` por `client_id`) →
+            `server/templates/`. Necesita que el paquete de plantillas pueda resolver el
+            cliente, que hoy no tiene acceso a storage.
       - [x] Trusted device sobre la maquinaria de cookies de upstream. El token de
             Keystone ya no viaja en claro: va sellado con AES-GCM, reutilizando las
             primitivas de la cookie de sesión de upstream (exportadas, para no escribir
