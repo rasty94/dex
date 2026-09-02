@@ -2,11 +2,55 @@
 
 > Solo trabajo pendiente. Lo ya entregado vive en [DONE.md](DONE.md), incluida la
 > tabla de estado y la sincronización con upstream, cerrada por completo: el re-port
-> sobre el layout nuevo es ya la línea principal del fork.
+> sobre el layout nuevo es ya la línea principal del fork, publicada como `fork-v2.0.0`.
+>
+> La primera sección no son propuestas: es funcionalidad que **ya está en el árbol**,
+> apagada tras feature flags, esperando una decisión.
 >
 > Última actualización: 2026-09-02
 > Imagen Docker: `ghcr.io/rasty94/dex:latest`
 > Repositorio: <https://github.com/rasty94/dex>
+
+---
+
+## 🎁 Heredado del re-port, sin encender
+
+> Lo que upstream construyó desde la divergencia y el fork ya tiene en el árbol, apagado
+> tras feature flags a propósito: activarlo de golpe habría hecho el re-port irrevisable.
+> No es trabajo nuevo, es trabajo hecho esperando una decisión.
+
+### 0. 🔑 Sesiones de navegador (`sessions_enabled`)
+
+Estudio hecho. Lo que enciende el flag:
+
+- Cookie de sesión (`dex_session`, 24 h absolutas y 1 h de inactividad por defecto).
+- Se salta la **pantalla de selección de conector** cuando hay sesión válida y el cliente
+  no pide `prompt=select_account`. Sigue autenticando contra el conector: no es un
+  inicio de sesión silencioso.
+- Páginas nuevas, ya traducidas a los cinco idiomas durante el re-port y hoy inertes:
+  la de sesión (`/`), la de logout y la casilla de *remember me*.
+- Claim `sid`, back-channel logout y revocación con alcance de sesión.
+- **Es requisito duro del MFA nativo**: dex se niega a arrancar con autenticadores
+  configurados y el flag apagado. No son dos decisiones, es una.
+
+Riesgo acotado: el **SSO entre clientes es opt-in**, `ssoSharedWithDefault` viene en
+`none`, así que encenderlo no empieza a compartir sesiones entre aplicaciones por su
+cuenta. El back-channel logout solo dispara para clientes con `backchannelLogoutURI`.
+
+- [ ] **Probarlo en `Ejemplos/dashboard`** sin tocar la config por defecto, y ver las
+      páginas de sesión y logout funcionando.
+- [ ] **Decidir la clave de cifrado de la cookie** (`sessions.cookieEncryptionKey`). Es
+      opcional; sin ella la cookie va firmada pero no sellada.
+- [ ] **Decidir si se enciende por defecto** en `config.docker.yaml`, y documentar la
+      migración si se hace.
+
+### 0.1 🗂️ API de sesiones e identidades (`api_sessions_identities_crud`)
+
+- [ ] **Exponerla en el panel.** Hoy la vista de Sesiones solo sabe de refresh tokens.
+      Tras ese flag hay `ListAuthSessions`, `DeleteAuthSession`, `TerminateSessionsByUser`,
+      `TerminateSessionsByConnector`, `ListUserIdentities`, `RevokeConsent`, `ResetMFA`,
+      `ListMFADevices` y una purga RGPD de identidad completa. Va detrás de encender
+      sesiones, porque sin ellas no hay sesiones que listar.
 
 ---
 
@@ -28,8 +72,23 @@
 
 ### 4. 🔐 Autenticación Avanzada (Beyond TOTP)
 
-- [ ] WebAuthn / Passkeys: Empezar a sentar las bases para la autenticación sin contraseña (Passwordless) en Keystone, como segundo factor apoyándose en WebAuthn o llaves físicas FIDO2 (Yubikey).
+> **Reescrita tras el re-port.** WebAuthn ya no hay que construirlo: upstream trae
+> `server/mfa` con TOTP nativo (con protección contra reutilización del código) y
+> WebAuthn completo, más sus RPC de gestión. Lo que queda es decidir cómo encaja con
+> Keystone, no implementarlo.
+
+- [ ] **Decidir cómo convive el MFA nativo de dex con el de Keystone.** Son ortogonales,
+      no alternativas: el de Keystone ocurre *dentro* del intercambio de credenciales
+      —responde 401 con un receipt, aún no hay identidad, y dex nunca ve el secreto— y el
+      de upstream es *posterior* a la identidad, sobre un usuario de dex y con el secreto
+      guardado por dex. Un usuario de Keystone podría acabar con dos segundos factores
+      encadenados. Hay que elegir: excluir el nativo para conectores que ya imponen uno,
+      dejarlo como opción del cliente, o algo intermedio.
+- [ ] **Passkeys sin contraseña para Keystone.** Esto sí es trabajo nuevo: WebAuthn de
+      upstream es un segundo factor, no un primer factor, así que el login sin contraseña
+      contra Keystone sigue sin base.
 - [ ] Políticas Condicionales: Permitir bloquear el login basado en roles o dominios específicos de OpenStack directamente en el Connector antes de emitir claims JWT.
+      Upstream trae ahora políticas CEL, que podrían servir de base en vez de escribirlo en el conector.
 
 ### 6. 🎛️ Dashboard de administración
 
