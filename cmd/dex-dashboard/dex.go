@@ -122,6 +122,38 @@ func (d *dexClient) revokeAllRefresh(ctx context.Context, subject string) (revok
 	return revoked, nil
 }
 
+// listAuthSessions returns the browser sessions of a user on one connector.
+// These are not the same thing as refresh tokens: a session is one signed-in
+// browser, a refresh token is one application's long-lived grant. Ending a
+// session does not revoke the tokens already issued from it.
+func (d *dexClient) listAuthSessions(ctx context.Context, userID, connID string) ([]*api.AuthSession, error) {
+	resp, err := d.api.ListAuthSessions(d.authed(ctx), &api.ListAuthSessionsReq{
+		UserId:      userID,
+		ConnectorId: connID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Sessions, nil
+}
+
+// deleteAuthSession ends one browser session and revokes the refresh tokens
+// that came from it.
+func (d *dexClient) deleteAuthSession(ctx context.Context, id string) error {
+	_, err := d.api.DeleteAuthSession(d.authed(ctx), &api.DeleteAuthSessionReq{Id: id})
+	return err
+}
+
+// terminateSessionsByUser ends every browser session a user has, on every
+// connector, and reports how many it ended.
+func (d *dexClient) terminateSessionsByUser(ctx context.Context, userID string) (int64, error) {
+	resp, err := d.api.TerminateSessionsByUser(d.authed(ctx), &api.TerminateSessionsByUserReq{UserId: userID})
+	if err != nil {
+		return 0, err
+	}
+	return resp.SessionsTerminated, nil
+}
+
 func (d *dexClient) createClient(ctx context.Context, c *api.Client) (alreadyExists bool, err error) {
 	resp, err := d.api.CreateClient(d.authed(ctx), &api.CreateClientReq{Client: c})
 	if err != nil {

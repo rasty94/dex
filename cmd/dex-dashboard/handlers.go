@@ -138,6 +138,10 @@ func friendlyGRPCError(err error) string {
 		return "Cannot reach dex's gRPC API. Check dex.grpcAddress and that the API is enabled."
 	case strings.Contains(msg, "api_connectors_crud"):
 		return "Connector listing is gated behind dex's api_connectors_crud feature flag, which is off."
+	case strings.Contains(msg, "api_sessions_identities_crud"):
+		return "Browser sessions are gated behind dex's api_sessions_identities_crud feature flag, which is off."
+	case strings.Contains(msg, "sessions_enabled"), strings.Contains(msg, "sessions are not enabled"):
+		return "dex has browser sessions turned off (sessions_enabled). Refresh tokens are still listed below."
 	case strings.Contains(msg, "wire-format"), strings.Contains(msg, "cannot parse invalid"):
 		return "That is not a valid subject. Copy the sub claim from the user's ID token verbatim."
 	}
@@ -277,7 +281,8 @@ func (d *dashboard) handleSessions(w http.ResponseWriter, r *http.Request) {
 		d.render(w, r, "sessions.html", p)
 	}
 
-	if sub == "" && userID != "" && connID != "" {
+	switch {
+	case sub == "" && userID != "" && connID != "":
 		encoded, err := tokens.GenSubject(userID, connID)
 		if err != nil {
 			d.logger.Error("failed to encode subject", "err", err)
@@ -286,6 +291,14 @@ func (d *dashboard) handleSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		sub = encoded
 		data.Subject = sub
+	case sub != "" && (userID == "" || connID == ""):
+		// Browser sessions are keyed on the pair, not on the subject, so a pasted
+		// sub has to be taken apart before they can be listed. A sub that does not
+		// decode is not an error here: the refresh token lookup below still works
+		// with it, and that is what the user asked for.
+		if u, c, err := tokens.ParseSubject(sub); err == nil {
+			userID, connID = u, c
+		}
 	}
 
 	if sub == "" {
@@ -303,6 +316,19 @@ func (d *dashboard) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Tokens = tokens
 	data.Searched = true
+
+	// Browser sessions are a separate lookup and a separate feature flag, so a
+	// failure here must not hide the refresh tokens that were found.
+	if userID != "" && connID != "" {
+		sessions, err := d.dex.listAuthSessions(r.Context(), userID, connID)
+		if err != nil {
+			d.logger.Info("could not list auth sessions", "err", err)
+			data.SessionsUnavailable = friendlyGRPCError(err)
+		} else {
+			data.AuthSessions = sessions
+		}
+	}
+
 	render(page{Title: "Sessions", Nav: "sessions"})
 }
 
@@ -314,6 +340,14 @@ type sessionsData struct {
 	Connectors []string
 	Tokens     []*api.RefreshTokenRef
 	Searched   bool
+
+	// AuthSessions are the user's signed-in browsers. They are a different thing
+	// from the refresh tokens above — one browser versus one application's grant
+	// — and only exist when dex has sessions enabled.
+	AuthSessions []*api.AuthSession
+	// SessionsUnavailable explains why the browser-session table is missing,
+	// which is nearly always a feature flag rather than a real failure.
+	SessionsUnavailable string
 }
 
 // filterQuery is the ?q= a listing was filtered by.

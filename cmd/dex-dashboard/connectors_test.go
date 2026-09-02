@@ -250,3 +250,33 @@ func TestConnectorSkeleton(t *testing.T) {
 		}
 	})
 }
+
+// A sub pasted from an ID token has to come apart into the pair it encodes, or
+// the browser-session lookup — which is keyed on (userID, connectorID) and not
+// on the subject — cannot run at all for that half of the form.
+func TestSubjectRoundTrips(t *testing.T) {
+	const (
+		wantUser = "08a8684b-db88-4b73-90a9-3cd1661f5466"
+		wantConn = "keystone"
+	)
+
+	sub, err := tokens.GenSubject(wantUser, wantConn)
+	if err != nil {
+		t.Fatalf("GenSubject: %v", err)
+	}
+
+	gotUser, gotConn, err := tokens.ParseSubject(sub)
+	if err != nil {
+		t.Fatalf("ParseSubject: %v", err)
+	}
+	if gotUser != wantUser || gotConn != wantConn {
+		t.Errorf("round trip: got (%q, %q), want (%q, %q)", gotUser, gotConn, wantUser, wantConn)
+	}
+
+	// Garbage must be reported, not silently decoded into an empty pair: the
+	// caller falls back to the refresh-token lookup on an error, and would list
+	// the sessions of "" on the "" connector if this returned nil.
+	if _, _, err := tokens.ParseSubject("not-a-subject"); err == nil {
+		t.Error("expected an error for a subject that is not valid wire format")
+	}
+}

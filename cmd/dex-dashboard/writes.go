@@ -110,6 +110,80 @@ func (d *dashboard) handleRevokeAllRefresh(w http.ResponseWriter, r *http.Reques
 		fmt.Sprintf("Revoked %d refresh token(s).", revoked))
 }
 
+// handleEndAuthSession ends one signed-in browser. Unlike revoking a refresh
+// token, this also revokes the tokens that came from that session, so it is the
+// closer thing to "sign this device out".
+func (d *dashboard) handleEndAuthSession(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.FormValue("session_id"))
+	back := backToSessions(r)
+	if id == "" {
+		http.Error(w, "Missing session.", http.StatusBadRequest)
+		return
+	}
+
+	sess := sessionFrom(r.Context())
+	if err := d.dex.deleteAuthSession(r.Context(), id); err != nil {
+		d.logger.Error("failed to end auth session", "err", err, "actor", sess.Email, "session_id", id)
+		redirectWith(w, r, back, friendlyGRPCError(err))
+		return
+	}
+	d.logger.Info("auth session ended", "actor", sess.Email, "session_id", id)
+	redirectWith(w, r, back, "Ended that session.")
+}
+
+// handleEndAllAuthSessions signs a user out of every browser, on every
+// connector. Where revoke-all cuts the applications' grants, this cuts the
+// sign-ins themselves; an incident usually wants both.
+func (d *dashboard) handleEndAllAuthSessions(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	if userID == "" {
+		http.Error(w, "Missing user.", http.StatusBadRequest)
+		return
+	}
+	back := backToSessions(r)
+
+	if r.Method == http.MethodGet {
+		d.render(w, r, "confirm.html", page{
+			Title: "End sessions", Nav: "sessions",
+			Data: confirmData{
+				Action:  "/sessions/end-all",
+				Field:   "user_id",
+				Value:   userID,
+				Heading: "Sign this user out of every browser?",
+				Warning: "Every signed-in browser has to log in again, on every connector. Refresh tokens issued from those sessions are revoked with them; access tokens already issued keep working until they expire.",
+				Confirm: "Sign them out everywhere",
+				Cancel:  back,
+			},
+		})
+		return
+	}
+
+	sess := sessionFrom(r.Context())
+	count, err := d.dex.terminateSessionsByUser(r.Context(), userID)
+	if err != nil {
+		d.logger.Error("failed to terminate sessions", "err", err, "actor", sess.Email, "user_id", userID)
+		redirectWith(w, r, back, friendlyGRPCError(err))
+		return
+	}
+	d.logger.Info("sessions terminated", "actor", sess.Email, "user_id", userID, "count", count)
+	redirectWith(w, r, back, fmt.Sprintf("Ended %d session(s).", count))
+}
+
+// backToSessions rebuilds the lookup the operator was on, so ending a session
+// returns to the same result list instead of an empty search form.
+func backToSessions(r *http.Request) string {
+	v := url.Values{}
+	for _, k := range []string{"sub", "user_id", "conn_id"} {
+		if got := strings.TrimSpace(r.FormValue(k)); got != "" {
+			v.Set(k, got)
+		}
+	}
+	if len(v) == 0 {
+		return "/sessions"
+	}
+	return "/sessions?" + v.Encode()
+}
+
 // ─────────────────────────── clients ───────────────────────────
 
 func (d *dashboard) handleClientForm(w http.ResponseWriter, r *http.Request) {

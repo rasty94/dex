@@ -277,3 +277,72 @@ func TestExportBundleShape(t *testing.T) {
 		t.Errorf("an empty secret was written out:\n%s", got)
 	}
 }
+
+// The sessions page now shows two different things and the difference matters:
+// a browser session is one sign-in, a refresh token is one application's grant.
+// Ending the first revokes the second; revoking the second leaves the sign-in
+// alone. Conflating them in the UI would make an operator think a user was
+// signed out when they were not.
+func TestSessionsPageSeparatesBrowsersFromTokens(t *testing.T) {
+	d, err := newDashboard(nil, nil, nil, testLogger())
+	if err != nil {
+		t.Fatalf("newDashboard: %v", err)
+	}
+
+	data := sessionsData{
+		Subject: "CgExEgR0ZXN0", UserID: "u-1", ConnID: "local",
+		Connectors: []string{"local"}, Searched: true,
+		Tokens: []*api.RefreshTokenRef{{Id: "tok-1", ClientId: "example-app"}},
+		AuthSessions: []*api.AuthSession{{
+			Id: "sess-1", ConnectorId: "local", IpAddress: "10.0.0.9",
+			UserAgent: "Firefox/1.0", LastActivity: 1700000000, IdleExpiry: 1700003600,
+			ClientStates: []*api.ClientAuthState{
+				{ClientId: "example-app"},
+				{ClientId: "other-app", ViaSso: true},
+			},
+		}},
+	}
+
+	rr := httptest.NewRecorder()
+	d.render(rr, httptest.NewRequest(http.MethodGet, "/sessions", nil), "sessions.html",
+		page{Title: "Sessions", Nav: "sessions", Data: data})
+	body := rr.Body.String()
+
+	for _, want := range []string{
+		"Signed-in browsers", "Refresh tokens", // both headings, so neither is mistaken for the other
+		"sess-1", "10.0.0.9", "Firefox/1.0",
+		"example-app", "other-app",
+		"(SSO)", // a client reached through sharing is marked, not shown as a direct login
+		"tok-1",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the sessions page is missing %q", want)
+		}
+	}
+}
+
+// When dex has the feature switched off, the browser table must say so and the
+// refresh tokens must still be listed. Hiding the whole page would lose the half
+// that still works.
+func TestSessionsPageDegradesWithoutTheFeature(t *testing.T) {
+	d, err := newDashboard(nil, nil, nil, testLogger())
+	if err != nil {
+		t.Fatalf("newDashboard: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	d.render(rr, httptest.NewRequest(http.MethodGet, "/sessions", nil), "sessions.html",
+		page{Title: "Sessions", Nav: "sessions", Data: sessionsData{
+			Subject: "CgExEgR0ZXN0", Searched: true,
+			Tokens:              []*api.RefreshTokenRef{{Id: "tok-1", ClientId: "example-app"}},
+			SessionsUnavailable: "Browser sessions are gated behind dex's api_sessions_identities_crud feature flag, which is off.",
+		}})
+	body := rr.Body.String()
+
+	if !strings.Contains(body, "api_sessions_identities_crud") {
+		t.Error("the page should explain why the browser table is missing")
+	}
+	if !strings.Contains(body, "tok-1") {
+		t.Error("the refresh tokens must still be listed when sessions are unavailable")
+	}
+}

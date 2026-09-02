@@ -28,6 +28,58 @@ not the email address.</p>
 {{ if .Subject }}<p class="note">Subject: <code>{{ .Subject }}</code></p>{{ end }}
 
 {{ if .Searched }}
+
+<h2 class="section">Signed-in browsers</h2>
+<p class="note">One row per browser the user is signed in on. This is a different
+thing from the refresh tokens below: a session is a sign-in, a refresh token is
+one application's long-lived grant. Ending a session also revokes the tokens
+issued from it.</p>
+
+{{ if .SessionsUnavailable }}
+<div class="card"><div class="empty">{{ .SessionsUnavailable }}</div></div>
+{{ else }}
+{{ if and .AuthSessions $.Session $.Session.CanWrite }}
+<div class="actions">
+  <a class="btn btn-danger" href="/sessions/end-all?user_id={{ .UserID }}&amp;sub={{ .Subject }}&amp;conn_id={{ .ConnID }}">Sign out of every browser</a>
+</div>
+{{ end }}
+<div class="card scroll">
+  {{ if .AuthSessions }}
+  <table>
+    <thead><tr><th>Session</th><th>Connector</th><th>Clients</th><th>From</th><th>Last activity</th><th>Expires</th>{{ if and $.Session $.Session.CanWrite }}<th></th>{{ end }}</tr></thead>
+    <tbody>
+    {{ range .AuthSessions }}
+      <tr>
+        <td class="mono">{{ .Id }}</td>
+        <td class="mono">{{ .ConnectorId }}</td>
+        <td class="muted">{{ range $i, $c := .ClientStates }}{{ if $i }}, {{ end }}{{ $c.ClientId }}{{ if $c.ViaSso }} (SSO){{ end }}{{ end }}</td>
+        <td class="muted">{{ .IpAddress }}<br><span class="mono" style="font-size:11px">{{ .UserAgent }}</span></td>
+        <td class="muted">{{ ts .LastActivity }}</td>
+        <td class="muted">{{ ts .IdleExpiry }}</td>
+        {{ if and $.Session $.Session.CanWrite }}
+        <td class="row-actions">
+          <form method="post" action="/sessions/end">
+            <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
+            <input type="hidden" name="session_id" value="{{ .Id }}">
+            <input type="hidden" name="sub" value="{{ $.Data.Subject }}">
+            <input type="hidden" name="user_id" value="{{ $.Data.UserID }}">
+            <input type="hidden" name="conn_id" value="{{ $.Data.ConnID }}">
+            <button type="submit" class="btn btn-sm btn-danger">End</button>
+          </form>
+        </td>
+        {{ end }}
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">No signed-in browsers for that user.</div>
+  {{ end }}
+</div>
+{{ end }}
+
+<h2 class="section">Refresh tokens</h2>
+
 {{ if and .Tokens $.Session $.Session.CanWrite }}
 <div class="actions">
   <a class="btn btn-danger" href="/sessions/revoke-all?sub={{ .Subject }}">Revoke all sessions for this user</a>

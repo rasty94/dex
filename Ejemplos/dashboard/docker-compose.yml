@@ -26,6 +26,10 @@ services:
             # entre clientes NO se activa con esto: es opt-in por cliente
             # (ssoSharedWith), y por defecto no se comparte con nadie.
             - DEX_SESSIONS_ENABLED=true
+            # La API gRPC de sesiones e identidades, que es la que usa el panel
+            # para listar navegadores y cerrarlos. Va aparte del flag anterior:
+            # aquel enciende las sesiones, este las expone por la API.
+            - DEX_API_SESSIONS_IDENTITIES_CRUD=true
         ports:
             # Dex, para el navegador y para las aplicaciones.
             - "127.0.0.1:5556:5556"

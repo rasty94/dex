@@ -144,3 +144,14 @@ func GenSubject(userID string, connID string) (string, error) {
 
 	return internal.Marshal(sub)
 }
+
+// ParseSubject is the inverse of GenSubject. It exists so tooling outside the
+// server tree — the admin dashboard — can turn a subject pasted from an ID token
+// back into the pair it encodes; server/internal is not importable from there.
+func ParseSubject(subject string) (userID, connID string, err error) {
+	sub := new(internal.IDTokenSubject)
+	if err := internal.Unmarshal(subject, sub); err != nil {
+		return "", "", fmt.Errorf("parse subject: %w", err)
+	}
+	return sub.UserId, sub.ConnId, nil
+}
