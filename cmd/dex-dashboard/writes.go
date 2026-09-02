@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	api "github.com/dexidp/dex/api/v2"
+	"github.com/dexidp/dex/server/tokens"
 )
 
 // bcryptCost matches what dex's own docs use for static passwords. Higher costs
@@ -167,6 +168,89 @@ func (d *dashboard) handleEndAllAuthSessions(w http.ResponseWriter, r *http.Requ
 	}
 	d.logger.Info("sessions terminated", "actor", sess.Email, "user_id", userID, "count", count)
 	redirectWith(w, r, back, fmt.Sprintf("Ended %d session(s).", count))
+}
+
+// handlePurgeIdentity performs the GDPR erasure of one identity. It is the only
+// action in the dashboard with no undo, so the confirmation counts what will go
+// rather than describing it, and names the one consequence the action's title
+// does not suggest: dex's password store is keyed by email alone, so purging an
+// identity on any connector also deletes the local account using that address.
+func (d *dashboard) handlePurgeIdentity(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(firstNonEmpty(r.FormValue("user_id"), r.URL.Query().Get("user_id")))
+	connID := strings.TrimSpace(firstNonEmpty(r.FormValue("conn_id"), r.URL.Query().Get("conn_id")))
+	if userID == "" || connID == "" {
+		http.Error(w, "Missing user or connector.", http.StatusBadRequest)
+		return
+	}
+	back := backToSessions(r)
+
+	if r.Method == http.MethodGet {
+		d.render(w, r, "confirm.html", page{
+			Title: "Purge identity", Nav: "sessions",
+			Data: d.purgeConfirmation(r, userID, connID, back),
+		})
+		return
+	}
+
+	sess := sessionFrom(r.Context())
+	notFound, err := d.dex.deleteUserIdentity(r.Context(), userID, connID)
+	if err != nil {
+		d.logger.Error("failed to purge identity", "err", err, "actor", sess.Email, "user_id", userID, "connector_id", connID)
+		redirectWith(w, r, back, friendlyGRPCError(err))
+		return
+	}
+	if notFound {
+		redirectWith(w, r, "/sessions", "There was no such identity to purge.")
+		return
+	}
+	d.logger.Info("identity purged", "actor", sess.Email, "user_id", userID, "connector_id", connID)
+	// Back to the empty form, not to the lookup: there is nothing left to show.
+	redirectWith(w, r, "/sessions", "Purged that identity and everything attached to it.")
+}
+
+// purgeConfirmation builds the inventory shown before an erasure. Every lookup
+// is best-effort: a count that cannot be fetched is left out rather than
+// blocking the page, but the fixed consequences are always listed.
+func (d *dashboard) purgeConfirmation(r *http.Request, userID, connID, back string) confirmData {
+	ctx := r.Context()
+	c := confirmData{
+		Action:  "/sessions/purge",
+		Fields:  map[string]string{"user_id": userID, "conn_id": connID},
+		Heading: "Erase " + userID + " on " + connID + ", permanently?",
+		Warning: "This is the GDPR erasure. It deletes the identity dex holds for this user on this connector, and everything attached to it. There is no undo.",
+		Confirm: "Erase permanently",
+		Cancel:  back,
+	}
+
+	var email string
+	if identity, err := d.dex.getUserIdentity(ctx, userID, connID); err == nil && identity != nil {
+		email = identity.Email
+		c.Heading = "Erase " + firstNonEmpty(identity.Email, userID) + " on " + connID + ", permanently?"
+		if n := len(identity.Consents); n > 0 {
+			c.Inventory = append(c.Inventory, fmt.Sprintf("%d consent(s) granted to clients", n))
+		}
+		if n := len(identity.MfaDevices); n > 0 {
+			c.Inventory = append(c.Inventory, fmt.Sprintf("%d registered second factor(s)", n))
+		}
+	}
+	if sessions, err := d.dex.listAuthSessions(ctx, userID, connID); err == nil && len(sessions) > 0 {
+		c.Inventory = append(c.Inventory, fmt.Sprintf("%d signed-in browser(s)", len(sessions)))
+	}
+	if sub, err := tokens.GenSubject(userID, connID); err == nil {
+		if refresh, err := d.dex.listRefresh(ctx, sub); err == nil && len(refresh) > 0 {
+			c.Inventory = append(c.Inventory, fmt.Sprintf("%d refresh token(s)", len(refresh)))
+		}
+	}
+	c.Inventory = append(c.Inventory, "the identity record itself, with its claims and groups")
+
+	// The cross-connector one. It is last because it is the surprise.
+	if pw, err := d.dex.localPasswordFor(ctx, email); err == nil && pw != nil {
+		c.Alert = "This also deletes the local password account " + pw.Email +
+			", because dex keys passwords by email alone. That account can sign in on its own and is not part of this connector. " +
+			"If it comes from dex's config file rather than storage, the erasure cannot delete it and will stop there — " +
+			"after it has already ended the sessions and revoked the tokens listed above."
+	}
+	return c
 }
 
 // handleSignOutConnector signs out everyone who authenticated through one
@@ -526,6 +610,16 @@ type confirmData struct {
 	Warning string
 	Confirm string
 	Cancel  string
+
+	// Fields are extra hidden inputs, for actions identified by more than one
+	// value. Rendered in key order, which is stable enough for a form.
+	Fields map[string]string
+	// Inventory lists what the action will actually destroy, so the operator
+	// confirms against a count and not against a sentence.
+	Inventory []string
+	// Alert is a consequence worth its own line, above the button: something the
+	// operator would not expect from the action's name.
+	Alert string
 }
 
 // renderResult re-renders a listing with an error banner, for failures that

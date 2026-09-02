@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -407,5 +408,90 @@ func TestSessionsPageWithoutAnIdentity(t *testing.T) {
 	}
 	if !strings.Contains(body, "tok-1") {
 		t.Error("the refresh tokens must still render without an identity")
+	}
+}
+
+// The erasure is the only action in the dashboard with no undo, so its
+// confirmation has to count what goes rather than describe it — and name the
+// consequence the action's title does not suggest.
+func TestPurgeConfirmationRendersTheInventory(t *testing.T) {
+	d, err := newDashboard(nil, nil, nil, testLogger())
+	if err != nil {
+		t.Fatalf("newDashboard: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	d.render(rr, httptest.NewRequest(http.MethodGet, "/sessions/purge", nil), "confirm.html",
+		page{Title: "Purge identity", Nav: "sessions", Data: confirmData{
+			Action:  "/sessions/purge",
+			Fields:  map[string]string{"user_id": "u-1", "conn_id": "keystone"},
+			Heading: "Erase jane@example.com on keystone, permanently?",
+			Warning: "This is the GDPR erasure.",
+			Inventory: []string{
+				"2 consent(s) granted to clients",
+				"3 signed-in browser(s)",
+				"the identity record itself, with its claims and groups",
+			},
+			Alert:   "This also deletes the local password account jane@example.com, because dex keys passwords by email alone.",
+			Confirm: "Erase permanently",
+			Cancel:  "/sessions",
+		}})
+	body := rr.Body.String()
+
+	for _, want := range []string{
+		"2 consent(s)", "3 signed-in browser(s)", // counted, not described
+		"local password account jane@example.com", // the cross-connector surprise
+		`name="user_id" value="u-1"`,              // both identifying fields survive into the POST
+		`name="conn_id" value="keystone"`,
+		"Erase permanently",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the purge confirmation is missing %q", want)
+		}
+	}
+}
+
+// An action identified by a single field must keep working: the confirmation is
+// shared with revoke-all and the connector sign-out.
+func TestConfirmationStillCarriesASingleField(t *testing.T) {
+	d, err := newDashboard(nil, nil, nil, testLogger())
+	if err != nil {
+		t.Fatalf("newDashboard: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	d.render(rr, httptest.NewRequest(http.MethodGet, "/connectors/sign-out", nil), "confirm.html",
+		page{Title: "Sign out", Nav: "connectors", Data: confirmData{
+			Action: "/connectors/sign-out", Field: "id", Value: "keystone",
+			Heading: "Sign everyone out?", Confirm: "Do it", Cancel: "/connectors",
+		}})
+	body := rr.Body.String()
+
+	if !strings.Contains(body, `name="id" value="keystone"`) {
+		t.Error("the single-field form lost its input")
+	}
+	if strings.Contains(body, "<ul") {
+		t.Error("an action with no inventory should not render an empty list")
+	}
+}
+
+// The erasure cascades before it reaches the password record, so a failure
+// there leaves the user signed out with their identity intact. The message has
+// to say which half happened, or the operator retries against a state they do
+// not understand.
+func TestPurgeFailureExplainsThePartialState(t *testing.T) {
+	msg := friendlyGRPCError(errors.New("rpc error: code = Unknown desc = purge password: static passwords: read-only cannot delete password"))
+
+	for _, want := range []string{
+		"config file",   // why it failed
+		"already ended", // what happened anyway
+		"still present", // what did not
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the message is missing %q; got: %s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "rpc error") {
+		t.Error("the raw gRPC error should not be shown for a case we recognize")
 	}
 }

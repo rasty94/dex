@@ -4,10 +4,19 @@
 <div class="danger-box">
   <strong>{{ .Heading }}</strong>
   <p style="margin:.6rem 0 0">{{ .Warning }}</p>
+  {{ if .Inventory }}
+  <ul style="margin:.8rem 0 0; padding-left:1.1rem">
+    {{ range .Inventory }}<li>{{ . }}</li>{{ end }}
+  </ul>
+  {{ end }}
+  {{ if .Alert }}
+  <p style="margin:.8rem 0 0"><strong>{{ .Alert }}</strong></p>
+  {{ end }}
 </div>
 <form method="post" action="{{ .Action }}" class="actions">
-  <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
-  <input type="hidden" name="{{ .Field }}" value="{{ .Value }}">
+  {{ with $.Session }}<input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">{{ end }}
+  {{ if .Field }}<input type="hidden" name="{{ .Field }}" value="{{ .Value }}">{{ end }}
+  {{ range $k, $v := .Fields }}<input type="hidden" name="{{ $k }}" value="{{ $v }}">{{ end }}
   <button type="submit" class="btn btn-danger">{{ .Confirm }}</button>
   <a class="btn" href="{{ .Cancel }}">Cancel</a>
 </form>

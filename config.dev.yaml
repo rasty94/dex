@@ -25,6 +25,25 @@ grpc:
   #   - name: ci
   #     token: another-long-random-string
 
+# dex's own second factor (TOTP and WebAuthn security keys). Requires
+# DEX_SESSIONS_ENABLED=true: it runs after the identity exists, on a dex user,
+# with the secret stored by dex.
+#
+# connectorTypes is the field that matters when a connector already enforces its
+# own second factor. Keystone does: it answers the password step with a receipt
+# and asks for the code itself, before there is any identity. An authenticator
+# that also applies to Keystone therefore asks the same user twice. An empty
+# connectorTypes means *every* connector, so leaving it out is what causes the
+# problem — dex warns at startup when it sees that.
+#
+# authenticators:
+#   - id: totp
+#     type: TOTP
+#     connectorTypes: [local, ldap, oidc]   # keystone deliberately left out
+#     config:
+#       issuer: Dex
+# defaultMFAChain: [totp]
+
 # Per-client branding for the login pages. Without an entry a client gets its own
 # logoURL from storage, and failing that the global frontend logo. primaryColor
 # is interpolated into a <style> block, so only a hex colour is accepted and dex

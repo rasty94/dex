@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -190,6 +191,40 @@ func (d *dexClient) terminateSessionsByConnector(ctx context.Context, connID str
 		return 0, err
 	}
 	return resp.SessionsTerminated, nil
+}
+
+// deleteUserIdentity purges an identity and everything hanging off it. This is
+// the GDPR erasure call and it does not come back.
+func (d *dexClient) deleteUserIdentity(ctx context.Context, userID, connID string) (notFound bool, err error) {
+	resp, err := d.api.DeleteUserIdentity(d.authed(ctx), &api.DeleteUserIdentityReq{
+		UserId:      userID,
+		ConnectorId: connID,
+	})
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
+}
+
+// localPasswordFor finds the local password account that shares an email with
+// an identity, or nil. dex's password store is keyed by email with no connector
+// attached, so purging an identity from any connector deletes the local account
+// that happens to use the same address — a consequence the purge's name does not
+// suggest, and the reason the confirmation has to spell it out.
+func (d *dexClient) localPasswordFor(ctx context.Context, email string) (*api.Password, error) {
+	if email == "" {
+		return nil, nil
+	}
+	passwords, err := d.listPasswords(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range passwords {
+		if strings.EqualFold(p.Email, email) {
+			return p, nil
+		}
+	}
+	return nil, nil
 }
 
 func (d *dexClient) createClient(ctx context.Context, c *api.Client) (alreadyExists bool, err error) {

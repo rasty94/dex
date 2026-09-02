@@ -31,6 +31,11 @@ not the email address.</p>
 
 {{ with .Identity }}
 <h2 class="section">Identity</h2>
+{{ if and $.Session $.Session.CanWrite }}
+<div class="actions">
+  <a class="btn btn-danger" href="/sessions/purge?user_id={{ $.Data.UserID }}&amp;conn_id={{ $.Data.ConnID }}&amp;sub={{ $.Data.Subject }}">Erase this identity (GDPR)</a>
+</div>
+{{ end }}
 <div class="card" style="padding:1.1rem 1.25rem">
   <table>
     <tbody>

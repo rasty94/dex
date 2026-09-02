@@ -99,6 +99,13 @@ func run() error {
 	// same confirm-then-post shape as revoke-all.
 	mux.HandleFunc("/sessions/end", write(d.handleEndAuthSession))
 	mux.HandleFunc("/sessions/revoke-consent", write(d.handleRevokeConsent))
+	mux.HandleFunc("/sessions/purge", destructive(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			auth.requireCSRF(d.handlePurgeIdentity)(w, r)
+			return
+		}
+		d.handlePurgeIdentity(w, r)
+	}))
 	mux.HandleFunc("/connectors/sign-out", destructive(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			auth.requireCSRF(d.handleSignOutConnector)(w, r)

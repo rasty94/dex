@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -325,6 +326,8 @@ func runServe(options serveOptions) error {
 	}
 
 	s, updateStaticConnectors = storage.WithStaticConnectors(s, storageConnectors)
+
+	warnOnDoubleSecondFactor(c.MFA.Authenticators, storageConnectors, logger)
 
 	if len(c.OAuth2.ResponseTypes) > 0 {
 		logger.Info("config response types accepted", "response_types", c.OAuth2.ResponseTypes)
@@ -982,6 +985,43 @@ func parseSessionConfig(s *Sessions) (*session.Config, error) {
 		return nil, fmt.Errorf("ssoSharedWithDefault must be \"none\" or \"all\", got %q", sc.SSOSharedWithDefault)
 	}
 	return sc, nil
+}
+
+// selfFactorConnectorTypes are the connector types whose provider enforces a
+// second factor itself, inside the credential exchange. dex's own MFA runs
+// after the identity exists, so pointing one at these types asks the same user
+// for two second factors in a row.
+var selfFactorConnectorTypes = []string{"keystone"}
+
+// warnOnDoubleSecondFactor flags authenticators that reach a connector which
+// already imposes its own second factor. An empty connectorTypes means "every
+// connector", so the default is the one that needs the warning most: nothing in
+// the config mentions Keystone, and Keystone users get asked twice anyway.
+func warnOnDoubleSecondFactor(authenticators []MFAAuthenticator, storageConnectors []storage.Connector, logger *slog.Logger) {
+	present := make(map[string]bool)
+	for _, c := range storageConnectors {
+		present[c.Type] = true
+	}
+
+	for _, auth := range authenticators {
+		for _, selfFactor := range selfFactorConnectorTypes {
+			if !present[selfFactor] {
+				continue
+			}
+			// An explicit list that leaves the type out is the configuration we
+			// are asking for; only the empty list or an explicit inclusion warn.
+			reaches := len(auth.ConnectorTypes) == 0 || slices.Contains(auth.ConnectorTypes, selfFactor)
+			if !reaches {
+				continue
+			}
+			logger.Warn("mfa: this authenticator also applies to a connector that enforces its own second factor, "+
+				"so those users are asked for two in a row. Set connectorTypes on the authenticator to leave it out.",
+				"authenticator", auth.ID,
+				"connector_type", selfFactor,
+				"connector_types", auth.ConnectorTypes,
+			)
+		}
+	}
 }
 
 func buildMFAProviders(authenticators []MFAAuthenticator, issuerURL string, logger *slog.Logger) map[string]mfa.Provider {
