@@ -21,6 +21,11 @@ services:
             # vista de conectores del panel sale vacia con un aviso. El flag
             # habilita CRUD de conectores en la API; el panel solo lista.
             - DEX_API_CONNECTORS_CRUD=true
+            # Sesiones de navegador. Enciende la cookie de sesion, la pagina
+            # de sesion en /, la de logout y la casilla de "recordarme". El SSO
+            # entre clientes NO se activa con esto: es opt-in por cliente
+            # (ssoSharedWith), y por defecto no se comparte con nadie.
+            - DEX_SESSIONS_ENABLED=true
         ports:
             # Dex, para el navegador y para las aplicaciones.
             - "127.0.0.1:5556:5556"

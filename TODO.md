@@ -37,12 +37,25 @@ Riesgo acotado: el **SSO entre clientes es opt-in**, `ssoSharedWithDefault` vien
 `none`, así que encenderlo no empieza a compartir sesiones entre aplicaciones por su
 cuenta. El back-channel logout solo dispara para clientes con `backchannelLogoutURI`.
 
-- [ ] **Probarlo en `Ejemplos/dashboard`** sin tocar la config por defecto, y ver las
-      páginas de sesión y logout funcionando.
+- [x] **Probado en `Ejemplos/dashboard`**, que queda con el flag encendido. Verificado
+      sobre el despliegue: cookie `dex_session` con `HttpOnly`, casilla de *recordarme*
+      marcada por defecto, página de sesión en `/dex` mostrando conector, hora de inicio,
+      caducidad por inactividad, IP, grupos y navegador —toda en español, con las claves
+      que se tradujeron durante el re-port y que hasta ahora no se veían— y página de
+      logout que termina la sesión de verdad: después queda «Sin sesión iniciada» y la
+      siguiente petición de auth vuelve a la lista de conectores.
+- [x] **Medido el radio de impacto, y es pequeño.** Con una sesión viva, una petición de
+      otro cliente **se salta la pantalla de selección de conector** y va directa al
+      conector — pero **sigue pidiendo la contraseña**. No hay inicio de sesión silencioso
+      entre clientes mientras `ssoSharedWith` esté en `none`, que es el valor por defecto.
+      Es decir: encender el flag ahorra un clic y añade páginas nuevas, no cambia quién
+      puede entrar dónde.
 - [ ] **Decidir la clave de cifrado de la cookie** (`sessions.cookieEncryptionKey`). Es
-      opcional; sin ella la cookie va firmada pero no sellada.
-- [ ] **Decidir si se enciende por defecto** en `config.docker.yaml`, y documentar la
-      migración si se hace.
+      opcional; sin ella la cookie va firmada pero no sellada. Conviene ponerla por el
+      mismo motivo que en `mfaTrust`, aunque aquí lo que guarda es un id de sesión y no
+      una credencial de otro sistema.
+- [ ] **Decidir si se enciende por defecto** en `config.docker.yaml`. A la vista de lo
+      medido, el riesgo es bajo; lo que falta es querer las páginas nuevas.
 
 ### 0.1 🗂️ API de sesiones e identidades (`api_sessions_identities_crud`)
 
