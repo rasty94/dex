@@ -1,0 +1,24 @@
+{{ define "overview.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+{{ with .Data }}
+<div class="tiles">
+  <div class="tile"><div class="n">{{ .Clients }}</div><div class="l">OAuth2 clients</div></div>
+  <div class="tile"><div class="n">{{ .LocalUsers }}</div><div class="l">Local users</div></div>
+  <div class="tile">
+    <div class="n">{{ if lt .ConnectorCount 0 }}—{{ else }}{{ .ConnectorCount }}{{ end }}</div>
+    <div class="l">Connectors</div>
+  </div>
+  <div class="tile"><div class="n mono">{{ .Version.Server }}</div><div class="l">dex version</div></div>
+</div>
+{{ if lt .ConnectorCount 0 }}
+<p class="note">Connectors could not be counted: listing them is gated behind dex's
+<code>api_connectors_crud</code> feature flag.</p>
+{{ end }}
+<div class="card">
+  <table>
+    <tr><th>API version</th><td class="mono">{{ .Version.Api }}</td></tr>
+    <tr><th>Access</th><td>Read only. Nothing on this panel can change dex's state yet.</td></tr>
+  </table>
+</div>
+{{ end }}
+{{ end }}

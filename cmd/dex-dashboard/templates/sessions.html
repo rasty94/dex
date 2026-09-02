@@ -1,0 +1,67 @@
+{{ define "sessions.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+{{ with .Data }}
+<div class="card" style="padding:1.1rem 1.25rem; margin-bottom:1.25rem">
+  <form method="get" action="/sessions" class="lookup" style="margin-bottom:.9rem">
+    <input type="text" name="sub" value="{{ .Subject }}" placeholder="sub claim from the user's ID token">
+    <button type="submit">Look up by sub</button>
+  </form>
+
+  <div class="muted" style="font-size:13px; margin:.2rem 0 .9rem">or</div>
+
+  <form method="get" action="/sessions" class="lookup" style="margin-bottom:0">
+    <input type="text" name="user_id" value="{{ .UserID }}" placeholder="user ID in the connector">
+    <select name="conn_id">
+      {{ $current := .ConnID }}
+      {{ range .Connectors }}<option value="{{ . }}" {{ if eq . $current }}selected{{ end }}>{{ . }}</option>{{ end }}
+    </select>
+    <button type="submit">Look up by user</button>
+  </form>
+</div>
+
+<p class="note">dex keys refresh tokens on the <code>sub</code> claim, which encodes the user
+<em>and</em> the connector they came from. Either paste one from a token, or give the two
+halves and the dashboard builds it. For a local user the ID is the one on the
+<a href="/users">Local users</a> page; for Keystone or LDAP it is the ID in that provider,
+not the email address.</p>
+
+{{ if .Subject }}<p class="note">Subject: <code>{{ .Subject }}</code></p>{{ end }}
+
+{{ if .Searched }}
+{{ if and .Tokens $.Session $.Session.CanWrite }}
+<div class="actions">
+  <a class="btn btn-danger" href="/sessions/revoke-all?sub={{ .Subject }}">Revoke all sessions for this user</a>
+</div>
+{{ end }}
+<div class="card scroll">
+  {{ if .Tokens }}
+  <table>
+    <thead><tr><th>Token ID</th><th>Client</th><th>Created</th><th>Last used</th>{{ if and $.Session $.Session.CanWrite }}<th></th>{{ end }}</tr></thead>
+    <tbody>
+    {{ range .Tokens }}
+      <tr>
+        <td class="mono">{{ .Id }}</td>
+        <td class="mono">{{ .ClientId }}</td>
+        <td class="muted">{{ ts .CreatedAt }}</td>
+        <td class="muted">{{ ts .LastUsed }}</td>
+        {{ if and $.Session $.Session.CanWrite }}
+        <td class="row-actions">
+          <form method="post" action="/sessions/revoke">
+            <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
+            <input type="hidden" name="sub" value="{{ $.Data.Subject }}">
+            <input type="hidden" name="client_id" value="{{ .ClientId }}">
+            <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
+          </form>
+        </td>
+        {{ end }}
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">No refresh tokens for that subject.</div>
+  {{ end }}
+</div>
+{{ end }}
+{{ end }}
+{{ end }}

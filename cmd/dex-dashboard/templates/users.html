@@ -1,0 +1,48 @@
+{{ define "users.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+<p class="note"><strong>These are dex's local password users only.</strong>
+Users that sign in through Keystone, LDAP or any other connector live in that provider;
+dex neither stores nor manages them, so they cannot appear here.</p>
+{{ if and .Session .Session.CanWrite }}
+<div class="actions"><a class="btn btn-primary" href="/users/new">New local user</a></div>
+{{ end }}
+{{ if or .Filter (gt .Total 0) }}
+<form method="get" class="lookup" style="margin-bottom:1rem">
+  <input type="text" name="q" value="{{ .Filter }}" placeholder="Filter…">
+  <button type="submit">Filter</button>
+  {{ if .Filter }}<a class="btn" href="{{ .SelfPath }}">Clear</a>{{ end }}
+</form>
+{{ if and .Filter (lt .Shown .Total) }}
+<p class="note" style="margin-top:-.6rem">Showing {{ .Shown }} of {{ .Total }}.</p>
+{{ end }}
+{{ end }}
+
+<div class="card scroll">
+  {{ if .Data }}
+  <table>
+    <thead><tr><th>Email</th><th>Username</th><th>User ID</th><th></th></tr></thead>
+    <tbody>
+    {{ range $.Data }}
+      <tr>
+        <td>{{ .Email }}</td>
+        <td>{{ if .Username }}{{ .Username }}{{ else }}<span class="muted">—</span>{{ end }}</td>
+        <td class="mono">{{ .UserId }}</td>
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/sessions?user_id={{ .UserId }}&amp;conn_id=local">Sessions</a>
+        {{ if and $.Session $.Session.CanWrite }}
+          <a class="btn btn-sm" href="/users/edit?email={{ .Email }}&amp;username={{ .Username }}">Password</a>
+          <a class="btn btn-sm btn-danger" href="/users/delete?email={{ .Email }}">Delete</a>
+        {{ end }}
+        </td>
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">
+    {{ if .Filter }}No local users match “{{ .Filter }}”. <a href="{{ .SelfPath }}">Show all {{ .Total }}</a>.
+    {{ else }}No local users. Every user signs in through a connector.{{ end }}
+  </div>
+  {{ end }}
+</div>
+{{ end }}

@@ -1,0 +1,26 @@
+{{ define "discovery.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+<p class="note">What this dex advertises at its discovery endpoint. It is what you hand to
+whoever is integrating an application.</p>
+{{ with .Data }}
+<div class="card scroll">
+  <table>
+    <tr><th>Issuer</th><td class="mono">{{ .Issuer }}</td></tr>
+    <tr><th>Authorization</th><td class="mono">{{ .AuthorizationEndpoint }}</td></tr>
+    <tr><th>Token</th><td class="mono">{{ .TokenEndpoint }}</td></tr>
+    <tr><th>Keys (JWKS)</th><td class="mono">{{ .JwksUri }}</td></tr>
+    <tr><th>UserInfo</th><td class="mono">{{ .UserinfoEndpoint }}</td></tr>
+    <tr><th>Device authorization</th><td class="mono">{{ or .DeviceAuthorizationEndpoint "—" }}</td></tr>
+    <tr><th>Introspection</th><td class="mono">{{ or .IntrospectionEndpoint "—" }}</td></tr>
+    <tr><th>Grant types</th><td class="mono">{{ join .GrantTypesSupported ", " }}</td></tr>
+    <tr><th>Response types</th><td class="mono">{{ join .ResponseTypesSupported ", " }}</td></tr>
+    <tr><th>Scopes</th><td class="mono">{{ join .ScopesSupported ", " }}</td></tr>
+    <tr><th>Claims</th><td class="mono">{{ join .ClaimsSupported ", " }}</td></tr>
+    <tr><th>Signing algorithms</th><td class="mono">{{ join .IdTokenSigningAlgValuesSupported ", " }}</td></tr>
+    <tr><th>PKCE methods</th><td class="mono">{{ join .CodeChallengeMethodsSupported ", " }}</td></tr>
+    <tr><th>Client auth methods</th><td class="mono">{{ join .TokenEndpointAuthMethodsSupported ", " }}</td></tr>
+    <tr><th>Subject types</th><td class="mono">{{ join .SubjectTypesSupported ", " }}</td></tr>
+  </table>
+</div>
+{{ end }}
+{{ end }}

@@ -1,0 +1,50 @@
+{{ define "connectors.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+{{ if and .Session .Session.CanWrite }}
+<div class="actions">
+  <a class="btn btn-primary" href="/connectors/new">New connector</a>
+  <form method="post" action="/connectors/reload">
+    <input type="hidden" name="csrf_token" value="{{ .Session.CSRFToken }}">
+    <button type="submit" class="btn">Reload dex config</button>
+  </form>
+</div>
+{{ end }}
+{{ if or .Filter (gt .Total 0) }}
+<form method="get" class="lookup" style="margin-bottom:1rem">
+  <input type="text" name="q" value="{{ .Filter }}" placeholder="Filter…">
+  <button type="submit">Filter</button>
+  {{ if .Filter }}<a class="btn" href="{{ .SelfPath }}">Clear</a>{{ end }}
+</form>
+{{ if and .Filter (lt .Shown .Total) }}
+<p class="note" style="margin-top:-.6rem">Showing {{ .Shown }} of {{ .Total }}.</p>
+{{ end }}
+{{ end }}
+<div class="card scroll">
+  {{ if .Data }}
+  <table>
+    <thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Config size</th>{{ if and .Session .Session.CanWrite }}<th></th>{{ end }}</tr></thead>
+    <tbody>
+    {{ range $.Data }}
+      <tr>
+        <td class="mono">{{ .Id }}</td>
+        <td class="mono">{{ .Type }}</td>
+        <td>{{ .Name }}</td>
+        <td class="muted">{{ len .Config }} bytes</td>
+        {{ if and $.Session $.Session.CanWrite }}
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/connectors/edit?id={{ .Id }}">Edit</a>
+          <a class="btn btn-sm btn-danger" href="/connectors/delete?id={{ .Id }}">Delete</a>
+        </td>
+        {{ end }}
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">
+    {{ if .Filter }}No connectors match “{{ .Filter }}”. <a href="{{ .SelfPath }}">Show all {{ .Total }}</a>.
+    {{ else }}No connectors returned.{{ end }}
+  </div>
+  {{ end }}
+</div>
+{{ end }}

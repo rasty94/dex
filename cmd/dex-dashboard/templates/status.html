@@ -1,0 +1,68 @@
+{{ define "status.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+{{ with .Data }}
+<div class="tiles">
+  <div class="tile">
+    <div class="n">{{ if .Healthy }}OK{{ else }}Down{{ end }}</div>
+    <div class="l">dex health</div>
+  </div>
+  <div class="tile"><div class="n">{{ printf "%.0f" .Requests }}</div><div class="l">HTTP requests</div></div>
+  <div class="tile"><div class="n">{{ printf "%.0f" .Errors }}</div><div class="l">4xx / 5xx responses</div></div>
+  <div class="tile"><div class="n">{{ printf "%.0f" .RateLimited }}</div><div class="l">Logins rate limited</div></div>
+</div>
+
+{{ if not .Healthy }}
+<div class="err">dex's health check is failing: {{ .HealthMsg }}</div>
+{{ end }}
+
+{{ with .MetricsErr }}<div class="err">{{ . }}</div>{{ end }}
+
+{{ if .Endpoints }}
+<h2 style="font-size:15px;margin:1.5rem 0 .7rem">Traffic by endpoint</h2>
+<div class="card scroll">
+  <table>
+    <thead><tr><th>Handler</th><th>Requests</th><th>4xx / 5xx</th></tr></thead>
+    <tbody>
+    {{ range .Endpoints }}
+      <tr>
+        <td class="mono">{{ .Handler }}</td>
+        <td>{{ printf "%.0f" .Total }}</td>
+        <td>{{ if gt .Errors 0.0 }}<strong>{{ printf "%.0f" .Errors }}</strong>{{ else }}<span class="muted">0</span>{{ end }}</td>
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+</div>
+{{ end }}
+
+{{ if .Keystone }}
+<h2 style="font-size:15px;margin:1.5rem 0 .7rem">Keystone connector</h2>
+<div class="card scroll">
+  <table>
+    <thead><tr><th>Metric</th><th>Total</th><th>Meaning</th></tr></thead>
+    <tbody>
+    {{ range .Keystone }}
+      <tr>
+        <td class="mono">{{ .Name }}</td>
+        <td>{{ printf "%.0f" .Value }}</td>
+        <td class="muted">{{ .Help }}</td>
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+</div>
+{{ end }}
+
+{{ if and $.Session $.Session.CanWrite }}
+<div class="actions" style="margin-top:1.5rem">
+  <a class="btn" href="/export">Export configuration…</a>
+</div>
+<p class="note" style="margin-top:-.6rem">Clients and connectors as YAML, for backup or version
+control. The file contains live credentials, so the download is confirmed and audited.</p>
+{{ end }}
+
+<p class="note" style="margin-top:1.5rem">Counters are totals since dex started, not rates.
+They answer «is anything happening and is it failing», not «how fast». For trends, point
+Prometheus at dex's telemetry endpoint directly.</p>
+{{ end }}
+{{ end }}

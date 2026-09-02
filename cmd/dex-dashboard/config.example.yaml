@@ -1,0 +1,65 @@
+# dex-dashboard — read-only administration panel.
+#
+# Bind it to a private interface: this panel administers the identity provider
+# and is not meant to face the internet.
+listen: 127.0.0.1:5556
+
+# The dashboard's own public URL. The OIDC redirect URI is built from it, and
+# must match the one registered on the dex client below.
+baseURL: http://127.0.0.1:5556
+
+dex:
+    # dex's gRPC API.
+    grpcAddress: 127.0.0.1:5557
+
+    # The API token. It never leaves this process and is never sent to a
+    # browser. Prefer tokenFile so it can come from a secret mount.
+    # token: a-long-random-string
+    tokenFile: /run/secrets/dex-api-token
+
+    # Root certificate for TLS against the gRPC API. Without it the connection
+    # is plaintext, which is only acceptable over loopback.
+    # caCert: /etc/dex/ca.pem
+
+    # dex's telemetry endpoint, which backs the Status view. It has no
+    # authentication of its own: the dashboard must be able to reach it and
+    # nothing else should. Leave it unset to hide the view.
+    telemetryURL: http://127.0.0.1:5558
+
+# Administrators sign in against dex itself. Register this as a client in dex:
+#
+#   staticClients:
+#       - id: dex-dashboard
+#         name: Dex Dashboard
+#         secret: another-long-random-string
+#         redirectURIs:
+#             - http://127.0.0.1:5556/callback
+oidc:
+    issuer: http://127.0.0.1:5556/dex
+    clientID: dex-dashboard
+    clientSecret: another-long-random-string
+    # "groups" is added automatically: the check below depends on it.
+    scopes: [openid, profile, email]
+
+admin:
+    # A user needs one of these groups to get in.
+    groups:
+        - dex-admins
+
+    # Break-glass access by email. The connector that carries the admin group
+    # may be the one that is broken, and someone still has to get in and fix it.
+    emails:
+        - break.glass@example.com
+
+    # How long a dashboard session lasts. Defaults to 8h.
+    sessionTTL: 8h
+
+    # A session untouched for this long ends, on top of sessionTTL. The threat
+    # is a console left open on an unlocked laptop, not a stolen cookie.
+    # Defaults to 1h; 0 disables it.
+    idleTTL: 1h
+
+    # Destructive actions (deleting a client, a connector or a user, revoking
+    # every session) demand a login newer than this. Defaults to 15m; 0
+    # disables the check.
+    reauthWindow: 15m

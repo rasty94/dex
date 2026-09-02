@@ -1,0 +1,65 @@
+{{ define "connector_form.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+{{ with .Data }}
+{{ if not .Editing }}
+<form method="get" action="/connectors/new" class="lookup" style="margin-bottom:1.25rem">
+  <select name="type">
+    <option value="">Start from a type…</option>
+    {{ $chosen := .Type }}
+    {{ range .Types }}<option value="{{ . }}" {{ if eq . $chosen }}selected{{ end }}>{{ . }}</option>{{ end }}
+  </select>
+  <button type="submit">Load template</button>
+</form>
+<p class="note" style="margin-top:-.9rem">Fills the configuration below with that connector's
+real fields, in the order its own config declares them, so the essentials come first.</p>
+{{ end }}
+
+<form method="post" action="/connectors/save">
+  <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
+  <input type="hidden" name="editing" value="{{ if .Editing }}1{{ else }}0{{ end }}">
+
+  <fieldset>
+    <label class="f" for="id">Connector ID</label>
+    {{ if .Editing }}
+      <input type="text" id="id" name="id" value="{{ .ID }}" readonly>
+      <div class="hint">The ID appears in the login URL and in every stored session. It cannot be changed.</div>
+    {{ else }}
+      <input type="text" id="id" name="id" required autofocus>
+    {{ end }}
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="type">Type</label>
+    <select id="type" name="type" required>
+      <option value="">Choose a type…</option>
+      {{ $current := .Type }}
+      {{ range .Types }}<option value="{{ . }}" {{ if eq . $current }}selected{{ end }}>{{ . }}</option>{{ end }}
+    </select>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ .Name }}" required>
+    <div class="hint">The label users see on the login screen.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="config">Configuration (JSON)</label>
+    <textarea id="config" name="config" spellcheck="false" style="min-height:16rem">{{ .Config }}</textarea>
+    <div class="hint">
+      Checked against the selected connector type before saving, so a field that does not
+      exist is refused here instead of breaking logins later.
+      {{ if .Editing }}
+      Secrets are shown as <code>__unchanged__</code>; leave them alone to keep the stored
+      value, or type a new one to rotate it.
+      {{ end }}
+    </div>
+  </fieldset>
+
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">{{ if .Editing }}Save changes{{ else }}Create connector{{ end }}</button>
+    <a class="btn" href="/connectors">Cancel</a>
+  </div>
+</form>
+{{ end }}
+{{ end }}

@@ -1,0 +1,61 @@
+{{ define "client_form.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+{{ with .Data }}
+<form method="post" action="/clients/save">
+  <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
+  <input type="hidden" name="editing" value="{{ if .Editing }}1{{ else }}0{{ end }}">
+
+  <fieldset>
+    <label class="f" for="id">Client ID</label>
+    {{ if .Editing }}
+      <input type="text" id="id" name="id" value="{{ .Client.Id }}" readonly>
+      <div class="hint">The ID cannot be changed. Delete and recreate the client instead.</div>
+    {{ else }}
+      <input type="text" id="id" name="id" required autofocus>
+    {{ end }}
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ .Client.Name }}">
+    <div class="hint">Shown to users on the consent screen.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="redirect_uris">Redirect URIs</label>
+    <textarea id="redirect_uris" name="redirect_uris">{{ range .Client.RedirectUris }}{{ . }}&#10;{{ end }}</textarea>
+    <div class="hint">One per line. A login is refused unless its redirect URI is listed here exactly.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="trusted_peers">Trusted peers</label>
+    <textarea id="trusted_peers" name="trusted_peers">{{ range .Client.TrustedPeers }}{{ . }}&#10;{{ end }}</textarea>
+    <div class="hint">One client ID per line. They may request tokens with this client in the audience.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="logo_url">Logo URL</label>
+    <input type="text" id="logo_url" name="logo_url" value="{{ .Client.LogoUrl }}">
+  </fieldset>
+
+  {{ if not .Editing }}
+  <fieldset>
+    <label class="check"><input type="checkbox" name="public"> Public client</label>
+    <div class="hint">Public clients cannot keep a secret: mobile and single-page apps. They use PKCE instead.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="secret">Secret</label>
+    <input type="text" id="secret" name="secret">
+    <div class="hint">Required unless the client is public. dex cannot change it later, and this is the
+      only time the dashboard will show it &mdash; copy it now.</div>
+  </fieldset>
+  {{ end }}
+
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">{{ if .Editing }}Save changes{{ else }}Create client{{ end }}</button>
+    <a class="btn" href="/clients">Cancel</a>
+  </div>
+</form>
+{{ end }}
+{{ end }}

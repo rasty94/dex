@@ -1,0 +1,46 @@
+{{ define "clients.html" }}{{ template "layout" . }}{{ end }}
+{{ define "content" }}
+{{ if and .Session .Session.CanWrite }}
+<div class="actions"><a class="btn btn-primary" href="/clients/new">New client</a></div>
+{{ end }}
+{{ if or .Filter (gt .Total 0) }}
+<form method="get" class="lookup" style="margin-bottom:1rem">
+  <input type="text" name="q" value="{{ .Filter }}" placeholder="Filter…">
+  <button type="submit">Filter</button>
+  {{ if .Filter }}<a class="btn" href="{{ .SelfPath }}">Clear</a>{{ end }}
+</form>
+{{ if and .Filter (lt .Shown .Total) }}
+<p class="note" style="margin-top:-.6rem">Showing {{ .Shown }} of {{ .Total }}.</p>
+{{ end }}
+{{ end }}
+
+<div class="card scroll">
+  {{ if .Data }}
+  <table>
+    <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Redirect URIs</th><th>Trusted peers</th>{{ if and .Session .Session.CanWrite }}<th></th>{{ end }}</tr></thead>
+    <tbody>
+    {{ range $.Data }}
+      <tr>
+        <td class="mono">{{ .Id }}</td>
+        <td>{{ if .Name }}{{ .Name }}{{ else }}<span class="muted">—</span>{{ end }}</td>
+        <td>{{ if .Public }}public{{ else }}confidential{{ end }}</td>
+        <td class="mono">{{ if .RedirectUris }}{{ join .RedirectUris ", " }}{{ else }}<span class="muted">—</span>{{ end }}</td>
+        <td class="mono">{{ if .TrustedPeers }}{{ join .TrustedPeers ", " }}{{ else }}<span class="muted">—</span>{{ end }}</td>
+        {{ if and $.Session $.Session.CanWrite }}
+        <td class="row-actions">
+          <a class="btn btn-sm" href="/clients/edit?id={{ .Id }}">Edit</a>
+          <a class="btn btn-sm btn-danger" href="/clients/delete?id={{ .Id }}">Delete</a>
+        </td>
+        {{ end }}
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">
+    {{ if .Filter }}No clients match “{{ .Filter }}”. <a href="{{ .SelfPath }}">Show all {{ .Total }}</a>.
+    {{ else }}No clients registered.{{ end }}
+  </div>
+  {{ end }}
+</div>
+{{ end }}
