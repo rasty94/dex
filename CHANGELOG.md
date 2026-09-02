@@ -34,6 +34,16 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Migración:** ninguna automática. El usuario vuelve a autenticarse una vez y la
     sesión nueva ya guarda el `ConnectorData` correcto.
 
+- **`mfaTrust` exige ahora una clave de cifrado.** La cookie de dispositivo de confianza
+  guardaba el token de Keystone en claro. Ese token no es un identificador de sesión de
+  dex: es una credencial viva para todo el despliegue de OpenStack. Ahora va sellada con
+  AES-GCM, con las mismas primitivas que la cookie de sesión de upstream.
+  - **Impacto:** con `mfaTrust.enabled: true` y sin `mfaTrust.encryptionKey`, dex se
+    niega a arrancar. Es deliberado: la alternativa era seguir escribiendo la credencial
+    en claro. Las cookies emitidas por versiones anteriores no se pueden abrir, así que
+    los dispositivos ya confiados vuelven a pedir el segundo factor una vez.
+  - **Migración:** añadir `mfaTrust.encryptionKey` con 16, 24 o 32 bytes.
+
 ### Seguridad
 
 - Binding del auth code en el callback del device flow (canje entre clientes)

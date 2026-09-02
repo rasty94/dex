@@ -51,8 +51,13 @@
             y los valores por defecto viven dentro de `ratelimit.New`. El router adjunta ahora
             siempre una IP al contexto, si no todos los clientes compartirían bucket.
       - [ ] i18n y theming por cliente → `server/templates/`.
-      - [ ] Trusted device sobre la maquinaria de cookies de upstream (ya cifradas), no sobre
-            la cookie propia `dex_mfa_trust_*`.
+      - [x] Trusted device sobre la maquinaria de cookies de upstream. El token de
+            Keystone ya no viaja en claro: va sellado con AES-GCM, reutilizando las
+            primitivas de la cookie de sesión de upstream (exportadas, para no escribir
+            un segundo cifrado). **Cambio incompatible**: con `mfaTrust` activado y sin
+            `encryptionKey`, dex se niega a arrancar. La clave no puede salir de
+            `sessions.cookieEncryptionKey` porque esa config vive tras el feature flag
+            de sesiones, y los dispositivos de confianza son independientes de él.
       - [x] Flujo TOTP en el servidor (`ErrTOTPRequired`) → `server/authflow/`. El
             `server/mfa` de upstream **no sirve** para esto: su MFA es posterior a la
             identidad (corre tras `finalizeLogin`, con un usuario de dex y el secreto TOTP
