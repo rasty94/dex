@@ -296,28 +296,28 @@ func (t *Templates) Device(r *http.Request, w http.ResponseWriter, postURL strin
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	data := struct {
+		templateCommon
 		PostURL  string
 		UserCode string
 		Invalid  bool
-		ReqPath  string
-	}{postURL, userCode, lastWasInvalid, r.URL.Path}
+	}{common(r), postURL, userCode, lastWasInvalid}
 	return renderTemplate(w, t.deviceTmpl, data)
 }
 
 func (t *Templates) DeviceSuccess(r *http.Request, w http.ResponseWriter, clientName string) error {
 	data := struct {
+		templateCommon
 		ClientName string
-		ReqPath    string
-	}{clientName, r.URL.Path}
+	}{common(r), clientName}
 	return renderTemplate(w, t.deviceSuccessTmpl, data)
 }
 
 func (t *Templates) Login(r *http.Request, w http.ResponseWriter, connectors []ConnectorInfo) error {
 	sortConnectors(connectors)
 	data := struct {
+		templateCommon
 		Connectors []ConnectorInfo
-		ReqPath    string
-	}{connectors, r.URL.Path}
+	}{common(r), connectors}
 	return renderTemplate(w, t.loginTmpl, data)
 }
 
@@ -348,23 +348,23 @@ func (t *Templates) Password(r *http.Request, w http.ResponseWriter, postURL, la
 		w.WriteHeader(http.StatusUnauthorized)
 	}
 	data := struct {
+		templateCommon
 		PasswordForm
 		PostURL           string
 		BackLink          string
 		Username          string
 		UsernamePrompt    string
 		Invalid           bool
-		ReqPath           string
 		ShowRememberMe    bool
 		RememberMeChecked bool
 	}{
+		templateCommon: common(r),
 		PasswordForm:   form,
 		PostURL:        postURL,
 		BackLink:       backLink,
 		Username:       lastUsername,
 		UsernamePrompt: usernamePrompt,
 		Invalid:        lastWasInvalid,
-		ReqPath:        r.URL.Path,
 		ShowRememberMe: rememberMe != nil,
 	}
 	if rememberMe != nil {
@@ -383,12 +383,12 @@ func (t *Templates) Approval(r *http.Request, w http.ResponseWriter, authReqID, 
 	}
 	sort.Strings(accesses)
 	data := struct {
+		templateCommon
 		User      string
 		Client    string
 		AuthReqID string
 		Scopes    []string
-		ReqPath   string
-	}{username, clientName, authReqID, accesses, r.URL.Path}
+	}{common(r), username, clientName, authReqID, accesses}
 	return renderTemplate(w, t.approvalTmpl, data)
 }
 
@@ -397,13 +397,13 @@ func (t *Templates) TOTPVerify(r *http.Request, w http.ResponseWriter, postURL, 
 		w.WriteHeader(http.StatusUnauthorized)
 	}
 	data := struct {
+		templateCommon
 		PostURL   string
 		Invalid   bool
 		Issuer    string
 		Connector string
 		QRCode    string
-		ReqPath   string
-	}{postURL, lastWasInvalid, issuer, connector, qrCode, r.URL.Path}
+	}{common(r), postURL, lastWasInvalid, issuer, connector, qrCode}
 	return renderTemplate(w, t.totpVerifyTmpl, data)
 }
 
@@ -433,7 +433,8 @@ type HomeData struct {
 	UserAgent           string
 	LogoutURL           string
 	DiscoveryURL        string
-	ReqPath             string
+
+	templateCommon
 }
 
 // HasHome reports whether the home template was loaded.
@@ -442,36 +443,36 @@ func (t *Templates) HasHome() bool {
 }
 
 func (t *Templates) Home(r *http.Request, w http.ResponseWriter, data HomeData) error {
-	data.ReqPath = r.URL.Path
+	data.templateCommon = common(r)
 	return renderTemplate(w, t.homeTmpl, data)
 }
 
 func (t *Templates) Logout(r *http.Request, w http.ResponseWriter, backURL string, loggedOut bool, showConfirmation bool) error {
 	data := struct {
+		templateCommon
 		BackURL          string
 		LoggedOut        bool
 		ShowConfirmation bool
-		ReqPath          string
-	}{backURL, loggedOut, showConfirmation, r.URL.Path}
+	}{common(r), backURL, loggedOut, showConfirmation}
 	return renderTemplate(w, t.logoutTmpl, data)
 }
 
 func (t *Templates) WebAuthnVerify(r *http.Request, w http.ResponseWriter, mode, authenticatorID string) error {
 	data := struct {
+		templateCommon
 		// Mode must be server-controlled ("register" or "login") and never derived
 		// from user input to prevent XSS in the template's script context.
 		Mode            string
 		AuthenticatorID string
-		ReqPath         string
-	}{mode, authenticatorID, r.URL.Path}
+	}{common(r), mode, authenticatorID}
 	return renderTemplate(w, t.webauthnVerifyTmpl, data)
 }
 
 func (t *Templates) OOB(r *http.Request, w http.ResponseWriter, code string) error {
 	data := struct {
-		Code    string
-		ReqPath string
-	}{code, r.URL.Path}
+		templateCommon
+		Code string
+	}{common(r), code}
 	return renderTemplate(w, t.oobTmpl, data)
 }
 
@@ -487,14 +488,32 @@ func RenderError(t *Templates, logger *slog.Logger, r *http.Request, w http.Resp
 func (t *Templates) Err(r *http.Request, w http.ResponseWriter, errCode int, errMsg string) error {
 	w.WriteHeader(errCode)
 	data := struct {
+		templateCommon
 		ErrType string
 		ErrMsg  string
-		ReqPath string
-	}{http.StatusText(errCode), errMsg, r.URL.Path}
+	}{common(r), http.StatusText(errCode), errMsg}
 	if err := t.errorTmpl.Execute(w, data); err != nil {
 		return fmt.Errorf("rendering template %s failed: %s", t.errorTmpl.Name(), err)
 	}
 	return nil
+}
+
+// templateCommon is embedded in every page's data so the fields every template
+// needs are built in one place instead of at each call site. It absorbs ReqPath,
+// which each page used to carry itself.
+type templateCommon struct {
+	ReqPath string
+	// Tr is the translation map for this request's Accept-Language. Templates
+	// read it as {{ .Tr.some_key }}.
+	Tr map[string]string
+}
+
+// common builds the shared template data from the request.
+func common(r *http.Request) templateCommon {
+	return templateCommon{
+		ReqPath: r.URL.Path,
+		Tr:      GetTranslations(r.Header.Get("Accept-Language")),
+	}
 }
 
 // small io.Writer utility to determine if executing the template wrote to the underlying response writer.
