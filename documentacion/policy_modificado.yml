@@ -1,0 +1,5 @@
+"auth_integration_role": "role:auth_integration"
+"identity:validate_token": "rule:admin_required or (role:reader and system_scope:all) or rule:service_role or rule:token_subject or rule:auth_integration_role"
+"identity:get_user": "(rule:admin_required) or (role:reader and system_scope:all) or (role:reader and token.domain.id:%(target.user.domain_id)s) or user_id:%(target.user.id)s or rule:auth_integration_role"
+"identity:list_groups_for_user": "(rule:admin_required) or (role:reader and system_scope:all) or (role:reader and domain_id:%(target.user.domain_id)s) or user_id:%(user_id)s or rule:auth_integration_role"
+"identity:get_access_token": "rule:admin_required or rule:auth_integration_role"
