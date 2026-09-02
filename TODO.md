@@ -60,9 +60,14 @@
       - [ ] **Traducir `webauthn_verify.html`.** Fuera de la rebanada de i18n a
             propósito: sus cadenas viven dentro del `<script>`, entre mensajes de error
             de la API del navegador, así que es otro mecanismo y no un `{{ .Tr }}` más.
-      - [ ] **Theming por cliente** (`LogoURL`, `PrimaryColor` por `client_id`) →
-            `server/templates/`. Necesita que el paquete de plantillas pueda resolver el
-            cliente, que hoy no tiene acceso a storage.
+      - [x] **Theming por cliente** (`LogoURL`, `PrimaryColor` por `client_id`) →
+            `server/templates/`. El `client_id` viaja por contexto y solo lo marcan los
+            tres sitios que renderizan una página de un cliente concreto; reproducir el
+            `Brand` posicional de master habría obligado a cambiar las doce firmas para
+            que nueve pasaran un cliente vacío. El paquete de plantillas no depende de
+            storage: el respaldo al `logoURL` del cliente entra como función estrecha.
+            `primaryColor` se valida al cargar la config, porque se interpola en un
+            `<style>` y CSS no es un contexto que `html/template` escape.
       - [x] Trusted device sobre la maquinaria de cookies de upstream. El token de
             Keystone ya no viaja en claro: va sellado con AES-GCM, reutilizando las
             primitivas de la cookie de sesión de upstream (exportadas, para no escribir
