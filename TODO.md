@@ -30,13 +30,13 @@
 - [ ] WebAuthn / Passkeys: Empezar a sentar las bases para la autenticación sin contraseña (Passwordless) en Keystone, como segundo factor apoyándose en WebAuthn o llaves físicas FIDO2 (Yubikey).
 - [ ] Políticas Condicionales: Permitir bloquear el login basado en roles o dominios específicos de OpenStack directamente en el Connector antes de emitir claims JWT.
 
-### 5. 🔄 Sincronización con upstream — bloque F
+### 5. ✅ Sincronización con upstream — bloque F (cerrado)
 
 > Bloques A a E y G cerrados, con su detalle en [DONE.md](DONE.md).
 >
-> **Decidido: al terminar, la rama sustituye a `master`.** Eso convierte el re-port en la
-> línea principal, así que todo lo que hoy vive solo en `master` — el panel y la cadena
-> Docker — tiene que portarse antes de hacer el cambio.
+> ✅ **Cerrado.** El re-port es ya la línea principal. El master anterior está
+> respaldado en `master-pre-upstream-sync` y en la etiqueta
+> `pre-upstream-sync-2026-09-02`.
 
 - [x] **Re-port sobre `upstream/master`.** ✅ **Todas las rebanadas cerradas** en la rama
       `feat/upstream-sync-2026-08` (empujada a `origin`, partiendo de `upstream/master`).
@@ -103,9 +103,16 @@
             upstream antiguo que el fork heredó y que upstream ya sustituyó por `devenv`.
             Tampoco `fix_signatures.py`, un script de migración de un solo uso ya
             consumido — conviene borrarlo también de `master`.
-      - [ ] **Hacer el cambio: que la rama pase a ser `master`.** Es lo único que queda.
-            Antes conviene un repaso de la imagen desplegada de extremo a extremo, y
-            decidir cómo se hace el cambio de rama en `origin`.
+      - [x] **Hecho el cambio: la rama es ya `master`.** Antes, un repaso de extremo a
+            extremo sobre la imagen construida desde la rama: login completo hasta el
+            panel, las siete vistas respondiendo, Conectores listando de verdad, Estado
+            leyendo la telemetría real de dex, y un POST destructivo sin token CSRF
+            rechazado con 403. Destapó una regresión, ya corregida: la etiqueta de
+            usuario salía en inglés por haber adoptado el marcado de upstream.
+            El master anterior queda recuperable por nombre, no solo por reflog, en la
+            rama `master-pre-upstream-sync` y la etiqueta `pre-upstream-sync-2026-09-02`,
+            ambas en `origin`. Son 87 commits que no están en esta línea, porque el
+            re-port se rehízo sobre el layout nuevo en vez de fusionarse.
       - [x] `web/`: CSS, temas y plantillas. **Casi nada había que portar.** Los doce
             SVG de conector ya están en upstream byte a byte idénticos, y su mecanismo
             para pintarlos (reglas CSS por tipo con `dex-btn-icon--{{ $c.Type }}`) es
