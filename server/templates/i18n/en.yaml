@@ -71,3 +71,17 @@ home_discovery: "OpenID configuration"
 
 # Errors
 error_title: "Error"
+
+# Security keys (WebAuthn)
+webauthn_register_title: "Register security key"
+webauthn_register_intro: "Register a security key for two-factor authentication."
+webauthn_register_button: "Register Security Key"
+webauthn_verify_title: "Two-factor authentication"
+webauthn_verify_intro: "Use your security key to verify your identity."
+webauthn_verify_button: "Use Security Key"
+webauthn_waiting: "Waiting for security key..."
+webauthn_cancelled: "Request was cancelled or timed out. Please try again."
+webauthn_not_allowed: "Security key operation not allowed on this domain."
+webauthn_unexpected: "An unexpected error occurred."
+webauthn_register_failed: "Registration failed"
+webauthn_auth_failed: "Authentication failed"

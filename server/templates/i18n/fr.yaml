@@ -71,3 +71,17 @@ home_discovery: "Configuration OpenID"
 
 # Erreurs
 error_title: "Erreur"
+
+# Clés de sécurité (WebAuthn)
+webauthn_register_title: "Enregistrer une clé de sécurité"
+webauthn_register_intro: "Enregistrez une clé de sécurité pour l'authentification à deux facteurs."
+webauthn_register_button: "Enregistrer la clé"
+webauthn_verify_title: "Authentification à deux facteurs"
+webauthn_verify_intro: "Utilisez votre clé de sécurité pour vérifier votre identité."
+webauthn_verify_button: "Utiliser la clé de sécurité"
+webauthn_waiting: "En attente de la clé de sécurité..."
+webauthn_cancelled: "La demande a été annulée ou a expiré. Veuillez réessayer."
+webauthn_not_allowed: "L'utilisation de la clé de sécurité n'est pas autorisée sur ce domaine."
+webauthn_unexpected: "Une erreur inattendue s'est produite."
+webauthn_register_failed: "Échec de l'enregistrement"
+webauthn_auth_failed: "Échec de l'authentification"

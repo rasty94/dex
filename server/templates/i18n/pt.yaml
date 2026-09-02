@@ -71,3 +71,17 @@ home_discovery: "Configuração OpenID"
 
 # Erros
 error_title: "Erro"
+
+# Chaves de segurança (WebAuthn)
+webauthn_register_title: "Registar chave de segurança"
+webauthn_register_intro: "Registe uma chave de segurança para a autenticação de dois fatores."
+webauthn_register_button: "Registar chave"
+webauthn_verify_title: "Autenticação de dois fatores"
+webauthn_verify_intro: "Use a sua chave de segurança para verificar a sua identidade."
+webauthn_verify_button: "Usar chave de segurança"
+webauthn_waiting: "A aguardar pela chave de segurança..."
+webauthn_cancelled: "O pedido foi cancelado ou expirou. Tente novamente."
+webauthn_not_allowed: "A chave de segurança não é permitida neste domínio."
+webauthn_unexpected: "Ocorreu um erro inesperado."
+webauthn_register_failed: "Falha ao registar"
+webauthn_auth_failed: "Falha na autenticação"

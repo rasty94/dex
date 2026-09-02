@@ -71,3 +71,17 @@ home_discovery: "OpenID-Konfiguration"
 
 # Fehler
 error_title: "Fehler"
+
+# Sicherheitsschlüssel (WebAuthn)
+webauthn_register_title: "Sicherheitsschlüssel registrieren"
+webauthn_register_intro: "Registrieren Sie einen Sicherheitsschlüssel für die Zwei-Faktor-Authentifizierung."
+webauthn_register_button: "Schlüssel registrieren"
+webauthn_verify_title: "Zwei-Faktor-Authentifizierung"
+webauthn_verify_intro: "Verwenden Sie Ihren Sicherheitsschlüssel, um Ihre Identität zu bestätigen."
+webauthn_verify_button: "Sicherheitsschlüssel verwenden"
+webauthn_waiting: "Warten auf den Sicherheitsschlüssel..."
+webauthn_cancelled: "Die Anfrage wurde abgebrochen oder ist abgelaufen. Bitte versuchen Sie es erneut."
+webauthn_not_allowed: "Der Sicherheitsschlüssel darf auf dieser Domäne nicht verwendet werden."
+webauthn_unexpected: "Ein unerwarteter Fehler ist aufgetreten."
+webauthn_register_failed: "Registrierung fehlgeschlagen"
+webauthn_auth_failed: "Authentifizierung fehlgeschlagen"

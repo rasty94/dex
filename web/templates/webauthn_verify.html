@@ -2,20 +2,20 @@
 
 <div class="theme-panel">
   {{ if eq .Mode "register" }}
-  <h2 class="theme-heading">Register security key</h2>
-  <p>Register a security key for two-factor authentication.</p>
+  <h2 class="theme-heading">{{ .Tr.webauthn_register_title }}</h2>
+  <p>{{ .Tr.webauthn_register_intro }}</p>
   {{ else }}
-  <h2 class="theme-heading">Two-factor authentication</h2>
-  <p>Use your security key to verify your identity.</p>
+  <h2 class="theme-heading">{{ .Tr.webauthn_verify_title }}</h2>
+  <p>{{ .Tr.webauthn_verify_intro }}</p>
   {{ end }}
 
   <div id="webauthn-error" class="dex-error-box" style="display: none;"></div>
   <div id="webauthn-working" style="display: none; text-align: center; margin: 1em 0;">
-    <p>Waiting for security key...</p>
+    <p>{{ .Tr.webauthn_waiting }}</p>
   </div>
 
   <button id="webauthn-btn" type="button" class="dex-btn theme-btn--primary" onclick="startWebAuthn()">
-    {{ if eq .Mode "register" }}Register Security Key{{ else }}Use Security Key{{ end }}
+    {{ if eq .Mode "register" }}{{ .Tr.webauthn_register_button }}{{ else }}{{ .Tr.webauthn_verify_button }}{{ end }}
   </button>
 </div>
 
@@ -78,12 +78,13 @@
 
   function formatError(err) {
     if (err.name === "NotAllowedError") {
-      return "Request was cancelled or timed out. Please try again.";
+      return {{ .Tr.webauthn_cancelled }};
     }
     if (err.name === "SecurityError") {
-      return "Security key operation not allowed on this domain.";
+      return {{ .Tr.webauthn_not_allowed }};
     }
-    return err.message || "An unexpected error occurred.";
+    // err.message comes from the browser and is already in the user's language.
+    return err.message || {{ .Tr.webauthn_unexpected }};
   }
 
   window.startWebAuthn = function() {
@@ -100,7 +101,7 @@
 
   function doRegister() {
     fetch(basePath + "/mfa/webauthn/register/begin?" + apiParams(), {method: "POST"})
-      .then(function(resp) { return handleFetchError(resp, "Registration failed"); })
+      .then(function(resp) { return handleFetchError(resp, {{ .Tr.webauthn_register_failed }}); })
       .then(function(options) {
         options.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);
         options.publicKey.user.id = base64urlToBuffer(options.publicKey.user.id);
@@ -123,7 +124,7 @@
           body: body
         });
       })
-      .then(function(resp) { return handleFetchError(resp, "Registration failed"); })
+      .then(function(resp) { return handleFetchError(resp, {{ .Tr.webauthn_register_failed }}); })
       .then(function(result) {
         if (result.redirect) { window.location.href = result.redirect; }
       })
@@ -132,7 +133,7 @@
 
   function doLogin() {
     fetch(basePath + "/mfa/webauthn/login/begin?" + apiParams(), {method: "POST"})
-      .then(function(resp) { return handleFetchError(resp, "Authentication failed"); })
+      .then(function(resp) { return handleFetchError(resp, {{ .Tr.webauthn_auth_failed }}); })
       .then(function(options) {
         options.publicKey.challenge = base64urlToBuffer(options.publicKey.challenge);
         decodeCredentialIDs(options.publicKey.allowCredentials);
@@ -156,7 +157,7 @@
           body: body
         });
       })
-      .then(function(resp) { return handleFetchError(resp, "Authentication failed"); })
+      .then(function(resp) { return handleFetchError(resp, {{ .Tr.webauthn_auth_failed }}); })
       .then(function(result) {
         if (result.redirect) { window.location.href = result.redirect; }
       })
