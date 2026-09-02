@@ -6,6 +6,14 @@ body {
   margin: 0;
 }
 
+.theme-footer {
+  margin-top: 28px;
+  padding-top: 16px;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  opacity: 0.6;
+}
+
 .dex-container {
   color: #333;
   margin: 60px auto;

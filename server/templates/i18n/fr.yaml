@@ -85,3 +85,6 @@ webauthn_not_allowed: "L'utilisation de la clé de sécurité n'est pas autoris�
 webauthn_unexpected: "Une erreur inattendue s'est produite."
 webauthn_register_failed: "Échec de l'enregistrement"
 webauthn_auth_failed: "Échec de l'authentification"
+
+# Footer
+footer_copyright: "© %d Dex IdP. Tous droits réservés."

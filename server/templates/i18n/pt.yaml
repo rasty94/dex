@@ -85,3 +85,6 @@ webauthn_not_allowed: "A chave de segurança não é permitida neste domínio."
 webauthn_unexpected: "Ocorreu um erro inesperado."
 webauthn_register_failed: "Falha ao registar"
 webauthn_auth_failed: "Falha na autenticação"
+
+# Footer
+footer_copyright: "© %d Dex IdP. Todos os direitos reservados."

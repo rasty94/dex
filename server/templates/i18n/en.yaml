@@ -85,3 +85,6 @@ webauthn_not_allowed: "Security key operation not allowed on this domain."
 webauthn_unexpected: "An unexpected error occurred."
 webauthn_register_failed: "Registration failed"
 webauthn_auth_failed: "Authentication failed"
+
+# Footer
+footer_copyright: "© %d Dex IdP. All rights reserved."

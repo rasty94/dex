@@ -85,3 +85,6 @@ webauthn_not_allowed: "Der Sicherheitsschlüssel darf auf dieser Domäne nicht v
 webauthn_unexpected: "Ein unerwarteter Fehler ist aufgetreten."
 webauthn_register_failed: "Registrierung fehlgeschlagen"
 webauthn_auth_failed: "Authentifizierung fehlgeschlagen"
+
+# Footer
+footer_copyright: "© %d Dex IdP. Alle Rechte vorbehalten."

@@ -85,3 +85,6 @@ webauthn_not_allowed: "No se permite usar la llave de seguridad en este dominio.
 webauthn_unexpected: "Se ha producido un error inesperado."
 webauthn_register_failed: "No se pudo registrar la llave"
 webauthn_auth_failed: "No se pudo autenticar"
+
+# Footer
+footer_copyright: "© %d Dex IdP. Todos los derechos reservados."

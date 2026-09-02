@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/sprig/v3"
 )
@@ -521,6 +522,8 @@ type templateCommon struct {
 	// Tr is the translation map for this request's Accept-Language. Templates
 	// read it as {{ .Tr.some_key }}.
 	Tr map[string]string
+	// Year is the current year, for the copyright line.
+	Year int
 	// LogoURL and PrimaryColor brand the page for the client being logged into.
 	// Empty means the global frontend branding, which is what the templates fall
 	// back to.
@@ -534,6 +537,7 @@ func (t *Templates) common(r *http.Request) templateCommon {
 	return templateCommon{
 		ReqPath:      r.URL.Path,
 		Tr:           GetTranslations(r.Header.Get("Accept-Language")),
+		Year:         time.Now().Year(),
 		LogoURL:      theme.LogoURL,
 		PrimaryColor: theme.PrimaryColor,
 	}
