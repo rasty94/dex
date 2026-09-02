@@ -69,15 +69,18 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
       página de Conectores, para retirar un proveedor de identidad.
       Hizo falta exportar `tokens.ParseSubject`: las sesiones se buscan por el par
       `(userID, connectorID)` y `server/internal` no es importable desde `cmd/`.
-- [ ] **Purga RGPD de una identidad** (`DeleteUserIdentity`). Borra identidad, sesión,
-      refresh tokens y sesiones offline de una vez, y **no tiene vuelta atrás**. El panel
-      ya tiene la maquinaria que necesita —confirmación, re-autenticación reciente, CSRF y
-      auditoría—, así que es más una decisión que un desarrollo: ¿lo queremos en el panel,
-      o es una operación que debe pedir dos personas?
+- [x] **Purga RGPD de una identidad**, con inventario en la confirmación. Cuenta lo que
+      va a desaparecer y nombra aparte la consecuencia que el título de la acción no
+      sugiere: el almacén de contraseñas está indexado **por correo, sin conector**, así
+      que purgar una identidad borra también la cuenta local con ese mismo correo.
+- [ ] **La purga no es atómica, y eso es de upstream.** Con usuarios estáticos falla al
+      llegar a la contraseña, pero para entonces ya ha cerrado las sesiones y revocado los
+      tokens. El panel explica ahora en qué estado queda, pero el arreglo de fondo es de
+      `server/apiserver`: o intentar primero lo que puede fallar, o no empezar la cascada
+      si el registro de contraseña es de solo lectura. Candidato a llevar a upstream.
 - [ ] **Gestión de dispositivos MFA** (`ResetMFA`, `DeleteMFASecret`,
       `DeleteWebAuthnCredential`). El panel ya *muestra* los segundos factores
-      registrados; falta poder quitarlos, que es el caso de «he perdido el móvil». Va
-      detrás de decidir si encendemos el MFA nativo.
+      registrados; falta poder quitarlos, que es el caso de «he perdido el móvil».
 
 ---
 
@@ -104,13 +107,13 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
 > WebAuthn completo, más sus RPC de gestión. Lo que queda es decidir cómo encaja con
 > Keystone, no implementarlo.
 
-- [ ] **Decidir cómo convive el MFA nativo de dex con el de Keystone.** Son ortogonales,
-      no alternativas: el de Keystone ocurre *dentro* del intercambio de credenciales
-      —responde 401 con un receipt, aún no hay identidad, y dex nunca ve el secreto— y el
-      de upstream es *posterior* a la identidad, sobre un usuario de dex y con el secreto
-      guardado por dex. Un usuario de Keystone podría acabar con dos segundos factores
-      encadenados. Hay que elegir: excluir el nativo para conectores que ya imponen uno,
-      dejarlo como opción del cliente, o algo intermedio.
+- [x] **Convivencia del MFA nativo con el de Keystone: resuelta por configuración.**
+      No hacía falta mecanismo nuevo — `chainForClient` ya resuelve la cadena mirando el
+      conector y cada autenticador acepta `connectorTypes`. La trampa es que
+      **`connectorTypes` vacío significa *todos* los conectores**, así que el valor por
+      defecto es el peligroso. Dex avisa ahora al arrancar cuando un autenticador alcanza
+      un conector que ya impone su propio segundo factor, y solo si ese conector existe
+      en el despliegue.
 - [ ] **Passkeys sin contraseña para Keystone.** Esto sí es trabajo nuevo: WebAuthn de
       upstream es un segundo factor, no un primer factor, así que el login sin contraseña
       contra Keystone sigue sin base.
