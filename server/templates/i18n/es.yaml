@@ -11,7 +11,7 @@ password_label: "Contraseña"
 email_label: "Correo electrónico"
 domain_label: "Dominio"
 remember_me: "Recordarme"
-invalid_credentials: "%s o contraseña incorrectos."
+invalid_credentials: "Credenciales incorrectas."
 login_other_method: "Elegir otro método de inicio de sesión."
 back_button: "Atrás"
 

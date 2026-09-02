@@ -439,9 +439,10 @@ func TestLoginPagesAreTranslated(t *testing.T) {
 	}
 }
 
-// A wrong password renders the "invalid credentials" string, which takes the
-// username prompt as a parameter — the case most likely to leak a raw "%s".
-func TestInvalidCredentialsMessageIsInterpolated(t *testing.T) {
+// The credential form's own text is translated, while the connector's prompt
+// stays as the placeholder — naming the prompt inside the error would produce
+// "Email Address o contraseña incorrectos", half in each language.
+func TestCredentialFormIsFullyTranslated(t *testing.T) {
 	server, _, authID := newTOTPTest(t)
 
 	form := url.Values{"login": {"alice"}, "password": {"wrong"}}
@@ -452,9 +453,13 @@ func TestInvalidCredentialsMessageIsInterpolated(t *testing.T) {
 	server.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
-	require.Contains(t, w.Body.String(), "o contraseña incorrectos")
-	require.NotContains(t, w.Body.String(), "%s")
-	require.NotContains(t, w.Body.String(), "%!")
+	body := w.Body.String()
+
+	require.Contains(t, body, "Credenciales incorrectas.")
+	require.Contains(t, body, `<label for="login">Usuario</label>`, "the username label is dex's own text and must be translated")
+	require.Contains(t, body, `placeholder="username"`, "the connector's prompt stays as the placeholder")
+	require.NotContains(t, body, "%s")
+	require.NotContains(t, body, "%!")
 }
 
 // --- per-client branding ---

@@ -11,7 +11,7 @@ password_label: "Palavra-passe"
 email_label: "Endereço de e-mail"
 domain_label: "Domínio"
 remember_me: "Manter sessão iniciada"
-invalid_credentials: "%s ou palavra-passe incorretos."
+invalid_credentials: "Credenciais incorretas."
 login_other_method: "Escolher outro método de início de sessão."
 back_button: "Voltar"
 
