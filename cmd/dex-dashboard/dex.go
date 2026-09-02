@@ -206,6 +206,22 @@ func (d *dexClient) deleteUserIdentity(ctx context.Context, userID, connID strin
 	return resp.NotFound, nil
 }
 
+// deleteMFASecret removes one enrolled second factor, together with any
+// security keys registered under it. This is the "I lost my phone" call: the
+// user signs in with the remaining factors, or with the password alone if that
+// was the last one, and enrolls again.
+func (d *dexClient) deleteMFASecret(ctx context.Context, userID, connID, authenticatorID string) (notFound bool, err error) {
+	resp, err := d.api.DeleteMFASecret(d.authed(ctx), &api.DeleteMFASecretReq{
+		UserId:          userID,
+		ConnectorId:     connID,
+		AuthenticatorId: authenticatorID,
+	})
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
+}
+
 // localPasswordFor finds the local password account that shares an email with
 // an identity, or nil. dex's password store is keyed by email with no connector
 // attached, so purging an identity from any connector deletes the local account

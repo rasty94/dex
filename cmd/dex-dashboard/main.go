@@ -106,6 +106,9 @@ func run() error {
 		}
 		d.handlePurgeIdentity(w, r)
 	}))
+	// Removing a second factor is POST-only, but it drops an account to its
+	// password alone, so it demands a recent login like the other destructive ones.
+	mux.HandleFunc("/sessions/mfa-delete", destructive(auth.requireCSRF(d.handleDeleteMFASecret)))
 	mux.HandleFunc("/connectors/sign-out", destructive(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			auth.requireCSRF(d.handleSignOutConnector)(w, r)

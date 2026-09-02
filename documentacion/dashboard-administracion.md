@@ -207,7 +207,9 @@ La vista ofrece las dos formas de llegar a él:
   es el id en ese proveedor, **no** el email.
 
 El codificador es el mismo que usa Dex al emitir el token: la vista llama a
-`server.EncodeSubject`, exportado en `server/oauth2.go` justo para esto. Duplicar aquí
+`tokens.GenSubject`, y para el camino inverso —descomponer un `sub` pegado— a
+`tokens.ParseSubject`, exportada en `server/tokens/claims.go` justo para esto
+(`server/internal` no es importable desde `cmd/`). Duplicar aquí
 el formato de wire habría creado un acoplamiento que se rompe en silencio el día que
 cambie, y el fallo sería «este usuario no tiene sesiones» para todo el mundo. Hay un
 test que fija que las dos codificaciones no se separen.
@@ -215,6 +217,53 @@ test que fija que las dos codificaciones no se separen.
 Un `sub` mal formado devuelve un aviso claro, no el error de protobuf en crudo.
 
 Con permiso de escritura, cada fila trae un botón para revocar ese refresh token.
+
+### Lo que cuelga de una identidad
+
+Buscar por usuario y conector, y no solo por `sub`, permite además mostrar lo que
+Dex guarda de esa persona. La vista lo separa en bloques porque son cosas
+distintas que se confunden a diario:
+
+- **Identidad**: los claims que Dex vio la última vez, sus grupos, y si la cuenta
+  está bloqueada por intentos fallidos. Esto último explica el caso «mi usuario
+  no entra y la contraseña es correcta».
+- **Segundos factores**: qué tiene registrado más allá de la contraseña.
+- **Consentimientos**: qué ha aprobado y para qué cliente. Retirar uno hace que
+  el siguiente login por ese cliente vuelva a enseñar la pantalla de aprobación;
+  **no** cierra ninguna sesión.
+- **Navegadores con sesión iniciada**: una fila por navegador. Es otra cosa que
+  los refresh tokens de abajo: la sesión es el inicio de sesión, el refresh token
+  es el permiso de larga duración de *una* aplicación. Cerrar una sesión revoca
+  además los tokens emitidos desde ella.
+
+Los dos últimos bloques necesitan que Dex tenga encendidas las sesiones
+(`sessions_enabled`) y expuesta la API (`api_sessions_identities_crud`). Sin
+ellas la vista no se cae: explica qué flag falta.
+
+### «He perdido el móvil»
+
+Quitar un segundo factor es la acción que el soporte necesita cuando un usuario
+ya no tiene el dispositivo donde vivía. Sin ella la única salida sería borrar la
+identidad entera. Al quitarlo, el siguiente login le ofrece darse de alta otra
+vez con un secreto nuevo, y mientras tanto la cuenta se queda con la contraseña
+sola — por eso exige login reciente, como el resto de lo destructivo, y no es un
+botón de fila cualquiera.
+
+Borra también las llaves de seguridad registradas bajo ese mismo autenticador.
+
+### El borrado RGPD
+
+`Erase this identity` es la única acción del panel **sin vuelta atrás**. La
+confirmación cuenta lo que va a desaparecer en vez de describirlo, y avisa aparte
+de la consecuencia que el título no sugiere: el almacén de contraseñas de Dex se
+indexa por correo, sin conector, así que purgar una identidad de *cualquier*
+conector borra también la cuenta local que use ese mismo correo.
+
+Con usuarios estáticos —los del fichero de configuración— **la purga no es
+atómica**: falla al llegar a la contraseña, que Dex no puede borrar, pero para
+entonces ya ha cerrado las sesiones y revocado los tokens. El panel explica qué
+mitad ocurrió y cómo terminar a mano. El arreglo de fondo está en el servidor,
+no aquí.
 
 ## 9. Escritura: permisos y auditoría
 
@@ -522,9 +571,17 @@ va a integrar una aplicación.
 | `/clients` | sí | Clientes OAuth2 |
 | `/connectors` | sí | Conectores configurados |
 | `/users` | sí | Usuarios del password DB |
-| `/sessions` | sí | Refresh tokens por `sub` |
+| `/sessions` | sí | Identidad, factores, consentimientos, navegadores y refresh tokens |
+| `/sessions/revoke` | sí + escritura + CSRF | Revoca un refresh token (`POST`) |
+| `/sessions/end` | sí + escritura + CSRF | Cierra un navegador (`POST`) |
+| `/sessions/revoke-consent` | sí + escritura + CSRF | Retira un consentimiento (`POST`) |
+| `/sessions/mfa-delete` | sí + escritura + login reciente + CSRF | Quita un segundo factor (`POST`) |
+| `/sessions/revoke-all` | sí + escritura + login reciente | Revoca todos los refresh tokens |
+| `/sessions/end-all` | sí + escritura + login reciente | Cierra todos los navegadores |
+| `/sessions/purge` | sí + escritura + login reciente | Borrado RGPD de la identidad |
 | `/status` | sí | Salud y métricas de Dex |
 | `/discovery` | sí | Documento de discovery de Dex |
+| `/connectors/sign-out` | sí + escritura + login reciente | Cierra las sesiones de un conector |
 | `/export` | sí + escritura + login reciente | Descarga la configuración en YAML |
 | `/logout` | sí + CSRF | Cierra la sesión (`POST`) |
 | `/callback` | no | Retorno del login OIDC |

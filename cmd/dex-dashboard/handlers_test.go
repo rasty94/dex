@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -384,6 +385,67 @@ func TestSessionsPageShowsTheIdentity(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("the identity panel is missing %q", want)
 		}
+	}
+}
+
+// The help desk's "I lost my phone" action. What matters is that each row's
+// button carries the id of the factor it sits next to: a form that lost it would
+// still look right and remove the wrong device, or none.
+func TestSecondFactorRowsCarryTheirOwnAuthenticator(t *testing.T) {
+	d, err := newDashboard(nil, nil, nil, testLogger())
+	if err != nil {
+		t.Fatalf("newDashboard: %v", err)
+	}
+
+	data := sessionsData{
+		UserID: "u-1", ConnID: "local", Searched: true,
+		Identity: &api.UserIdentity{
+			UserId: "u-1", ConnectorId: "local", Email: "jane@example.com",
+			MfaDevices: []*api.MFADeviceInfo{
+				{AuthenticatorId: "totp", MfaSecret: &api.MFASecret{Type: "TOTP", Confirmed: true}},
+				{
+					AuthenticatorId:     "webauthn",
+					MfaSecret:           &api.MFASecret{Type: "WebAuthn", Confirmed: true},
+					WebauthnCredentials: []*api.WebAuthnCredential{{DisplayName: "yubikey"}},
+				},
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	req = req.WithContext(context.WithValue(req.Context(),
+		sessionCtxKey, &session{Email: "admin@example.com", CanWrite: true, CSRFToken: "csrf-1"}))
+	rr := httptest.NewRecorder()
+	d.render(rr, req, "sessions.html", page{Title: "Sessions", Nav: "sessions", Data: data})
+	body := rr.Body.String()
+
+	for _, want := range []string{
+		`action="/sessions/mfa-delete"`,
+		`name="authenticator_id" value="totp"`,
+		`name="authenticator_id" value="webauthn"`,
+		`name="csrf_token" value="csrf-1"`,
+		"yubikey", // which key it is, so the operator can tell the lost one apart
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the second-factor rows are missing %q", want)
+		}
+	}
+	if n := strings.Count(body, `action="/sessions/mfa-delete"`); n != 2 {
+		t.Errorf("expected one remove form per factor, got %d", n)
+	}
+
+	// A read-only admin gets the inventory without the button.
+	rr = httptest.NewRecorder()
+	roReq := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	roReq = roReq.WithContext(context.WithValue(roReq.Context(),
+		sessionCtxKey, &session{Email: "viewer@example.com"}))
+	d.render(rr, roReq, "sessions.html", page{Title: "Sessions", Nav: "sessions", Data: data})
+	roBody := rr.Body.String()
+	if strings.Contains(roBody, "/sessions/mfa-delete") {
+		t.Error("a read-only admin must not be offered the remove button")
+	}
+	if !strings.Contains(roBody, "totp") {
+		t.Error("a read-only admin should still see which factors are enrolled")
 	}
 }
 

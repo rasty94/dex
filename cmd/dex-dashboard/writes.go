@@ -170,6 +170,38 @@ func (d *dashboard) handleEndAllAuthSessions(w http.ResponseWriter, r *http.Requ
 	redirectWith(w, r, back, fmt.Sprintf("Ended %d session(s).", count))
 }
 
+// handleDeleteMFASecret removes one enrolled second factor. This is the help
+// desk's "I lost my phone" button: without it the only way back for a user whose
+// authenticator is gone is erasing the whole identity. Removing the last factor
+// leaves the account on its password alone until the user enrolls again, which is
+// why it is a fresh-login action rather than a plain row button.
+func (d *dashboard) handleDeleteMFASecret(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	connID := strings.TrimSpace(r.FormValue("conn_id"))
+	authID := strings.TrimSpace(r.FormValue("authenticator_id"))
+	if userID == "" || connID == "" || authID == "" {
+		http.Error(w, "Missing user, connector or authenticator.", http.StatusBadRequest)
+		return
+	}
+	back := backToSessions(r)
+
+	sess := sessionFrom(r.Context())
+	notFound, err := d.dex.deleteMFASecret(r.Context(), userID, connID, authID)
+	if err != nil {
+		d.logger.Error("failed to delete MFA secret", "err", err, "actor", sess.Email,
+			"user_id", userID, "connector_id", connID, "authenticator", authID)
+		redirectWith(w, r, back, friendlyGRPCError(err))
+		return
+	}
+	if notFound {
+		redirectWith(w, r, back, "That second factor was already gone.")
+		return
+	}
+	d.logger.Info("MFA secret deleted", "actor", sess.Email,
+		"user_id", userID, "connector_id", connID, "authenticator", authID)
+	redirectWith(w, r, back, "Removed the second factor "+authID+".")
+}
+
 // handlePurgeIdentity performs the GDPR erasure of one identity. It is the only
 // action in the dashboard with no undo, so the confirmation counts what will go
 // rather than describing it, and names the one consequence the action's title

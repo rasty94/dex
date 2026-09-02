@@ -78,9 +78,18 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
       tokens. El panel explica ahora en qué estado queda, pero el arreglo de fondo es de
       `server/apiserver`: o intentar primero lo que puede fallar, o no empezar la cascada
       si el registro de contraseña es de solo lectura. Candidato a llevar a upstream.
-- [ ] **Gestión de dispositivos MFA** (`ResetMFA`, `DeleteMFASecret`,
-      `DeleteWebAuthnCredential`). El panel ya *muestra* los segundos factores
-      registrados; falta poder quitarlos, que es el caso de «he perdido el móvil».
+- [x] **«He perdido el móvil»: quitar un segundo factor desde el panel.** Los factores
+      registrados tienen ahora su propia sección con una fila por autenticador y un botón
+      que llama a `DeleteMFASecret`; el siguiente login ofrece darse de alta otra vez con
+      un secreto nuevo. Exige login reciente, como el resto de lo destructivo, porque
+      quitar el último deja la cuenta con la contraseña sola.
+      Verificado de punta a punta contra el despliegue de ejemplo: alta de TOTP, retirada
+      desde el panel, secreto fuera del almacén y alta nueva con otro secreto en el
+      siguiente login.
+- [ ] **`ResetMFA` y `DeleteWebAuthnCredential` no se han expuesto.** El primero es
+      recorrer la lista de autenticadores, que en la práctica son uno o dos; el segundo
+      solo importa cuando alguien tiene varias llaves bajo el mismo autenticador y pierde
+      una — hoy se van todas con él. Añadirlos cuando aparezca ese caso.
 
 ---
 

@@ -46,11 +46,45 @@ not the email address.</p>
       {{ if .BlockedUntil }}
       <tr><td class="muted">Locked out</td><td><strong>until {{ ts .BlockedUntil }}</strong></td></tr>
       {{ end }}
-      {{ if .MfaDevices }}
-      <tr><td class="muted">Second factors</td><td class="mono">{{ range $i, $m := .MfaDevices }}{{ if $i }}, {{ end }}{{ $m.AuthenticatorId }}{{ if $m.WebauthnCredentials }} ({{ len $m.WebauthnCredentials }} key(s)){{ end }}{{ end }}</td></tr>
-      {{ end }}
     </tbody>
   </table>
+</div>
+
+<h2 class="section">Second factors</h2>
+<p class="note">What this user signs in with beyond their password. Remove one when
+the user has lost the device it lives on: they enroll again on next login. Removing
+the last one leaves the account on its password alone until they do, so it is
+worth checking there is another before removing.</p>
+<div class="card scroll">
+  {{ if .MfaDevices }}
+  <table>
+    <thead><tr><th>Authenticator</th><th>Type</th><th>Registered</th><th>Security keys</th>{{ if and $.Session $.Session.CanWrite }}<th></th>{{ end }}</tr></thead>
+    <tbody>
+    {{ range .MfaDevices }}
+      <tr>
+        <td class="mono">{{ .AuthenticatorId }}</td>
+        <td class="muted">{{ with .MfaSecret }}{{ .Type }}{{ if not .Confirmed }} <span class="muted">(never confirmed)</span>{{ end }}{{ else }}&mdash;{{ end }}</td>
+        <td class="muted">{{ with .MfaSecret }}{{ ts .CreatedAt }}{{ end }}</td>
+        <td class="muted">{{ range $i, $c := .WebauthnCredentials }}{{ if $i }}, {{ end }}{{ if $c.DisplayName }}{{ $c.DisplayName }}{{ else }}unnamed key{{ end }}{{ else }}&mdash;{{ end }}</td>
+        {{ if and $.Session $.Session.CanWrite }}
+        <td class="row-actions">
+          <form method="post" action="/sessions/mfa-delete">
+            <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
+            <input type="hidden" name="authenticator_id" value="{{ .AuthenticatorId }}">
+            <input type="hidden" name="sub" value="{{ $.Data.Subject }}">
+            <input type="hidden" name="user_id" value="{{ $.Data.UserID }}">
+            <input type="hidden" name="conn_id" value="{{ $.Data.ConnID }}">
+            <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+          </form>
+        </td>
+        {{ end }}
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">This user has no second factor enrolled.</div>
+  {{ end }}
 </div>
 
 <h2 class="section">Consents</h2>
