@@ -317,8 +317,10 @@ func (d *dashboard) handleSessions(w http.ResponseWriter, r *http.Request) {
 	data.Tokens = tokens
 	data.Searched = true
 
-	// Browser sessions are a separate lookup and a separate feature flag, so a
-	// failure here must not hide the refresh tokens that were found.
+	// Browser sessions and the identity are separate lookups behind the same
+	// feature flag, so a failure in either must not hide the refresh tokens that
+	// were found. The identity is best-effort: a user who has never signed in
+	// since dex started recording identities simply has none.
 	if userID != "" && connID != "" {
 		sessions, err := d.dex.listAuthSessions(r.Context(), userID, connID)
 		if err != nil {
@@ -326,6 +328,12 @@ func (d *dashboard) handleSessions(w http.ResponseWriter, r *http.Request) {
 			data.SessionsUnavailable = friendlyGRPCError(err)
 		} else {
 			data.AuthSessions = sessions
+		}
+
+		if identity, err := d.dex.getUserIdentity(r.Context(), userID, connID); err == nil {
+			data.Identity = identity
+		} else {
+			d.logger.Info("could not get user identity", "err", err)
 		}
 	}
 
@@ -348,6 +356,11 @@ type sessionsData struct {
 	// SessionsUnavailable explains why the browser-session table is missing,
 	// which is nearly always a feature flag rather than a real failure.
 	SessionsUnavailable string
+
+	// Identity is what dex knows about this user on this connector: the claims
+	// it last saw, what they consented to, their second factors, and whether the
+	// account is locked out. Nil when it could not be fetched.
+	Identity *api.UserIdentity
 }
 
 // filterQuery is the ?q= a listing was filtered by.

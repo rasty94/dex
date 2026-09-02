@@ -346,3 +346,66 @@ func TestSessionsPageDegradesWithoutTheFeature(t *testing.T) {
 		t.Error("the refresh tokens must still be listed when sessions are unavailable")
 	}
 }
+
+// The identity panel exists so an operator can see who they are about to act on
+// before acting. The lockout is the field most worth surfacing: a user who
+// cannot log in usually looks like a broken connector until you see it.
+func TestSessionsPageShowsTheIdentity(t *testing.T) {
+	d, err := newDashboard(nil, nil, nil, testLogger())
+	if err != nil {
+		t.Fatalf("newDashboard: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	d.render(rr, httptest.NewRequest(http.MethodGet, "/sessions", nil), "sessions.html",
+		page{Title: "Sessions", Nav: "sessions", Data: sessionsData{
+			Subject: "CgExEgR0ZXN0", UserID: "u-1", ConnID: "local", Searched: true,
+			Identity: &api.UserIdentity{
+				UserId: "u-1", ConnectorId: "local",
+				Email: "jane@example.com", Username: "jane",
+				Groups:       []string{"admins", "devs"},
+				BlockedUntil: 1700003600,
+				Consents: []*api.ConsentEntry{
+					{ClientId: "example-app", Scopes: []string{"openid", "email"}},
+				},
+				MfaDevices: []*api.MFADeviceInfo{{AuthenticatorId: "totp"}},
+			},
+		}})
+	body := rr.Body.String()
+
+	for _, want := range []string{
+		"jane@example.com", "jane", "admins", "devs",
+		"Locked out", // the reason a working account looks broken
+		"Consents", "example-app", "openid",
+		"Second factors", "totp",
+		"Withdraw", // the consent action is not offered without write permission, but this page has it
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the identity panel is missing %q", want)
+		}
+	}
+}
+
+// A user dex has never recorded an identity for still has to render: the page
+// falls back to the session and token tables rather than failing.
+func TestSessionsPageWithoutAnIdentity(t *testing.T) {
+	d, err := newDashboard(nil, nil, nil, testLogger())
+	if err != nil {
+		t.Fatalf("newDashboard: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	d.render(rr, httptest.NewRequest(http.MethodGet, "/sessions", nil), "sessions.html",
+		page{Title: "Sessions", Nav: "sessions", Data: sessionsData{
+			Subject: "CgExEgR0ZXN0", Searched: true,
+			Tokens: []*api.RefreshTokenRef{{Id: "tok-1", ClientId: "example-app"}},
+		}})
+	body := rr.Body.String()
+
+	if strings.Contains(body, "Consents") {
+		t.Error("the consents section should be absent when there is no identity")
+	}
+	if !strings.Contains(body, "tok-1") {
+		t.Error("the refresh tokens must still render without an identity")
+	}
+}

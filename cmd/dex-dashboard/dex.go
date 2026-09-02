@@ -154,6 +154,44 @@ func (d *dexClient) terminateSessionsByUser(ctx context.Context, userID string) 
 	return resp.SessionsTerminated, nil
 }
 
+// getUserIdentity returns what dex knows about a user on one connector: the
+// claims it last saw, what the user consented to and for which client, any
+// enrolled second factors, and whether the account is locked out.
+func (d *dexClient) getUserIdentity(ctx context.Context, userID, connID string) (*api.UserIdentity, error) {
+	resp, err := d.api.GetUserIdentity(d.authed(ctx), &api.GetUserIdentityReq{
+		UserId:      userID,
+		ConnectorId: connID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Identity, nil
+}
+
+// revokeConsent withdraws a user's approval for one client, so the next login
+// through it shows the consent screen again. It does not sign the user out.
+func (d *dexClient) revokeConsent(ctx context.Context, userID, connID, clientID string) (notFound bool, err error) {
+	resp, err := d.api.RevokeConsent(d.authed(ctx), &api.RevokeConsentReq{
+		UserId:      userID,
+		ConnectorId: connID,
+		ClientId:    clientID,
+	})
+	if err != nil {
+		return false, err
+	}
+	return resp.NotFound, nil
+}
+
+// terminateSessionsByConnector signs out everyone who authenticated through one
+// connector. This is the button for retiring an identity provider.
+func (d *dexClient) terminateSessionsByConnector(ctx context.Context, connID string) (int64, error) {
+	resp, err := d.api.TerminateSessionsByConnector(d.authed(ctx), &api.TerminateSessionsByConnectorReq{ConnectorId: connID})
+	if err != nil {
+		return 0, err
+	}
+	return resp.SessionsTerminated, nil
+}
+
 func (d *dexClient) createClient(ctx context.Context, c *api.Client) (alreadyExists bool, err error) {
 	resp, err := d.api.CreateClient(d.authed(ctx), &api.CreateClientReq{Client: c})
 	if err != nil {

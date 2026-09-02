@@ -29,6 +29,60 @@ not the email address.</p>
 
 {{ if .Searched }}
 
+{{ with .Identity }}
+<h2 class="section">Identity</h2>
+<div class="card" style="padding:1.1rem 1.25rem">
+  <table>
+    <tbody>
+      <tr><td class="muted">Email</td><td>{{ .Email }}{{ if not .EmailVerified }} <span class="muted">(unverified)</span>{{ end }}</td></tr>
+      <tr><td class="muted">Username</td><td>{{ .Username }}</td></tr>
+      <tr><td class="muted">Groups</td><td class="mono">{{ range $i, $g := .Groups }}{{ if $i }}, {{ end }}{{ $g }}{{ end }}</td></tr>
+      <tr><td class="muted">Last login</td><td>{{ ts .LastLogin }}</td></tr>
+      {{ if .BlockedUntil }}
+      <tr><td class="muted">Locked out</td><td><strong>until {{ ts .BlockedUntil }}</strong></td></tr>
+      {{ end }}
+      {{ if .MfaDevices }}
+      <tr><td class="muted">Second factors</td><td class="mono">{{ range $i, $m := .MfaDevices }}{{ if $i }}, {{ end }}{{ $m.AuthenticatorId }}{{ if $m.WebauthnCredentials }} ({{ len $m.WebauthnCredentials }} key(s)){{ end }}{{ end }}</td></tr>
+      {{ end }}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section">Consents</h2>
+<p class="note">What this user has approved, and for which client. Withdrawing a
+consent makes the next login through that client show the approval screen again.
+It does not sign anyone out.</p>
+<div class="card scroll">
+  {{ if .Consents }}
+  <table>
+    <thead><tr><th>Client</th><th>Scopes</th>{{ if and $.Session $.Session.CanWrite }}<th></th>{{ end }}</tr></thead>
+    <tbody>
+    {{ range .Consents }}
+      <tr>
+        <td class="mono">{{ .ClientId }}</td>
+        <td class="muted">{{ range $i, $s := .Scopes }}{{ if $i }}, {{ end }}{{ $s }}{{ end }}</td>
+        {{ if and $.Session $.Session.CanWrite }}
+        <td class="row-actions">
+          <form method="post" action="/sessions/revoke-consent">
+            <input type="hidden" name="csrf_token" value="{{ $.Session.CSRFToken }}">
+            <input type="hidden" name="client_id" value="{{ .ClientId }}">
+            <input type="hidden" name="sub" value="{{ $.Data.Subject }}">
+            <input type="hidden" name="user_id" value="{{ $.Data.UserID }}">
+            <input type="hidden" name="conn_id" value="{{ $.Data.ConnID }}">
+            <button type="submit" class="btn btn-sm">Withdraw</button>
+          </form>
+        </td>
+        {{ end }}
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+  <div class="empty">This user has not approved any client.</div>
+  {{ end }}
+</div>
+{{ end }}
+
 <h2 class="section">Signed-in browsers</h2>
 <p class="note">One row per browser the user is signed in on. This is a different
 thing from the refresh tokens below: a session is a sign-in, a refresh token is

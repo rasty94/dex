@@ -169,6 +169,83 @@ func (d *dashboard) handleEndAllAuthSessions(w http.ResponseWriter, r *http.Requ
 	redirectWith(w, r, back, fmt.Sprintf("Ended %d session(s).", count))
 }
 
+// handleSignOutConnector signs out everyone who authenticated through one
+// connector. The case for it is retiring an identity provider: after the
+// connector is gone its sessions would otherwise keep working until they expire
+// on their own, which for a provider you no longer trust is exactly wrong.
+func (d *dashboard) handleSignOutConnector(w http.ResponseWriter, r *http.Request) {
+	connID := strings.TrimSpace(firstNonEmpty(r.FormValue("id"), r.URL.Query().Get("id")))
+	if connID == "" {
+		http.Error(w, "Missing connector.", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		d.render(w, r, "confirm.html", page{
+			Title: "Sign out connector", Nav: "connectors",
+			Data: confirmData{
+				Action:  "/connectors/sign-out",
+				Field:   "id",
+				Value:   connID,
+				Heading: "Sign out everyone who authenticated through " + connID + "?",
+				Warning: "Every browser signed in through this connector has to log in again, and the refresh tokens issued from those sessions are revoked with them. Access tokens already issued keep working until they expire. The connector itself is not deleted.",
+				Confirm: "Sign them all out",
+				Cancel:  "/connectors",
+			},
+		})
+		return
+	}
+
+	sess := sessionFrom(r.Context())
+	count, err := d.dex.terminateSessionsByConnector(r.Context(), connID)
+	if err != nil {
+		d.logger.Error("failed to terminate connector sessions", "err", err, "actor", sess.Email, "connector_id", connID)
+		redirectWith(w, r, "/connectors", friendlyGRPCError(err))
+		return
+	}
+	d.logger.Info("connector sessions terminated", "actor", sess.Email, "connector_id", connID, "count", count)
+	redirectWith(w, r, "/connectors", fmt.Sprintf("Ended %d session(s) on %s.", count, connID))
+}
+
+// firstNonEmpty returns the first non-empty string, so a handler can accept the
+// same field from a query string on GET and a form on POST.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// handleRevokeConsent withdraws a user's approval for one client. It is the
+// mildest of the actions on this page: nothing is signed out and no token dies,
+// the user simply sees the approval screen again next time.
+func (d *dashboard) handleRevokeConsent(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	connID := strings.TrimSpace(r.FormValue("conn_id"))
+	clientID := strings.TrimSpace(r.FormValue("client_id"))
+	back := backToSessions(r)
+	if userID == "" || connID == "" || clientID == "" {
+		http.Error(w, "Missing user, connector or client.", http.StatusBadRequest)
+		return
+	}
+
+	sess := sessionFrom(r.Context())
+	notFound, err := d.dex.revokeConsent(r.Context(), userID, connID, clientID)
+	if err != nil {
+		d.logger.Error("failed to revoke consent", "err", err, "actor", sess.Email, "client_id", clientID)
+		redirectWith(w, r, back, friendlyGRPCError(err))
+		return
+	}
+	if notFound {
+		redirectWith(w, r, back, "That consent was already gone.")
+		return
+	}
+	d.logger.Info("consent revoked", "actor", sess.Email, "user_id", userID, "client_id", clientID)
+	redirectWith(w, r, back, "Withdrew consent for "+clientID+".")
+}
+
 // backToSessions rebuilds the lookup the operator was on, so ending a session
 // returns to the same result list instead of an empty search form.
 func backToSessions(r *http.Request) string {

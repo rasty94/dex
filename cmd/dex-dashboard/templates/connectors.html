@@ -33,6 +33,7 @@
         {{ if and $.Session $.Session.CanWrite }}
         <td class="row-actions">
           <a class="btn btn-sm" href="/connectors/edit?id={{ .Id }}">Edit</a>
+          <a class="btn btn-sm btn-danger" href="/connectors/sign-out?id={{ .Id }}">Sign out all</a>
           <a class="btn btn-sm btn-danger" href="/connectors/delete?id={{ .Id }}">Delete</a>
         </td>
         {{ end }}

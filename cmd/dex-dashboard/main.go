@@ -98,6 +98,14 @@ func run() error {
 	// Ending one session is a single POST; ending every session goes through the
 	// same confirm-then-post shape as revoke-all.
 	mux.HandleFunc("/sessions/end", write(d.handleEndAuthSession))
+	mux.HandleFunc("/sessions/revoke-consent", write(d.handleRevokeConsent))
+	mux.HandleFunc("/connectors/sign-out", destructive(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			auth.requireCSRF(d.handleSignOutConnector)(w, r)
+			return
+		}
+		d.handleSignOutConnector(w, r)
+	}))
 	mux.HandleFunc("/sessions/end-all", destructive(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			auth.requireCSRF(d.handleEndAllAuthSessions)(w, r)
