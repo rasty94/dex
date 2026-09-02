@@ -21,6 +21,12 @@ devenv.local.yaml
 # direnv
 .direnv
 
+# Copias de trabajo de otros repos para consultar, no material del fork.
+/references/
+
+# macOS
+.DS_Store
+
 # graphify
 /graphify-out/
 .graphifyignore
