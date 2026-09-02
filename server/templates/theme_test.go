@@ -59,7 +59,6 @@ func TestThemeCSSConsumesTheClientColor(t *testing.T) {
 
 	for _, name := range []string{"light", "dark"} {
 		t.Run(name, func(t *testing.T) {
-			//nolint:dogsled // only the theme handler is needed here
 			_, themed, _, _, err := LoadWebConfig(Config{
 				WebFS: dexweb.FS(), IssuerURL: "http://127.0.0.1:5556", Theme: name,
 			})
