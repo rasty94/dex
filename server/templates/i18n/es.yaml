@@ -1,28 +1,73 @@
+# Selección de conector
+login_to_issuer: "Inicia sesión en %s"
+login_with: "Iniciar sesión con %s"
+
+# Formulario de contraseña
 login_title: "Inicia sesión en tu cuenta"
 login_button: "Iniciar sesión"
-login_with: "Iniciar sesión con"
+signing_in: "Iniciando sesión..."
 username_label: "Usuario"
 password_label: "Contraseña"
 email_label: "Correo electrónico"
 domain_label: "Dominio"
+remember_me: "Recordarme"
+invalid_credentials: "%s o contraseña incorrectos."
+login_other_method: "Elegir otro método de inicio de sesión."
 back_button: "Atrás"
-error_title: "Error"
-approval_title: "Autorizar solicitud"
-approval_client: "Cliente"
-approval_permissions: "Permisos"
-approval_approve: "Aprobar"
-approval_reject: "Rechazar"
-device_title: "Inicio de sesión en dispositivo"
-device_instructions: "Introduce el código que aparece en tu dispositivo."
-device_success_title: "¡Éxito!"
-device_success_msg: "Has autenticado el dispositivo correctamente."
+
+# Segundo factor exigido por el proveedor de identidad (Keystone)
+totp_step_title: "Verificación en dos pasos"
+totp_label: "Código de autenticación"
+totp_verify_button: "Verificar"
+totp_invalid: "Código de autenticación incorrecto."
+trust_device_label: "Recordar este dispositivo"
+
+# Segundo factor gestionado por el propio dex
+totp_verify_title: "Verificación en dos pasos"
+totp_verify_scan: "Escanea el código QR con tu aplicación de autenticación e introduce el código."
+totp_verify_enter: "Introduce el código de tu aplicación de autenticación."
+totp_verify_label: "Código de un solo uso"
+totp_verify_invalid: "Código incorrecto. Inténtalo de nuevo."
+
+# Consentimiento
+approval_title: "Conceder acceso"
+approval_would_like_to: "%s quiere:"
+approval_no_info: "%s no ha solicitado ningún dato personal"
+approval_grant_button: "Conceder acceso"
+approval_cancel_button: "Cancelar"
+
+# Flujo de dispositivo
+device_title: "Introduce el código"
+device_submit: "Enviar"
+device_invalid: "Código no válido o caducado"
+device_success_title: "Sesión iniciada para %s"
+device_success_msg: "Vuelve a tu dispositivo para continuar"
+
+# Código fuera de banda
 oob_title: "Inicio de sesión correcto"
 oob_instructions: "Copia este código, vuelve a tu aplicación y pégalo allí:"
-footer_copyright: "© %d Dex IdP. Todos los derechos reservados."
-# TOTP / MFA
-totp_label: "Código TOTP / App Autenticadora"
-totp_verify_button: "Verificar"
-totp_invalid: "Código TOTP incorrecto. Por favor, inténtalo de nuevo."
-invalid_credentials: "Credenciales incorrectas."
-signing_in: "Iniciando sesión..."
-trust_device_label: "Confiar en este dispositivo y omitir el segundo factor mientras la sesión siga siendo válida"
+
+# Cierre de sesión
+logout_confirm_title: "Cerrando sesión"
+logout_confirm_msg: "¿Quieres cerrar la sesión?"
+logout_button: "Cerrar sesión"
+logout_done_title: "Sesión cerrada"
+logout_done_msg: "Has cerrado la sesión correctamente."
+logout_no_session_title: "No hay sesión"
+logout_no_session_msg: "No se ha encontrado ninguna sesión activa."
+logout_back: "Volver a la aplicación"
+
+# Página de sesión
+home_signed_in_with: "Sesión iniciada con"
+home_signed_in: "Sesión iniciada"
+home_session_expires_idle: "Caduca por inactividad"
+home_session_ends: "La sesión termina"
+home_signed_in_from: "Sesión iniciada desde"
+home_groups: "Grupos"
+home_browser: "Navegador"
+home_logout: "Cerrar sesión"
+home_not_signed_in: "Sin sesión iniciada"
+home_discovery: "Configuración de OpenID"
+
+# Errores
+error_title: "Error"

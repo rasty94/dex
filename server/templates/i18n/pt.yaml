@@ -1,28 +1,73 @@
-login_title: "Entrar na sua conta"
-login_button: "Entrar"
-login_with: "Entrar com"
+# Seleção de conector
+login_to_issuer: "Inicie sessão em %s"
+login_with: "Iniciar sessão com %s"
+
+# Formulário de palavra-passe
+login_title: "Inicie sessão na sua conta"
+login_button: "Iniciar sessão"
+signing_in: "A iniciar sessão..."
 username_label: "Utilizador"
 password_label: "Palavra-passe"
 email_label: "Endereço de e-mail"
 domain_label: "Domínio"
+remember_me: "Manter sessão iniciada"
+invalid_credentials: "%s ou palavra-passe incorretos."
+login_other_method: "Escolher outro método de início de sessão."
 back_button: "Voltar"
-error_title: "Erro"
-approval_title: "Autorizar pedido"
-approval_client: "Cliente"
-approval_permissions: "Permissões"
-approval_approve: "Aprovar"
-approval_reject: "Rejeitar"
-device_title: "Autenticação de dispositivo"
-device_instructions: "Introduza o código apresentado no seu dispositivo."
-device_success_title: "Sucesso!"
-device_success_msg: "Autenticou o dispositivo com sucesso."
-oob_title: "Autenticação bem-sucedida"
-oob_instructions: "Copie este código, volte à sua aplicação e cole-o lá:"
-footer_copyright: "© %d Dex IdP. Todos os direitos reservados."
-# TOTP / MFA
-totp_label: "Código TOTP / App Autenticadora"
+
+# Segundo fator exigido pelo fornecedor de identidade (Keystone)
+totp_step_title: "Autenticação de dois fatores"
+totp_label: "Código de autenticação"
 totp_verify_button: "Verificar"
-totp_invalid: "Código TOTP inválido. Por favor, tente novamente."
-invalid_credentials: "Credenciais inválidas."
-signing_in: "A entrar..."
-trust_device_label: "Confiar neste dispositivo e ignorar o segundo fator enquanto a sessão continuar válida"
+totp_invalid: "Código de autenticação incorreto."
+trust_device_label: "Memorizar este dispositivo"
+
+# Segundo fator gerido pelo próprio dex
+totp_verify_title: "Autenticação de dois fatores"
+totp_verify_scan: "Leia o código QR com a sua aplicação de autenticação e introduza o código."
+totp_verify_enter: "Introduza o código da sua aplicação de autenticação."
+totp_verify_label: "Código de utilização única"
+totp_verify_invalid: "Código incorreto. Tente novamente."
+
+# Consentimento
+approval_title: "Conceder acesso"
+approval_would_like_to: "%s pretende:"
+approval_no_info: "%s não solicitou quaisquer dados pessoais"
+approval_grant_button: "Conceder acesso"
+approval_cancel_button: "Cancelar"
+
+# Fluxo de dispositivo
+device_title: "Introduza o código"
+device_submit: "Enviar"
+device_invalid: "Código inválido ou expirado"
+device_success_title: "Sessão iniciada para %s"
+device_success_msg: "Volte ao seu dispositivo para continuar"
+
+# Código fora de banda
+oob_title: "Sessão iniciada com sucesso"
+oob_instructions: "Copie este código, volte à sua aplicação e cole-o aí:"
+
+# Terminar sessão
+logout_confirm_title: "A terminar sessão"
+logout_confirm_msg: "Pretende terminar a sessão?"
+logout_button: "Terminar sessão"
+logout_done_title: "Sessão terminada"
+logout_done_msg: "A sua sessão foi terminada com sucesso."
+logout_no_session_title: "Sessão não encontrada"
+logout_no_session_msg: "Não foi encontrada nenhuma sessão ativa."
+logout_back: "Voltar à aplicação"
+
+# Página de sessão
+home_signed_in_with: "Sessão iniciada com"
+home_signed_in: "Sessão iniciada"
+home_session_expires_idle: "Expira por inatividade"
+home_session_ends: "A sessão termina"
+home_signed_in_from: "Sessão iniciada a partir de"
+home_groups: "Grupos"
+home_browser: "Navegador"
+home_logout: "Terminar sessão"
+home_not_signed_in: "Sem sessão iniciada"
+home_discovery: "Configuração OpenID"
+
+# Erros
+error_title: "Erro"

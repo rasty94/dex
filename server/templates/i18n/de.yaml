@@ -1,28 +1,73 @@
-login_title: "Melden Sie sich an"
+# Connector-Auswahl
+login_to_issuer: "Bei %s anmelden"
+login_with: "Anmelden mit %s"
+
+# Passwortformular
+login_title: "Melden Sie sich bei Ihrem Konto an"
 login_button: "Anmelden"
-login_with: "Anmelden mit"
+signing_in: "Anmeldung läuft..."
 username_label: "Benutzername"
 password_label: "Passwort"
 email_label: "E-Mail-Adresse"
 domain_label: "Domäne"
+remember_me: "Angemeldet bleiben"
+invalid_credentials: "%s oder Passwort ist falsch."
+login_other_method: "Andere Anmeldemethode wählen."
 back_button: "Zurück"
-error_title: "Fehler"
-approval_title: "Anfrage autorisieren"
-approval_client: "Client"
-approval_permissions: "Berechtigungen"
-approval_approve: "Genehmigen"
-approval_reject: "Ablehnen"
-device_title: "Geräteanmeldung"
-device_instructions: "Geben Sie den auf Ihrem Gerät angezeigten Code ein."
-device_success_title: "Erfolg!"
-device_success_msg: "Sie haben das Gerät erfolgreich authentifiziert."
+
+# Zweiter Faktor durch den Identitätsanbieter (Keystone)
+totp_step_title: "Zwei-Faktor-Authentifizierung"
+totp_label: "Authentifizierungscode"
+totp_verify_button: "Bestätigen"
+totp_invalid: "Ungültiger Authentifizierungscode."
+trust_device_label: "Dieses Gerät merken"
+
+# Zweiter Faktor durch dex selbst
+totp_verify_title: "Zwei-Faktor-Authentifizierung"
+totp_verify_scan: "Scannen Sie den QR-Code mit Ihrer Authenticator-App und geben Sie den Code ein."
+totp_verify_enter: "Geben Sie den Code aus Ihrer Authenticator-App ein."
+totp_verify_label: "Einmalcode"
+totp_verify_invalid: "Ungültiger Code. Bitte versuchen Sie es erneut."
+
+# Einwilligung
+approval_title: "Zugriff gewähren"
+approval_would_like_to: "%s möchte:"
+approval_no_info: "%s hat keine personenbezogenen Daten angefordert"
+approval_grant_button: "Zugriff gewähren"
+approval_cancel_button: "Abbrechen"
+
+# Geräte-Flow
+device_title: "Code eingeben"
+device_submit: "Absenden"
+device_invalid: "Ungültiger oder abgelaufener Code"
+device_success_title: "Anmeldung erfolgreich für %s"
+device_success_msg: "Kehren Sie zu Ihrem Gerät zurück, um fortzufahren"
+
+# Out-of-Band-Code
 oob_title: "Anmeldung erfolgreich"
-oob_instructions: "Bitte kopieren Sie diesen Code, wechseln Sie zu Ihrer Anwendung und fügen Sie ihn dort ein:"
-footer_copyright: "© %d Dex IdP. Alle Rechte vorbehalten."
-# TOTP / MFA
-totp_label: "TOTP / Authenticator-App-Code"
-totp_verify_button: "Verifizieren"
-totp_invalid: "Ungültiger TOTP-Code. Bitte versuchen Sie es erneut."
-invalid_credentials: "Ungültige Anmeldedaten."
-signing_in: "Anmelden..."
-trust_device_label: "Diesem Gerät vertrauen und den zweiten Faktor überspringen, solange die Sitzung gültig bleibt"
+oob_instructions: "Kopieren Sie diesen Code, wechseln Sie zu Ihrer Anwendung und fügen Sie ihn dort ein:"
+
+# Abmeldung
+logout_confirm_title: "Abmeldung"
+logout_confirm_msg: "Möchten Sie sich abmelden?"
+logout_button: "Abmelden"
+logout_done_title: "Abgemeldet"
+logout_done_msg: "Sie wurden erfolgreich abgemeldet."
+logout_no_session_title: "Sitzung nicht gefunden"
+logout_no_session_msg: "Keine aktive Sitzung gefunden."
+logout_back: "Zurück zur Anwendung"
+
+# Sitzungsseite
+home_signed_in_with: "Angemeldet mit"
+home_signed_in: "Angemeldet"
+home_session_expires_idle: "Läuft bei Inaktivität ab"
+home_session_ends: "Sitzung endet"
+home_signed_in_from: "Angemeldet von"
+home_groups: "Gruppen"
+home_browser: "Browser"
+home_logout: "Abmelden"
+home_not_signed_in: "Nicht angemeldet"
+home_discovery: "OpenID-Konfiguration"
+
+# Fehler
+error_title: "Fehler"

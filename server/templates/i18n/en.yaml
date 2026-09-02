@@ -1,28 +1,73 @@
+# Connector selection
+login_to_issuer: "Log in to %s"
+login_with: "Log in with %s"
+
+# Password form
 login_title: "Log in to your account"
 login_button: "Log in"
-login_with: "Log in with"
+signing_in: "Signing in..."
 username_label: "Username"
 password_label: "Password"
 email_label: "Email Address"
 domain_label: "Domain"
+remember_me: "Remember me"
+invalid_credentials: "Invalid %s and password."
+login_other_method: "Select another login method."
 back_button: "Back"
-error_title: "Error"
-approval_title: "Authorize Request"
-approval_client: "Client"
-approval_permissions: "Permissions"
-approval_approve: "Approve"
-approval_reject: "Reject"
-device_title: "Device Login"
-device_instructions: "Enter the code displayed on your device."
-device_success_title: "Success!"
-device_success_msg: "You have successfully authenticated the device."
+
+# Second factor enforced by the identity provider (Keystone)
+totp_step_title: "Two-factor authentication"
+totp_label: "Authentication code"
+totp_verify_button: "Verify"
+totp_invalid: "Invalid authentication code."
+trust_device_label: "Remember this device"
+
+# Second factor enforced by dex itself
+totp_verify_title: "Two-factor authentication"
+totp_verify_scan: "Scan the QR code below using your authenticator app, then enter the code."
+totp_verify_enter: "Enter the code from your authenticator app."
+totp_verify_label: "One-time code"
+totp_verify_invalid: "Invalid code. Please try again."
+
+# Consent
+approval_title: "Grant Access"
+approval_would_like_to: "%s would like to:"
+approval_no_info: "%s has not requested any personal information"
+approval_grant_button: "Grant Access"
+approval_cancel_button: "Cancel"
+
+# Device flow
+device_title: "Enter User Code"
+device_submit: "Submit"
+device_invalid: "Invalid or Expired User Code"
+device_success_title: "Login Successful for %s"
+device_success_msg: "Return to your device to continue"
+
+# Out-of-band code
 oob_title: "Login Successful"
 oob_instructions: "Please copy this code, switch to your application and paste it there:"
-footer_copyright: "© %d Dex IdP. All rights reserved."
-# TOTP / MFA
-totp_label: "TOTP / Authenticator App Code"
-totp_verify_button: "Verify"
-totp_invalid: "Invalid TOTP code. Please try again."
-invalid_credentials: "Invalid credentials."
-signing_in: "Signing in..."
-trust_device_label: "Trust this device and skip the second factor while the session stays valid"
+
+# Logout
+logout_confirm_title: "Logging Out"
+logout_confirm_msg: "Do you want to log out?"
+logout_button: "Log Out"
+logout_done_title: "Logged Out"
+logout_done_msg: "You have been successfully logged out."
+logout_no_session_title: "Session Not Found"
+logout_no_session_msg: "No active session found."
+logout_back: "Back to Application"
+
+# Session home page
+home_signed_in_with: "Signed in with"
+home_signed_in: "Signed in"
+home_session_expires_idle: "Expires if idle"
+home_session_ends: "Session ends"
+home_signed_in_from: "Signed in from"
+home_groups: "Groups"
+home_browser: "Browser"
+home_logout: "Log out"
+home_not_signed_in: "Not signed in"
+home_discovery: "OpenID configuration"
+
+# Errors
+error_title: "Error"

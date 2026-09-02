@@ -16,31 +16,31 @@
   <dl class="dex-facts">
     {{ if .ConnectorName }}
     <div class="dex-fact">
-      <dt>Signed in with</dt>
+      <dt>{{ .Tr.home_signed_in_with }}</dt>
       <dd>{{ .ConnectorName }}</dd>
     </div>
     {{ end }}
     {{ if .SignedInISO }}
     <div class="dex-fact">
-      <dt>Signed in</dt>
+      <dt>{{ .Tr.home_signed_in }}</dt>
       <dd><time datetime="{{ .SignedInISO }}">{{ .SignedInText }}</time></dd>
     </div>
     {{ end }}
     {{ if .SessionExpiresISO }}
     <div class="dex-fact">
-      <dt>{{ if .SessionExpiryIsIdle }}Expires if idle{{ else }}Session ends{{ end }}</dt>
+      <dt>{{ if .SessionExpiryIsIdle }}{{ .Tr.home_session_expires_idle }}{{ else }}{{ .Tr.home_session_ends }}{{ end }}</dt>
       <dd><time datetime="{{ .SessionExpiresISO }}">{{ .SessionExpiresText }}</time></dd>
     </div>
     {{ end }}
     {{ if .IPAddress }}
     <div class="dex-fact">
-      <dt>Signed in from</dt>
+      <dt>{{ .Tr.home_signed_in_from }}</dt>
       <dd>{{ .IPAddress }}</dd>
     </div>
     {{ end }}
     {{ if .Groups }}
     <div class="dex-fact">
-      <dt id="groups-label">Groups <span class="dex-count">{{ len .Groups }}</span></dt>
+      <dt id="groups-label">{{ .Tr.home_groups }} <span class="dex-count">{{ len .Groups }}</span></dt>
       <dd>
         <ul class="dex-groups" tabindex="0" aria-labelledby="groups-label">
           {{ range .Groups }}<li>{{ . }}</li>{{ end }}
@@ -50,18 +50,18 @@
     {{ end }}
     {{ if .UserAgent }}
     <div class="dex-fact">
-      <dt>Browser</dt>
+      <dt>{{ .Tr.home_browser }}</dt>
       <dd class="dex-fact__long">{{ .UserAgent }}</dd>
     </div>
     {{ end }}
   </dl>
 
   <div class="dex-home__actions">
-    <a href="{{ .LogoutURL }}" class="dex-btn theme-btn--primary">Log out</a>
+    <a href="{{ .LogoutURL }}" class="dex-btn theme-btn--primary">{{ .Tr.home_logout }}</a>
   </div>
   {{ else }}
   <div class="dex-home__empty">
-    <h2 class="dex-home__empty-title">Not signed in</h2>
+    <h2 class="dex-home__empty-title">{{ .Tr.home_not_signed_in }}</h2>
     <p class="dex-home__empty-text">
       This is the dex identity provider. Sign in from the application you want to use.
     </p>
@@ -69,7 +69,7 @@
   {{ end }}
 
   <div class="dex-home__footer">
-    <a href="{{ .DiscoveryURL }}" class="dex-home__link">OpenID configuration</a>
+    <a href="{{ .DiscoveryURL }}" class="dex-home__link">{{ .Tr.home_discovery }}</a>
   </div>
 </div>
 

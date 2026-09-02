@@ -2,30 +2,30 @@
 
 <div class="theme-panel">
   {{ if .ShowConfirmation }}
-  <h2 class="theme-heading">Logging Out</h2>
+  <h2 class="theme-heading">{{ .Tr.logout_confirm_title }}</h2>
   <div>
-    <div class="dex-subtle-text">Do you want to log out?</div>
+    <div class="dex-subtle-text">{{ .Tr.logout_confirm_msg }}</div>
   </div>
   <div class="theme-form-row">
     <form method="post" action="{{ .ReqPath }}">
-      <button type="submit" class="dex-btn theme-btn--primary">Log Out</button>
+      <button type="submit" class="dex-btn theme-btn--primary">{{ .Tr.logout_button }}</button>
     </form>
   </div>
   {{ else if .LoggedOut }}
-  <h2 class="theme-heading">Logged Out</h2>
+  <h2 class="theme-heading">{{ .Tr.logout_done_title }}</h2>
   <div>
-    <div class="dex-subtle-text">You have been successfully logged out.</div>
+    <div class="dex-subtle-text">{{ .Tr.logout_done_msg }}</div>
   </div>
   {{ else }}
-  <h2 class="theme-heading">Session Not Found</h2>
+  <h2 class="theme-heading">{{ .Tr.logout_no_session_title }}</h2>
   <div>
-    <div class="dex-subtle-text">No active session found.</div>
+    <div class="dex-subtle-text">{{ .Tr.logout_no_session_msg }}</div>
   </div>
   {{ end }}
 
   {{ if .BackURL }}
   <div class="theme-form-row">
-    <a href="{{ .BackURL }}" class="dex-subtle-text">&larr; Back to Application</a>
+    <a href="{{ .BackURL }}" class="dex-subtle-text">&larr; {{ .Tr.logout_back }}</a>
   </div>
   {{ end }}
 

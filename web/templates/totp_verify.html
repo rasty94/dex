@@ -1,20 +1,20 @@
 {{ template "header.html" . }}
 
 <div class="theme-panel">
-  <h2 class="theme-heading">Two-factor authentication</h2>
+  <h2 class="theme-heading">{{ .Tr.totp_verify_title }}</h2>
   {{ if not (eq .QRCode "") }}
-  <p>Scan the QR code below using your authenticator app, then enter the code.</p>
+  <p>{{ .Tr.totp_verify_scan }}</p>
   <div style="text-align: center; margin: 1em 0;">
     <img src="data:image/png;base64,{{ .QRCode }}" alt="QR code" width="200" height="200"/>
   </div>
   {{ else }}
-  <p>Enter the code from your authenticator app.</p>
+  <p>{{ .Tr.totp_verify_enter }}</p>
   <p class="theme-heading">{{ .Issuer }}</p>
   {{ end }}
   <form method="post" action="{{ .PostURL }}">
     <div class="theme-form-row">
       <div class="theme-form-label">
-        <label for="totp">One-time code</label>
+        <label for="totp">{{ .Tr.totp_verify_label }}</label>
       </div>
       <input tabindex="1" required id="totp" name="totp" type="text"
              inputmode="numeric" pattern="[0-9]*" maxlength="6"
@@ -25,11 +25,11 @@
 
     {{ if .Invalid }}
     <div id="login-error" class="dex-error-box">
-      Invalid code. Please try again.
+      {{ .Tr.totp_verify_invalid }}
     </div>
     {{ end }}
 
-    <button tabindex="2" id="submit-login" type="submit" class="dex-btn theme-btn--primary">Verify</button>
+    <button tabindex="2" id="submit-login" type="submit" class="dex-btn theme-btn--primary">{{ .Tr.totp_verify_button }}</button>
   </form>
 </div>
 

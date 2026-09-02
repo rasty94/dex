@@ -389,3 +389,68 @@ func mustSealWith(t *testing.T, token string, key []byte) string {
 	require.NoError(t, err)
 	return v
 }
+
+// --- i18n ---
+
+// The pages must actually come out in the requested language, and the strings
+// with a placeholder must interpolate rather than render the raw "%s".
+func TestLoginPagesAreTranslated(t *testing.T) {
+	tests := []struct {
+		name           string
+		acceptLanguage string
+		wantCredential string // on the password form
+		wantSecondStep string // on the second-factor step
+	}{
+		{name: "default is English", acceptLanguage: "", wantCredential: "Password", wantSecondStep: "Authentication code"},
+		{name: "Spanish", acceptLanguage: "es-ES,es;q=0.9", wantCredential: "Contraseña", wantSecondStep: "Código de autenticación"},
+		{name: "French", acceptLanguage: "fr", wantCredential: "Mot de passe", wantSecondStep: "Code d&#39;authentification"},
+		{name: "German", acceptLanguage: "de-DE", wantCredential: "Passwort", wantSecondStep: "Authentifizierungscode"},
+		{name: "Portuguese", acceptLanguage: "pt-PT", wantCredential: "Palavra-passe", wantSecondStep: "Código de autenticação"},
+		{name: "unknown falls back to English", acceptLanguage: "kl-KL", wantCredential: "Password", wantSecondStep: "Authentication code"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, _, authID := newTOTPTest(t)
+
+			// The credential form.
+			req := httptest.NewRequest(http.MethodGet, "/auth/keystone/login?state="+authID, nil)
+			req.Header.Set("Accept-Language", tc.acceptLanguage)
+			w := httptest.NewRecorder()
+			server.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Contains(t, w.Body.String(), tc.wantCredential)
+
+			// The second-factor step.
+			form := url.Values{"login": {"alice"}, "password": {"correct-password"}}
+			req = httptest.NewRequest(http.MethodPost, "/auth/keystone/login?state="+authID, strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Accept-Language", tc.acceptLanguage)
+			w = httptest.NewRecorder()
+			server.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Contains(t, w.Body.String(), tc.wantSecondStep)
+
+			// A string with a placeholder must be interpolated, not shown raw.
+			require.NotContains(t, w.Body.String(), "%s", "a translation placeholder reached the page unformatted")
+		})
+	}
+}
+
+// A wrong password renders the "invalid credentials" string, which takes the
+// username prompt as a parameter — the case most likely to leak a raw "%s".
+func TestInvalidCredentialsMessageIsInterpolated(t *testing.T) {
+	server, _, authID := newTOTPTest(t)
+
+	form := url.Values{"login": {"alice"}, "password": {"wrong"}}
+	req := httptest.NewRequest(http.MethodPost, "/auth/keystone/login?state="+authID, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept-Language", "es")
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Contains(t, w.Body.String(), "o contraseña incorrectos")
+	require.NotContains(t, w.Body.String(), "%s")
+	require.NotContains(t, w.Body.String(), "%!")
+}

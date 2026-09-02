@@ -1,28 +1,73 @@
+# Sélection du connecteur
+login_to_issuer: "Connectez-vous à %s"
+login_with: "Se connecter avec %s"
+
+# Formulaire de mot de passe
 login_title: "Connectez-vous à votre compte"
 login_button: "Se connecter"
-login_with: "Se connecter avec"
+signing_in: "Connexion en cours..."
 username_label: "Nom d'utilisateur"
 password_label: "Mot de passe"
 email_label: "Adresse e-mail"
 domain_label: "Domaine"
+remember_me: "Se souvenir de moi"
+invalid_credentials: "%s ou mot de passe incorrect."
+login_other_method: "Choisir une autre méthode de connexion."
 back_button: "Retour"
-error_title: "Erreur"
-approval_title: "Autoriser la demande"
-approval_client: "Client"
-approval_permissions: "Autorisations"
-approval_approve: "Approuver"
-approval_reject: "Refuser"
-device_title: "Connexion depuis un appareil"
-device_instructions: "Saisissez le code affiché sur votre appareil."
-device_success_title: "Succès !"
-device_success_msg: "Vous avez authentifié l'appareil avec succès."
+
+# Second facteur imposé par le fournisseur d'identité (Keystone)
+totp_step_title: "Authentification à deux facteurs"
+totp_label: "Code d'authentification"
+totp_verify_button: "Vérifier"
+totp_invalid: "Code d'authentification incorrect."
+trust_device_label: "Se souvenir de cet appareil"
+
+# Second facteur géré par dex lui-même
+totp_verify_title: "Authentification à deux facteurs"
+totp_verify_scan: "Scannez le QR code avec votre application d'authentification, puis saisissez le code."
+totp_verify_enter: "Saisissez le code de votre application d'authentification."
+totp_verify_label: "Code à usage unique"
+totp_verify_invalid: "Code incorrect. Veuillez réessayer."
+
+# Consentement
+approval_title: "Accorder l'accès"
+approval_would_like_to: "%s souhaite :"
+approval_no_info: "%s n'a demandé aucune donnée personnelle"
+approval_grant_button: "Accorder l'accès"
+approval_cancel_button: "Annuler"
+
+# Flux par appareil
+device_title: "Saisissez le code"
+device_submit: "Envoyer"
+device_invalid: "Code invalide ou expiré"
+device_success_title: "Connexion réussie pour %s"
+device_success_msg: "Retournez à votre appareil pour continuer"
+
+# Code hors bande
 oob_title: "Connexion réussie"
 oob_instructions: "Copiez ce code, revenez à votre application et collez-le :"
-footer_copyright: "© %d Dex IdP. Tous droits réservés."
-# TOTP / MFA
-totp_label: "Code TOTP / Application d'authentification"
-totp_verify_button: "Vérifier"
-totp_invalid: "Code TOTP invalide. Veuillez réessayer."
-invalid_credentials: "Identifiants incorrects."
-signing_in: "Connexion en cours..."
-trust_device_label: "Faire confiance à cet appareil et ignorer le second facteur tant que la session reste valide"
+
+# Déconnexion
+logout_confirm_title: "Déconnexion"
+logout_confirm_msg: "Voulez-vous vous déconnecter ?"
+logout_button: "Se déconnecter"
+logout_done_title: "Déconnecté"
+logout_done_msg: "Vous avez été déconnecté avec succès."
+logout_no_session_title: "Session introuvable"
+logout_no_session_msg: "Aucune session active trouvée."
+logout_back: "Retour à l'application"
+
+# Page de session
+home_signed_in_with: "Connecté avec"
+home_signed_in: "Connecté"
+home_session_expires_idle: "Expire après inactivité"
+home_session_ends: "Fin de la session"
+home_signed_in_from: "Connecté depuis"
+home_groups: "Groupes"
+home_browser: "Navigateur"
+home_logout: "Se déconnecter"
+home_not_signed_in: "Non connecté"
+home_discovery: "Configuration OpenID"
+
+# Erreurs
+error_title: "Erreur"
