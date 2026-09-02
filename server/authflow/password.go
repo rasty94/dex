@@ -68,6 +68,10 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 
 	rememberMe := h.Sessions.RememberMeDefault()
 
+	// This page renders in three places below, so brand the request once here
+	// rather than wrapping each call.
+	r = templates.WithClientID(r, authReq.ClientID)
+
 	// The domain selector only makes sense for a connector that authenticates
 	// against more than one, which today means Keystone. Asking storage for the
 	// type is what keeps the template free of connector-specific logic.

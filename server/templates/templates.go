@@ -2,6 +2,7 @@ package templates
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"html/template"
 	"io"
@@ -57,6 +58,9 @@ type Templates struct {
 	webauthnVerifyTmpl *template.Template
 	homeTmpl           *template.Template
 	logoutTmpl         *template.Template
+
+	clientThemes map[string]ClientTheme
+	clientLogo   func(ctx context.Context, clientID string) string
 }
 
 type Config struct {
@@ -66,6 +70,14 @@ type Config struct {
 	Theme     string
 	IssuerURL string
 	Extra     map[string]string
+
+	// ClientThemes overrides the login page branding per client_id.
+	ClientThemes map[string]ClientTheme
+
+	// ClientLogo returns a client's own logo URL, or "" when there is none. It
+	// is a narrow function rather than the storage interface so this package
+	// does not depend on storage just to read one field. May be nil.
+	ClientLogo func(ctx context.Context, clientID string) string
 }
 
 func getFuncMap(c Config) (template.FuncMap, error) {
@@ -188,6 +200,9 @@ func loadTemplates(c Config, templatesDir string) (*Templates, error) {
 		webauthnVerifyTmpl: tmpls.Lookup(tmplWebAuthnVerify),
 		homeTmpl:           tmpls.Lookup(tmplHome),
 		logoutTmpl:         tmpls.Lookup(tmplLogout),
+
+		clientThemes: c.ClientThemes,
+		clientLogo:   c.ClientLogo,
 	}, nil
 }
 
@@ -300,7 +315,7 @@ func (t *Templates) Device(r *http.Request, w http.ResponseWriter, postURL strin
 		PostURL  string
 		UserCode string
 		Invalid  bool
-	}{common(r), postURL, userCode, lastWasInvalid}
+	}{t.common(r), postURL, userCode, lastWasInvalid}
 	return renderTemplate(w, t.deviceTmpl, data)
 }
 
@@ -308,7 +323,7 @@ func (t *Templates) DeviceSuccess(r *http.Request, w http.ResponseWriter, client
 	data := struct {
 		templateCommon
 		ClientName string
-	}{common(r), clientName}
+	}{t.common(r), clientName}
 	return renderTemplate(w, t.deviceSuccessTmpl, data)
 }
 
@@ -317,7 +332,7 @@ func (t *Templates) Login(r *http.Request, w http.ResponseWriter, connectors []C
 	data := struct {
 		templateCommon
 		Connectors []ConnectorInfo
-	}{common(r), connectors}
+	}{t.common(r), connectors}
 	return renderTemplate(w, t.loginTmpl, data)
 }
 
@@ -358,7 +373,7 @@ func (t *Templates) Password(r *http.Request, w http.ResponseWriter, postURL, la
 		ShowRememberMe    bool
 		RememberMeChecked bool
 	}{
-		templateCommon: common(r),
+		templateCommon: t.common(r),
 		PasswordForm:   form,
 		PostURL:        postURL,
 		BackLink:       backLink,
@@ -388,7 +403,7 @@ func (t *Templates) Approval(r *http.Request, w http.ResponseWriter, authReqID, 
 		Client    string
 		AuthReqID string
 		Scopes    []string
-	}{common(r), username, clientName, authReqID, accesses}
+	}{t.common(r), username, clientName, authReqID, accesses}
 	return renderTemplate(w, t.approvalTmpl, data)
 }
 
@@ -403,7 +418,7 @@ func (t *Templates) TOTPVerify(r *http.Request, w http.ResponseWriter, postURL, 
 		Issuer    string
 		Connector string
 		QRCode    string
-	}{common(r), postURL, lastWasInvalid, issuer, connector, qrCode}
+	}{t.common(r), postURL, lastWasInvalid, issuer, connector, qrCode}
 	return renderTemplate(w, t.totpVerifyTmpl, data)
 }
 
@@ -443,7 +458,7 @@ func (t *Templates) HasHome() bool {
 }
 
 func (t *Templates) Home(r *http.Request, w http.ResponseWriter, data HomeData) error {
-	data.templateCommon = common(r)
+	data.templateCommon = t.common(r)
 	return renderTemplate(w, t.homeTmpl, data)
 }
 
@@ -453,7 +468,7 @@ func (t *Templates) Logout(r *http.Request, w http.ResponseWriter, backURL strin
 		BackURL          string
 		LoggedOut        bool
 		ShowConfirmation bool
-	}{common(r), backURL, loggedOut, showConfirmation}
+	}{t.common(r), backURL, loggedOut, showConfirmation}
 	return renderTemplate(w, t.logoutTmpl, data)
 }
 
@@ -464,7 +479,7 @@ func (t *Templates) WebAuthnVerify(r *http.Request, w http.ResponseWriter, mode,
 		// from user input to prevent XSS in the template's script context.
 		Mode            string
 		AuthenticatorID string
-	}{common(r), mode, authenticatorID}
+	}{t.common(r), mode, authenticatorID}
 	return renderTemplate(w, t.webauthnVerifyTmpl, data)
 }
 
@@ -472,7 +487,7 @@ func (t *Templates) OOB(r *http.Request, w http.ResponseWriter, code string) err
 	data := struct {
 		templateCommon
 		Code string
-	}{common(r), code}
+	}{t.common(r), code}
 	return renderTemplate(w, t.oobTmpl, data)
 }
 
@@ -491,7 +506,7 @@ func (t *Templates) Err(r *http.Request, w http.ResponseWriter, errCode int, err
 		templateCommon
 		ErrType string
 		ErrMsg  string
-	}{common(r), http.StatusText(errCode), errMsg}
+	}{t.common(r), http.StatusText(errCode), errMsg}
 	if err := t.errorTmpl.Execute(w, data); err != nil {
 		return fmt.Errorf("rendering template %s failed: %s", t.errorTmpl.Name(), err)
 	}
@@ -506,13 +521,21 @@ type templateCommon struct {
 	// Tr is the translation map for this request's Accept-Language. Templates
 	// read it as {{ .Tr.some_key }}.
 	Tr map[string]string
+	// LogoURL and PrimaryColor brand the page for the client being logged into.
+	// Empty means the global frontend branding, which is what the templates fall
+	// back to.
+	LogoURL      string
+	PrimaryColor string
 }
 
 // common builds the shared template data from the request.
-func common(r *http.Request) templateCommon {
+func (t *Templates) common(r *http.Request) templateCommon {
+	theme := t.clientTheme(r)
 	return templateCommon{
-		ReqPath: r.URL.Path,
-		Tr:      GetTranslations(r.Header.Get("Accept-Language")),
+		ReqPath:      r.URL.Path,
+		Tr:           GetTranslations(r.Header.Get("Accept-Language")),
+		LogoURL:      theme.LogoURL,
+		PrimaryColor: theme.PrimaryColor,
 	}
 }
 

@@ -16,7 +16,9 @@ import (
 	"github.com/dexidp/dex/connector/keystone"
 	"github.com/dexidp/dex/server/connectors"
 	"github.com/dexidp/dex/server/internal"
+	"github.com/dexidp/dex/server/templates"
 	"github.com/dexidp/dex/storage"
+	dexweb "github.com/dexidp/dex/web"
 )
 
 // totpConnector stands in for Keystone: it reports that a second factor is
@@ -453,4 +455,87 @@ func TestInvalidCredentialsMessageIsInterpolated(t *testing.T) {
 	require.Contains(t, w.Body.String(), "o contraseña incorrectos")
 	require.NotContains(t, w.Body.String(), "%s")
 	require.NotContains(t, w.Body.String(), "%!")
+}
+
+// --- per-client branding ---
+
+// setTheme rebuilds the flow's templates with a per-client theme and a stub for
+// the client's own logo, the way the server assembles them from config.
+func setTheme(t *testing.T, server *testServer, themes map[string]templates.ClientTheme, clientLogo func(context.Context, string) string) {
+	t.Helper()
+	//nolint:dogsled // only the templates are needed here
+	_, _, _, tmpls, err := templates.LoadWebConfig(templates.Config{
+		WebFS:        dexweb.FS(),
+		IssuerURL:    server.IssuerURL.String(),
+		ClientThemes: themes,
+		ClientLogo:   clientLogo,
+	})
+	require.NoError(t, err)
+	server.Templates = tmpls
+}
+
+func TestPerClientBranding(t *testing.T) {
+	const clientID = "example-app"
+
+	tests := []struct {
+		name       string
+		themes     map[string]templates.ClientTheme
+		clientLogo func(context.Context, string) string
+		wantLogo   string
+		wantColor  string
+	}{
+		{
+			name:      "no theme leaves the global branding",
+			wantLogo:  "theme/logo.png",
+			wantColor: "",
+		},
+		{
+			name:      "configured theme wins",
+			themes:    map[string]templates.ClientTheme{clientID: {LogoURL: "custom/logo.png", PrimaryColor: "#00aaff"}},
+			wantLogo:  "custom/logo.png",
+			wantColor: "#00aaff",
+		},
+		{
+			name:       "the client's own logo fills in when the theme sets none",
+			themes:     map[string]templates.ClientTheme{clientID: {PrimaryColor: "#123456"}},
+			clientLogo: func(context.Context, string) string { return "from-storage.png" },
+			wantLogo:   "from-storage.png",
+			wantColor:  "#123456",
+		},
+		{
+			name:       "a theme for another client does not leak",
+			themes:     map[string]templates.ClientTheme{"someone-else": {LogoURL: "other.png", PrimaryColor: "#abcdef"}},
+			clientLogo: func(context.Context, string) string { return "" },
+			wantLogo:   "theme/logo.png",
+			wantColor:  "",
+		},
+		{
+			name:       "a storage failure falls back to the global logo",
+			themes:     map[string]templates.ClientTheme{clientID: {}},
+			clientLogo: func(context.Context, string) string { return "" },
+			wantLogo:   "theme/logo.png",
+			wantColor:  "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, _, authID := newTOTPTest(t)
+			setTheme(t, server, tc.themes, tc.clientLogo)
+
+			req := httptest.NewRequest(http.MethodGet, "/auth/keystone/login?state="+authID, nil)
+			w := httptest.NewRecorder()
+			server.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			body := w.Body.String()
+			require.Contains(t, body, tc.wantLogo)
+
+			if tc.wantColor == "" {
+				require.NotContains(t, body, "--primary-color", "no color configured, so no style block")
+				return
+			}
+			require.Contains(t, body, "--primary-color: "+tc.wantColor)
+		})
+	}
 }

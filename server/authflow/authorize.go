@@ -164,7 +164,7 @@ func (h *Handler) handleAuthorization(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	if err := h.Templates.Login(r, w, connectorInfos); err != nil {
+	if err := h.Templates.Login(templates.WithClientID(r, r.Form.Get("client_id")), w, connectorInfos); err != nil {
 		h.Logger.ErrorContext(r.Context(), "server template error", "err", err)
 	}
 }

@@ -1,11 +1,13 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/dexidp/dex/server/oauth2"
+	"github.com/dexidp/dex/server/templates"
 	"github.com/dexidp/dex/storage/memory"
 )
 
@@ -113,5 +115,30 @@ func TestNormalizeConfigRejects(t *testing.T) {
 			_, err := normalizeConfig(&c)
 			require.ErrorContains(t, err, tc.errMsg)
 		})
+	}
+}
+
+// A bad primaryColor must be refused when the config loads. It reaches the page
+// inside a <style> block, which html/template does not escape for us, so config
+// load is the only place it can be stopped.
+func TestClientThemeRejectedAtConfigLoad(t *testing.T) {
+	withTheme := func(theme templates.ClientTheme) Config {
+		c := baseConfig(t)
+		c.Web.ClientThemes = map[string]templates.ClientTheme{"example-app": theme}
+		return c
+	}
+
+	good := withTheme(templates.ClientTheme{PrimaryColor: "#00aaff"})
+	if _, err := normalizeConfig(&good); err != nil {
+		t.Fatalf("a valid hex color should load: %v", err)
+	}
+
+	bad := withTheme(templates.ClientTheme{PrimaryColor: "#fff; } body { display:none"})
+	_, err := normalizeConfig(&bad)
+	if err == nil {
+		t.Fatal("a color that closes the CSS rule must be refused at config load")
+	}
+	if !strings.Contains(err.Error(), "example-app") {
+		t.Errorf("the error should name the offending client, got: %v", err)
 	}
 }

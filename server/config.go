@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -144,6 +145,9 @@ type WebConfig struct {
 
 	// Map of extra values passed into the templates
 	Extra map[string]string
+
+	// Per client_id branding overrides for the login pages, keyed by client ID.
+	ClientThemes map[string]templates.ClientTheme
 }
 
 func value(val, defaultValue time.Duration) time.Duration {
@@ -206,6 +210,12 @@ func normalizeConfig(c *Config) (resolvedConfig, error) {
 	responseTypes, grantTypes, err := supportedTypes(c)
 	if err != nil {
 		return resolvedConfig{}, err
+	}
+
+	for clientID, theme := range c.Web.ClientThemes {
+		if err := theme.Validate(); err != nil {
+			return resolvedConfig{}, fmt.Errorf("server: invalid theme for client %q: %v", clientID, err)
+		}
 	}
 
 	static, theme, robots, tmpls, err := templates.LoadWebConfig(webConfig(c))
@@ -292,11 +302,22 @@ func webConfig(c *Config) templates.Config {
 	}
 
 	return templates.Config{
-		WebFS:     webFS,
-		LogoURL:   c.Web.LogoURL,
-		IssuerURL: c.Issuer,
-		Issuer:    c.Web.Issuer,
-		Theme:     c.Web.Theme,
-		Extra:     c.Web.Extra,
+		WebFS:        webFS,
+		LogoURL:      c.Web.LogoURL,
+		IssuerURL:    c.Issuer,
+		Issuer:       c.Web.Issuer,
+		Theme:        c.Web.Theme,
+		Extra:        c.Web.Extra,
+		ClientThemes: c.Web.ClientThemes,
+		// A client's own logo, read straight from the storage model, so a
+		// deployment gets per-client logos without configuring anything. A
+		// failure is not worth reporting: the page falls back to the global logo.
+		ClientLogo: func(ctx context.Context, clientID string) string {
+			client, err := c.Storage.GetClient(ctx, clientID)
+			if err != nil {
+				return ""
+			}
+			return client.LogoURL
+		},
 	}
 }

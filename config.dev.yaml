@@ -25,6 +25,17 @@ grpc:
   #   - name: ci
   #     token: another-long-random-string
 
+# Per-client branding for the login pages. Without an entry a client gets its own
+# logoURL from storage, and failing that the global frontend logo. primaryColor
+# is interpolated into a <style> block, so only a hex colour is accepted and dex
+# refuses to start on anything else.
+#
+# frontend:
+#   clientThemes:
+#     example-app:
+#       logoURL: theme/example-logo.png
+#       primaryColor: "#00aaff"
+
 # "Remember this device" on the second-factor step, for connectors whose
 # provider enforces the factor itself (Keystone). The cookie holds the token the
 # provider issued, and the next login revalidates it instead of asking for the
