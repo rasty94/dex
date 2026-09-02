@@ -4,6 +4,10 @@ Versiones de este fork sobre la base de [dexidp/dex](https://github.com/dexidp/d
 
 El formato sigue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+Las etiquetas del fork llevan el prefijo `fork-v` (`fork-v2.0.0`). El esquema `v2.x` es
+de dexidp/dex, que va por la `v2.45.1`, y este repositorio tiene todas sus etiquetas por
+el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguiente.
+
 ---
 
 ## [Unreleased]
