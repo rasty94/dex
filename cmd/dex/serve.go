@@ -419,7 +419,7 @@ func runServe(options serveOptions) error {
 		// Published for components that cannot be handed a dependency: see
 		// pkg/valkey/registry.go.
 		dexvalkey.SetShared(valkeyClient)
-		logger.Info("config valkey", "address", c.Valkey.Address, "key_prefix", c.Valkey.KeyPrefix)
+		logger.Info("config valkey", "addresses", c.Valkey.Addresses, "mode", c.Valkey.Mode, "key_prefix", c.Valkey.KeyPrefix)
 		valkeyClient.WarnIfKeysCanBeEvicted(context.Background(), logger)
 	}
 

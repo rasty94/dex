@@ -54,7 +54,7 @@ func run() error {
 	}
 	if vk != nil {
 		defer vk.Close()
-		logger.Info("config valkey", "address", c.Valkey.Address, "key_prefix", c.Valkey.KeyPrefix)
+		logger.Info("config valkey", "addresses", c.Valkey.Addresses, "mode", c.Valkey.Mode, "key_prefix", c.Valkey.KeyPrefix)
 		vk.WarnIfKeysCanBeEvicted(ctx, logger)
 	}
 

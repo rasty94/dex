@@ -23,7 +23,7 @@ func TestNoAddressMeansNoClient(t *testing.T) {
 
 func TestNewPingsAndPrefixes(t *testing.T) {
 	m := miniredis.RunT(t)
-	c, err := New(t.Context(), Config{Address: m.Addr(), KeyPrefix: "dex:"})
+	c, err := New(t.Context(), Config{Addresses: []string{m.Addr()}, KeyPrefix: "dex:"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestNewPingsAndPrefixes(t *testing.T) {
 // services would otherwise list live tokens and usernames as key names.
 func TestHashKeyHidesTheSecret(t *testing.T) {
 	m := miniredis.RunT(t)
-	c, err := New(t.Context(), Config{Address: m.Addr(), KeyPrefix: "dex:"})
+	c, err := New(t.Context(), Config{Addresses: []string{m.Addr()}, KeyPrefix: "dex:"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestUnreachableAddressFailsToStart(t *testing.T) {
 	addr := m.Addr()
 	m.Close()
 
-	if _, err := New(context.Background(), Config{Address: addr}); err == nil {
+	if _, err := New(context.Background(), Config{Addresses: []string{addr}}); err == nil {
 		t.Fatal("an unreachable address must fail to start")
 	}
 }

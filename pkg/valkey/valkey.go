@@ -18,22 +18,6 @@ import (
 	valkeygo "github.com/valkey-io/valkey-go"
 )
 
-// Config is the shared store. An empty Address keeps every caller on its own
-// in-process state, which is the default and needs no server at all.
-type Config struct {
-	Address   string    `json:"address"`
-	Username  string    `json:"username"`
-	Password  string    `json:"password"`
-	DB        int       `json:"db"`
-	KeyPrefix string    `json:"keyPrefix"`
-	TLS       TLSConfig `json:"tls"`
-}
-
-type TLSConfig struct {
-	CACert             string `json:"caCert"`
-	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
-}
-
 // Client is the shared connection. The valkey-go client is embedded, so callers
 // build commands with c.B() and run them with c.Do() as usual.
 //
@@ -45,15 +29,15 @@ type Client struct {
 	prefix string
 }
 
-// New opens and verifies the connection. An empty address returns (nil, nil):
+// New opens and verifies the connection. Empty addresses return (nil, nil):
 // that is the configuration saying everything stays in memory.
 func New(ctx context.Context, cfg Config) (*Client, error) {
-	if cfg.Address == "" {
+	if len(cfg.Addresses) == 0 {
 		return nil, nil
 	}
 
 	opt := valkeygo.ClientOption{
-		InitAddress: []string{cfg.Address},
+		InitAddress: cfg.Addresses,
 		Username:    cfg.Username,
 		Password:    cfg.Password,
 		SelectDB:    cfg.DB,
