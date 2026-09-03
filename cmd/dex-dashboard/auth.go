@@ -191,7 +191,7 @@ func newAuthenticator(ctx context.Context, c *Config, vk *dexvalkey.Client, logg
 		admin:        c.Admin,
 		secure:       strings.HasPrefix(c.BaseURL, "https://"),
 		reauthWindow: c.Admin.ReauthWindow,
-		loginLimiter: newAttemptLimiter(10, time.Minute),
+		loginLimiter: newAttemptLimiter(10, time.Minute, vk),
 		logger:       logger,
 	}, nil
 }
@@ -257,7 +257,7 @@ func (a *authenticator) readCookie(r *http.Request, name string) (*http.Cookie, 
 // without it, a re-authentication check would be satisfied by a silent redirect
 // and prove nothing.
 func (a *authenticator) startLogin(w http.ResponseWriter, r *http.Request, next string, forceReauth bool) {
-	if !a.loginLimiter.allow(clientAddr(r)) {
+	if !a.loginLimiter.allow(r.Context(), clientAddr(r)) {
 		a.logger.Warn("login rate limit exceeded", "addr", clientAddr(r))
 		http.Error(w, "Too many login attempts. Try again in a minute.", http.StatusTooManyRequests)
 		return
@@ -495,26 +495,46 @@ func (a *authenticator) requireCSRF(next http.HandlerFunc) http.HandlerFunc {
 // a broken client, or someone probing, can drive an unbounded number of
 // authorization redirects and token exchanges at dex.
 //
-// ponytail: in-process and keyed by address only, matching how the sessions are
-// stored. It is a brake on noise, not a defense against a botnet.
+// ponytail: keyed by address only, matching how the sessions are stored. It is
+// a brake on noise, not a defense against a botnet.
 type attemptLimiter struct {
 	limit  int
 	window time.Duration
+
+	// shared counts in Valkey so replicas of this panel share one budget. When
+	// it is nil, or when it fails, the map below is used: that degrades to the
+	// behavior of a single replica rather than to no limit at all.
+	shared *dexvalkey.FixedWindow
 
 	mu       sync.Mutex
 	attempts map[string][]time.Time
 }
 
-func newAttemptLimiter(limit int, window time.Duration) *attemptLimiter {
-	return &attemptLimiter{limit: limit, window: window, attempts: map[string][]time.Time{}}
+func newAttemptLimiter(limit int, window time.Duration, vk *dexvalkey.Client) *attemptLimiter {
+	l := &attemptLimiter{limit: limit, window: window, attempts: map[string][]time.Time{}}
+	if vk != nil {
+		l.shared = dexvalkey.NewFixedWindow(vk, "dl")
+	}
+	return l
 }
 
 // allow records an attempt from key and reports whether it may proceed.
-func (l *attemptLimiter) allow(key string) bool {
+func (l *attemptLimiter) allow(ctx context.Context, key string) bool {
 	if l == nil {
 		return true
 	}
+	if l.shared != nil {
+		if n, err := l.shared.Incr(ctx, key, l.window); err == nil {
+			return n <= int64(l.limit)
+		}
+		// Fall through: a Valkey outage must not turn the throttle off.
+	}
+	return l.allowLocal(key)
+}
 
+// allowLocal is the in-process window, used with no shared store and when the
+// shared store cannot be reached.
+func (l *attemptLimiter) allowLocal(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
