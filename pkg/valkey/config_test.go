@@ -12,6 +12,7 @@ func TestConfigValidate(t *testing.T) {
 		wantErr string // substring; empty means the config is valid
 	}{
 		{"no address at all means everything stays in memory", Config{}, ""},
+		{"the old address field is rejected, not aliased", Config{Address: "a:6379"}, "addresses"},
 		{"standalone is the default", Config{Addresses: []string{"a:6379"}}, ""},
 		{"an unknown mode names the three that exist", Config{Mode: "clustered", Addresses: []string{"a:6379"}}, "standalone"},
 		{"standalone refuses a second address", Config{Mode: ModeStandalone, Addresses: []string{"a:6379", "b:6379"}}, "mode"},

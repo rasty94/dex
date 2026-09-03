@@ -16,6 +16,14 @@ const (
 // Config is the shared store. Empty Addresses keeps every caller on its own
 // in-process state, which is the default and needs no server at all.
 type Config struct {
+	// Address is the key this package used before it learned about sentinel and
+	// cluster. It is kept only to refuse it: an unknown field is dropped in
+	// silence by both binaries, so a configuration still carrying it would start
+	// with no shared store and no complaint -- the login rate limiter quietly
+	// back to counting per replica. Delete this field once no deployment can
+	// plausibly still carry the old key.
+	Address string `json:"address"`
+
 	// Mode is standalone, sentinel or cluster. Empty means standalone.
 	Mode string `json:"mode"`
 	// Addresses are the data nodes, or the sentinels when Mode is sentinel.
@@ -53,6 +61,10 @@ func (c Config) mode() string {
 // lives here rather than in cmd/dex so the dashboard, which has no Validate of
 // its own, gets the same checks.
 func (c Config) Validate() error {
+	if c.Address != "" {
+		return fmt.Errorf("valkey: the address field was replaced by addresses, a list; write addresses: [%q]", c.Address)
+	}
+
 	if len(c.Addresses) == 0 {
 		// No shared store at all: the default, and not an error. A mode without
 		// addresses is a mistake, though -- somebody meant to configure this.
