@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
+	"sort"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
 	api "github.com/dexidp/dex/api/v2"
+	conns "github.com/dexidp/dex/server/connectors"
 	"github.com/dexidp/dex/server/tokens"
 )
 
@@ -414,14 +417,29 @@ func (d *dashboard) handleClientSave(w http.ResponseWriter, r *http.Request) {
 	redirectURIs := splitLines(r.FormValue("redirect_uris"))
 	trustedPeers := splitLines(r.FormValue("trusted_peers"))
 	name := strings.TrimSpace(r.FormValue("name"))
+	allowedConnectors := splitLines(r.FormValue("allowed_connectors"))
+	ssoSharedWith := splitLines(r.FormValue("sso_shared_with"))
+	postLogoutRedirectURIs := splitLines(r.FormValue("post_logout_redirect_uris"))
+	backchannelLogoutURI := strings.TrimSpace(r.FormValue("backchannel_logout_uri"))
+	refreshTokenLifetime := strings.TrimSpace(r.FormValue("refresh_token_lifetime"))
 
 	if r.FormValue("editing") == "1" {
+		// The two single-value fields are sent as pointers even when empty: dex
+		// made them optional so that an empty value clears them, which is the
+		// only way to relieve a client of a back-channel endpoint. The lists
+		// cannot be cleared the same way -- an empty repeated field does not
+		// travel -- and the form says so rather than pretending otherwise.
 		notFound, err := d.dex.updateClient(r.Context(), &api.UpdateClientReq{
-			Id:           id,
-			Name:         name,
-			LogoUrl:      strings.TrimSpace(r.FormValue("logo_url")),
-			RedirectUris: redirectURIs,
-			TrustedPeers: trustedPeers,
+			Id:                     id,
+			Name:                   name,
+			LogoUrl:                strings.TrimSpace(r.FormValue("logo_url")),
+			RedirectUris:           redirectURIs,
+			TrustedPeers:           trustedPeers,
+			AllowedConnectors:      allowedConnectors,
+			SsoSharedWith:          ssoSharedWith,
+			PostLogoutRedirectUris: postLogoutRedirectURIs,
+			BackchannelLogoutUri:   &backchannelLogoutURI,
+			RefreshTokenLifetime:   &refreshTokenLifetime,
 		})
 		if err != nil {
 			d.logger.Error("failed to update client", "err", err, "client_id", id)
@@ -440,13 +458,18 @@ func (d *dashboard) handleClientSave(w http.ResponseWriter, r *http.Request) {
 	// The secret is only set at creation: dex's UpdateClient cannot change it,
 	// so the form does not pretend otherwise.
 	client := &api.Client{
-		Id:           id,
-		Name:         name,
-		LogoUrl:      strings.TrimSpace(r.FormValue("logo_url")),
-		RedirectUris: redirectURIs,
-		TrustedPeers: trustedPeers,
-		Public:       r.FormValue("public") == "on",
-		Secret:       strings.TrimSpace(r.FormValue("secret")),
+		Id:                     id,
+		Name:                   name,
+		LogoUrl:                strings.TrimSpace(r.FormValue("logo_url")),
+		RedirectUris:           redirectURIs,
+		TrustedPeers:           trustedPeers,
+		Public:                 r.FormValue("public") == "on",
+		Secret:                 strings.TrimSpace(r.FormValue("secret")),
+		AllowedConnectors:      allowedConnectors,
+		SsoSharedWith:          ssoSharedWith,
+		PostLogoutRedirectUris: postLogoutRedirectURIs,
+		BackchannelLogoutUri:   backchannelLogoutURI,
+		RefreshTokenLifetime:   refreshTokenLifetime,
 	}
 	if !client.Public && client.Secret == "" {
 		d.renderResult(w, r, "clients", "A confidential client needs a secret.")
@@ -684,11 +707,33 @@ type connectorFormData struct {
 	Config  string
 	Editing bool
 	Types   []string
+	// GrantTypes are the ones this connector is restricted to; empty means every
+	// grant type. AllGrantTypes is the set to offer, taken from dex itself so the
+	// form cannot drift from what dex accepts.
+	GrantTypes    []string
+	AllGrantTypes []string
+}
+
+// allGrantTypes is dex's own set of restrictable grant types, sorted so the form
+// does not reshuffle itself between renders.
+func allGrantTypes() []string {
+	out := make([]string, 0, len(conns.ConnectorGrantTypes))
+	for gt := range conns.ConnectorGrantTypes {
+		out = append(out, gt)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// checked reports whether a grant type is in the connector's list. A template
+// cannot ask that of a slice on its own.
+func (c connectorFormData) Checked(grantType string) bool {
+	return slices.Contains(c.GrantTypes, grantType)
 }
 
 func (d *dashboard) handleConnectorForm(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
-	data := connectorFormData{Config: "{}", Types: ConnectorTypes()}
+	data := connectorFormData{Config: "{}", Types: ConnectorTypes(), AllGrantTypes: allGrantTypes()}
 
 	// Creating a connector with a type chosen: start from that type's real
 	// shape instead of an empty object. The form reloads through here when the
@@ -721,7 +766,10 @@ func (d *dashboard) handleConnectorForm(w http.ResponseWriter, r *http.Request) 
 			d.logger.Error("failed to render connector config", "err", err, "connector_id", id)
 			shown = string(conn.Config)
 		}
-		data = connectorFormData{ID: conn.Id, Type: conn.Type, Name: conn.Name, Config: shown, Editing: true, Types: data.Types}
+		data = connectorFormData{
+			ID: conn.Id, Type: conn.Type, Name: conn.Name, Config: shown, Editing: true,
+			Types: data.Types, GrantTypes: conn.GrantTypes, AllGrantTypes: data.AllGrantTypes,
+		}
 	}
 
 	title := "New connector"
@@ -774,9 +822,15 @@ func (d *dashboard) handleConnectorSave(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Unlike a client's lists, this one can be emptied: the request wraps the
+	// grant types in a message, so "none checked" (unrestricted) is tellable
+	// apart from "not mentioned".
+	grantTypes := r.Form["grant_types"]
+
 	if editing {
 		notFound, err := d.dex.updateConnector(r.Context(), &api.UpdateConnectorReq{
 			Id: id, NewType: connType, NewName: name, NewConfig: config,
+			NewGrantTypes: &api.GrantTypes{GrantTypes: grantTypes},
 		})
 		if err != nil {
 			d.logger.Error("failed to update connector", "err", err, "connector_id", id)
@@ -793,7 +847,7 @@ func (d *dashboard) handleConnectorSave(w http.ResponseWriter, r *http.Request) 
 	}
 
 	exists, err := d.dex.createConnector(r.Context(), &api.Connector{
-		Id: id, Type: connType, Name: name, Config: config,
+		Id: id, Type: connType, Name: name, Config: config, GrantTypes: grantTypes,
 	})
 	if err != nil {
 		d.logger.Error("failed to create connector", "err", err, "connector_id", id)

@@ -38,6 +38,57 @@
     <input type="text" id="logo_url" name="logo_url" value="{{ .Client.LogoUrl }}">
   </fieldset>
 
+  <h2 class="section">Connectors, sessions and logout</h2>
+  {{ if .Editing }}
+  <p class="note">Emptying one of the lists below leaves it as it is: dex's API cannot tell
+  &ldquo;no entries&rdquo; from &ldquo;do not touch this field&rdquo;, so a list can be
+  changed here but not cleared. To go back to no restriction, edit dex's config file or
+  recreate the client. The two single-value fields do clear.</p>
+  {{ end }}
+
+  <fieldset>
+    <label class="f" for="allowed_connectors">Allowed connectors</label>
+    <textarea id="allowed_connectors" name="allowed_connectors">{{ range .Client.AllowedConnectors }}{{ . }}&#10;{{ end }}</textarea>
+    <div class="hint">One connector ID per line. Empty means every connector, which is the
+      usual case; listing any restricts this client to exactly those.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="sso_shared_with">SSO shared with</label>
+    <textarea id="sso_shared_with" name="sso_shared_with">{{ range .Client.SsoSharedWith }}{{ . }}&#10;{{ end }}</textarea>
+    <div class="hint">One client ID per line. Those clients may reuse this client's browser
+      session <strong>without asking the user again</strong>. Empty shares with no one, and
+      that is the default &mdash; turning browser sessions on does not by itself let one
+      application sign a user into another.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="backchannel_logout_uri">Back-channel logout URI</label>
+    <input type="text" id="backchannel_logout_uri" name="backchannel_logout_uri" value="{{ .Client.BackchannelLogoutUri }}">
+    <div class="hint">dex POSTs a logout token here when a session this client took part in
+      ends, so the application can drop its own session. Empty means it is never told, and
+      its session outlives the one at dex.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="post_logout_redirect_uris">Post-logout redirect URIs</label>
+    <textarea id="post_logout_redirect_uris" name="post_logout_redirect_uris">{{ range .Client.PostLogoutRedirectUris }}{{ . }}&#10;{{ end }}</textarea>
+    <div class="hint">One per line. Where the browser may be sent after a logout the client
+      started; anything not listed here is refused.</div>
+  </fieldset>
+
+  <fieldset>
+    <label class="f" for="refresh_token_lifetime">Refresh token lifetime</label>
+    <select id="refresh_token_lifetime" name="refresh_token_lifetime">
+      {{ $lifetime := .Client.RefreshTokenLifetime }}
+      <option value="" {{ if eq $lifetime "" }}selected{{ end }}>Default (standalone)</option>
+      <option value="standalone" {{ if eq $lifetime "standalone" }}selected{{ end }}>standalone &mdash; outlives the browser session</option>
+      <option value="session" {{ if eq $lifetime "session" }}selected{{ end }}>session &mdash; dies with the browser session</option>
+    </select>
+    <div class="hint">With <code>session</code>, ending the user's browser session also revokes
+      this client's refresh tokens. Only meaningful where browser sessions are enabled.</div>
+  </fieldset>
+
   {{ if not .Editing }}
   <fieldset>
     <label class="check"><input type="checkbox" name="public"> Public client</label>

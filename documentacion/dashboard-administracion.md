@@ -341,6 +341,30 @@ secundario, **el panel sigue sin servir una sola línea de JavaScript**.
 
 ---
 
+### Los campos que gobiernan sesiones y logout
+
+El formulario de cliente edita, además de lo de siempre, lo que el re-port trajo de
+upstream y decide cómo se comporta un cliente cuando hay sesiones de navegador:
+
+| Campo | Qué hace | Vacío significa |
+| ----- | -------- | --------------- |
+| **Allowed connectors** | Restringe a qué conectores puede ir este cliente | todos |
+| **SSO shared with** | Qué clientes pueden **reutilizar la sesión de éste sin volver a preguntar** | nadie |
+| **Back-channel logout URI** | Dónde Dex hace POST del token de logout al terminar una sesión | no se le avisa |
+| **Post-logout redirect URIs** | A dónde puede volver el navegador tras un logout | ninguna permitida |
+| **Refresh token lifetime** | `standalone` (sobrevive a la sesión) o `session` (muere con ella) | `standalone` |
+
+**Las listas se pueden cambiar pero no vaciar.** El `UpdateClient` de Dex aplica solo
+los campos presentes, y en protobuf una lista repetida vacía no viaja: es
+indistinguible de «no toques este campo». Así que quitar todas las entradas de
+*Allowed connectors* deja la restricción como estaba. Los dos campos de valor único sí
+se vacían —Dex los declaró `optional` justo para eso, porque si no un cliente podría
+recibir un endpoint de back-channel y no poder librarse nunca de él—. El formulario lo
+dice en vez de fingir que funciona.
+
+Los grant types del conector **sí** se pueden vaciar: esa petición envuelve la lista en
+un mensaje, de modo que «ninguno» se distingue de «no mencionado».
+
 ## 9 bis. Conectores
 
 Editar un conector es la operación más delicada del panel, y tiene dos protecciones

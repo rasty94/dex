@@ -56,6 +56,18 @@ real fields, in the order its own config declares them, so the essentials come f
     </div>
   </fieldset>
 
+  <fieldset>
+    <label class="f">Grant types</label>
+    {{ $data := . }}
+    {{ range .AllGrantTypes }}
+    <label class="check"><input type="checkbox" name="grant_types" value="{{ . }}"
+      {{ if $data.Checked . }}checked{{ end }}> <code>{{ . }}</code></label>
+    {{ end }}
+    <div class="hint">Which flows may use this connector. <strong>None checked means every
+      one</strong>, which is the usual setting; checking some restricts it to exactly those.
+      Unlike a client's lists, this one can be emptied here.</div>
+  </fieldset>
+
   <div class="actions">
     <button type="submit" class="btn btn-primary">{{ if .Editing }}Save changes{{ else }}Create connector{{ end }}</button>
     <a class="btn" href="/connectors">Cancel</a>

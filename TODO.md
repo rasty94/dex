@@ -163,11 +163,18 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
 > [documentacion/dashboard-administracion.md](documentacion/dashboard-administracion.md).
 > Aquí queda solo lo pendiente.
 
-- [ ] **Campos nuevos de `Client` y `Connector` en los formularios.** El re-port trajo de
-      upstream `allowedConnectors`, `ssoSharedWith`, `backchannelLogoutURI`,
-      `postLogoutRedirectURIs`, `refreshTokenLifetime` y `grantTypes`. No rompen nada —
-      verificado que el `UpdateClient` de upstream solo aplica los campos presentes, así
-      que el panel no los borra al guardar— pero tampoco los sabe editar.
+- [x] **Campos nuevos de `Client` y `Connector` en los formularios.** El cliente edita ya
+      `allowedConnectors`, `ssoSharedWith`, `backchannelLogoutURI`,
+      `postLogoutRedirectURIs` y `refreshTokenLifetime`; el conector, sus `grantTypes`.
+      Son justo los mandos del logout y del SSO que acabamos de encender.
+      **La asimetría importa**: los dos campos de valor único se vacían —upstream los
+      declaró `optional` para eso— pero las listas no, porque una lista repetida vacía no
+      viaja en protobuf y es indistinguible de «no toques este campo». El formulario lo
+      avisa. Los grant types del conector sí se vacían: ahí la lista va envuelta en un
+      mensaje. Comprobado sobre el despliegue, incluidos los dos casos de vaciar.
+- [ ] **El listado de clientes no enseña los campos nuevos.** Para saber qué clientes
+      tienen back-channel logout o SSO compartido hay que abrirlos uno a uno. Una columna
+      o un distintivo en la tabla, cuando estorbe de verdad.
 - [ ] **Enseñar al panel los tokens con nombre.** Dex ya los acepta (`grpc.tokens`, con
       `caller` en la auditoría), pero el panel manda un único token y no sabe de nombres.
       Lo entregado está en [DONE.md](DONE.md).
