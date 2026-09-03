@@ -12,7 +12,43 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 
 ## [Unreleased]
 
-Nada todavía.
+### Añadido
+
+- `valkey.address` en `dex.yaml` y en el config del panel: un almacén compartido
+  opcional entre réplicas. Sin configurarlo, cada proceso sigue guardando lo suyo
+  en memoria, que es el comportamiento de siempre.
+- Métrica `dex_login_rate_limit_backend_errors_total`: cuenta las veces que el
+  almacén compartido no respondió y el limitador cayó de vuelta a sus cubos
+  locales.
+
+### Cambiado
+
+- El limitador de login puede contar en Valkey (`valkey.address`), de modo que
+  varias replicas comparten un solo presupuesto. Sin configurarlo, nada cambia.
+  Con Valkey, el algoritmo pasa de cubo de fichas a **ventana fija**, que permite
+  hasta `2 x attempts` a caballo entre dos ventanas; a cambio el limite es
+  correcto entre replicas, que sin esto valia `attempts x replicas`.
+- Las sesiones de administrador del panel (`cmd/dex-dashboard`) pueden vivir en
+  Valkey en vez de en memoria del proceso, con `valkey.address` en el config del
+  panel. Quien pueda escribir ahi se hace administrador con permiso de
+  escritura sobre el panel: esa conexion necesita autenticacion y TLS igual que
+  cualquier otro credencial de administracion.
+- El conector Keystone puede compartir su cache de tokens entre replicas con
+  `cacheShared: true`, cuando `dex.yaml` tiene `valkey.address` configurado.
+  `cacheShared` decide donde vive la cache, no si existe: eso lo sigue decidiendo
+  `cacheTTL` como antes.
+
+### Arreglado
+
+- La cache de tokens del conector Keystone comprobaba la caducidad al leer pero
+  nunca borraba, asi que crecia sin limite mientras el proceso viviera. Afecta
+  tambien a despliegues de una sola replica.
+- Un `cacheTTL` mal escrito en el conector Keystone desactivaba la cache en
+  silencio. Ahora dex no arranca y dice cual es el valor que no entiende. Lo
+  mismo si `cacheTTL` no es positivo.
+- `cacheShared: true` sin `valkey.address` configurado tambien es ahora un error
+  de arranque, en vez de una cache local silenciosa donde se esperaba una
+  compartida.
 
 ---
 

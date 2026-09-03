@@ -90,6 +90,26 @@ grpc:
 #   duration: 720h
 #   encryptionKey: a-32-byte-key-for-aes-256-here!!
 
+# Estado compartido entre replicas. Sin address, cada proceso guarda lo suyo en
+# memoria y no hay dependencia ninguna: es el valor por defecto.
+#
+# Lo que pasa a Valkey: los contadores del limitador de login --que sin esto
+# valen attempts x replicas, o sea el limite multiplicado-- y, si un conector lo
+# pide, sus caches. Las sesiones de navegador de dex NO viven aqui: estan en el
+# almacenamiento desde siempre.
+#
+# Quien pueda escribir aqui influye en decisiones de seguridad. Autentica la
+# conexion y ponle TLS.
+#
+# valkey:
+#   address: valkey:6379
+#   username: dex
+#   password: a-long-random-string
+#   db: 0
+#   keyPrefix: "dex:"
+#   tls:
+#     caCert: /etc/ssl/valkey-ca.pem
+
 staticClients:
   - id: example-app
     redirectURIs:

@@ -24,6 +24,23 @@ grpc:
     # verdad va en un secreto, no en un fichero versionado.
     token: "token-de-ejemplo-cambiame"
 
+# Estado compartido con la réplica dex-replica (ver docker-compose.yml): hoy
+# solo lo usa el limitador de login, más abajo. Nota: el servicio dashboard
+# comparte el espacio de red de dex (network_mode: "service:dex"), así que
+# "valkey" resuelve desde ambos como el nombre del contenedor; "127.0.0.1" no
+# llegaría a él.
+valkey:
+    address: valkey:6379
+    keyPrefix: "dex:"
+
+# Protección contra fuerza bruta en el login. attempts y window bajos a
+# propósito para que se agoten enseguida al probar el límite compartido entre
+# réplicas (ver README).
+loginRateLimit:
+    enabled: true
+    attempts: 3
+    window: 1m
+
 oauth2:
     skipApprovalScreen: true
 

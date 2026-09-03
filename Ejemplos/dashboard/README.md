@@ -10,6 +10,11 @@ Panel: **<http://127.0.0.1:5560>** · Dex: <http://127.0.0.1:5556/dex>
 
 La primera vez tarda unos minutos porque construye la imagen desde el repo.
 
+El stack trae además un Valkey y una segunda réplica de Dex, `dex-replica`, en
+<http://127.0.0.1:5566/dex> — misma imagen, misma `dex.yaml`, base de datos propia.
+Sirven para demostrar que el limitador de login se comparte de verdad entre
+réplicas cuando hay Valkey configurado; ver [más abajo](#límite-de-login-compartido-entre-réplicas).
+
 ---
 
 ## Con qué usuario entrar
@@ -139,6 +144,38 @@ de una variable de entorno.
 
 Y el panel se publica aquí solo en `127.0.0.1` a propósito: administra el
 proveedor de identidad y no debería estar accesible desde fuera del host.
+
+---
+
+## Límite de login compartido entre réplicas
+
+`dex.yaml` trae `valkey.address: valkey:6379` y `loginRateLimit` con `attempts: 3` a
+propósito: se agota rápido para poder verlo. Sin Valkey el límite es por proceso —
+`attempts × réplicas` en total—; con Valkey, dex y dex-replica cuentan sobre el mismo
+presupuesto.
+
+El formulario de login exige un `state` de una petición de auth real — un `state`
+inventado como `state=x` sin más no pasa de un `400 Bad Request` y con eso no se ve
+nada del límite. Para comprobarlo hace falta el flujo completo:
+
+1. `GET /dex/auth?client_id=example-app&redirect_uri=...&response_type=code&scope=openid+email&state=x`
+   contra el puerto 5556, guardando cookies.
+2. Seguir el enlace al conector `local` que trae esa página, que devuelve un
+   `state` propio de esa sesión.
+3. `POST` a la `action` del formulario con `login=pepe@example.com&password=mal`
+   — tres veces contra el 5556: los tres dan **401** (credenciales incorrectas,
+   dentro del presupuesto). Un cuarto intento contra el 5556 da **429**.
+4. Repetir los pasos 1-2 contra el 5566 (`dex-replica`) para sacar un `state`
+   suyo, y mandar un único intento: da **429** también, en el primero que
+   recibe esa réplica — la prueba de que el presupuesto es compartido y no
+   `attempts × réplicas`.
+
+`valkey` no lleva contraseña ni TLS en este ejemplo porque no sale de la red interna
+de Docker Compose. **En un despliegue real eso importa**: si el limitador fuera lo
+único que vive ahí no sería grave, pero el mismo Valkey puede llevar también la caché
+de tokens de Keystone y las sesiones de administrador del panel — y quien pueda
+escribir en las segundas se hace administrador del panel. Autentica la conexión y
+ponle TLS.
 
 ---
 

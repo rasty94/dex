@@ -43,8 +43,19 @@
 
 ### 2. 🚀 Rendimiento y Alta Disponibilidad (HA)
 
-- [ ] Cache Distribuida: Expandir la actual caché nativa en RAM de Keystone para soportar Redis de backend, permitiendo despliegues de Dex multi-réplica compartir estado de validación de tokens.
-    - Los buckets del rate limiter de login tienen el mismo techo y se migran con ella: hoy el límite efectivo es `attempts × réplicas`.
+> **El estado compartido entre réplicas está entregado** — Valkey opcional
+> (`valkey.address`), contadores del rate limiter y caché de tokens de Keystone
+> incluidos. Lo hecho está en [DONE.md](DONE.md). Aquí queda solo lo que no entró.
+
+- [ ] Caché en cliente de `valkey-go`: hoy está desactivada a propósito
+      (`DisableCache: true` en `pkg/valkey/valkey.go`) porque miniredis, usado en
+      los tests, no implementa la invalidación asistida por servidor que necesita.
+      Activarla evitaría un viaje de red por cada lectura de caché compartida, a
+      costa de esa dependencia con los tests.
+- [ ] El `attemptLimiter` del panel (`cmd/dex-dashboard/auth.go`) sigue siendo
+      local a propósito: protege el propio arranque de login del panel, no el
+      login de Dex, y con una sola réplica del panel por despliegue el límite
+      efectivo por proceso ya es el límite real.
 
 ### 3. ☁️ Ecosistema Cloud Native e Integraciones
 
@@ -90,8 +101,5 @@
 - [ ] **Paginación en los listados.** Ya hay filtro por texto en clientes, conectores y
       usuarios, que resuelve el caso de «encontrar uno». Con miles de filas haría falta además
       paginar, y eso sí necesita que la API de dex lo soporte: hoy `ListClients` devuelve todo.
-- [ ] **Sesiones compartidas entre réplicas.** Hoy viven en memoria del proceso: un reinicio
-      pide login otra vez y el panel no sobrevive a estar replicado. Va de la mano de la caché
-      distribuida de la sección 2.
 - [ ] **htmx.** El panel no sirve JavaScript y la CSP está en `default-src 'none'`. Entra
       cuando alguna pantalla gane algo real con actualización parcial, no antes.

@@ -40,6 +40,21 @@ grpc:
 {{- end }}
 {{- end }}
 
+{{- /* Shared store between replicas: the login rate limiter's counters and,
+       when a connector asks for it, its caches. Empty address keeps everything
+       in process, which is the default -- nothing below is rendered then. */}}
+{{- if getenv "DEX_VALKEY_ADDRESS" "" }}
+valkey:
+  address: {{ .Env.DEX_VALKEY_ADDRESS }}
+  keyPrefix: {{ getenv "DEX_VALKEY_KEY_PREFIX" "dex:" | quote }}
+{{- if getenv "DEX_VALKEY_USERNAME" "" }}
+  username: {{ .Env.DEX_VALKEY_USERNAME | quote }}
+{{- end }}
+{{- if getenv "DEX_VALKEY_PASSWORD" "" }}
+  password: {{ .Env.DEX_VALKEY_PASSWORD | quote }}
+{{- end }}
+{{- end }}
+
 expiry:
   deviceRequests: {{ getenv "DEX_EXPIRY_DEVICE_REQUESTS" "5m" }}
   idTokens: {{ getenv "DEX_EXPIRY_ID_TOKENS" "24h" }}
