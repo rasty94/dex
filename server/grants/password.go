@@ -63,7 +63,7 @@ func (g *password) Authorize(ctx context.Context, req *Request, client storage.C
 	// Throttle before hitting the upstream provider. The same key as the login
 	// form, so failures on either path count together.
 	limitKey := ratelimit.Key(ctx, req.Username)
-	if !g.limiter.Allow(limitKey) {
+	if !g.limiter.Allow(ctx, limitKey) {
 		g.logger.WarnContext(ctx, "login rate limit exceeded", "user", req.Username)
 		return nil, &oauth2.Error{Type: oauth2.InvalidRequest, Description: "Too many login attempts. Please try again later.", Status: http.StatusTooManyRequests}
 	}
@@ -76,7 +76,7 @@ func (g *password) Authorize(ctx context.Context, req *Request, client storage.C
 	if !ok {
 		return nil, &oauth2.Error{Type: oauth2.AccessDenied, Description: "Invalid username or password", Status: http.StatusUnauthorized}
 	}
-	g.limiter.Reset(limitKey)
+	g.limiter.Reset(ctx, limitKey)
 
 	auth := tokens.Authorization{
 		Client:        client,

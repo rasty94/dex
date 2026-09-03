@@ -168,7 +168,7 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 		// Throttle before hitting the upstream provider: a failed attempt is what
 		// an attacker repeats, and a successful login clears the counter below.
 		limitKey := ratelimit.Key(ctx, username)
-		if !h.LoginLimiter.Allow(limitKey) {
+		if !h.LoginLimiter.Allow(ctx, limitKey) {
 			h.Logger.WarnContext(ctx, "login rate limit exceeded", "user", username)
 			h.renderError(r, w, http.StatusTooManyRequests, "Too many login attempts. Please try again later.")
 			return
@@ -210,7 +210,7 @@ func (h *Handler) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 			h.Logger.ErrorContext(r.Context(), "failed login attempt: Invalid credentials.", "user", username)
 			return
 		}
-		h.LoginLimiter.Reset(limitKey)
+		h.LoginLimiter.Reset(ctx, limitKey)
 
 		if issuedToken != "" {
 			h.setMFATrustCookie(w, authReq.ConnectorID, issuedToken)
