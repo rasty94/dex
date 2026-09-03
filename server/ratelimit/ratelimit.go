@@ -49,7 +49,7 @@ type Limiter struct {
 	// shared counts in Valkey instead of the local buckets. When it is nil, or
 	// when it fails, the buckets below are used: that degrades to the behavior
 	// of a single replica rather than to no limit at all.
-	shared *sharedCounter
+	shared *dexvalkey.FixedWindow
 	window time.Duration
 
 	// Counts falls back to the local buckets. Without it a Valkey that started
@@ -111,7 +111,7 @@ func (l *Limiter) SetSharedStore(c *dexvalkey.Client) {
 	if l == nil || c == nil {
 		return
 	}
-	l.shared = &sharedCounter{c: c}
+	l.shared = dexvalkey.NewFixedWindow(c, "rl")
 }
 
 // SetBackendErrorCounter counts the times the shared store could not be reached
@@ -130,7 +130,7 @@ func (l *Limiter) Allow(ctx context.Context, key string) bool {
 	}
 
 	if l.shared != nil {
-		n, err := l.shared.incr(ctx, key, l.window)
+		n, err := l.shared.Incr(ctx, key, l.window)
 		if err == nil {
 			if n <= int64(l.burst) {
 				return true
@@ -186,7 +186,7 @@ func (l *Limiter) Reset(ctx context.Context, key string) {
 		return
 	}
 	if l.shared != nil {
-		_ = l.shared.reset(ctx, key)
+		_ = l.shared.Reset(ctx, key)
 	}
 
 	l.mu.Lock()
