@@ -28,8 +28,9 @@ type Config struct {
 	// Valkey shares administrator sessions between replicas of this panel.
 	// Leaving the address empty keeps them in this process.
 	//
-	// Whatever can write here can grant itself write permission on the panel:
-	// the session carries CanWrite. Authenticate the connection.
+	// Whatever can write here can sign itself in as an administrator: the
+	// session carries the email and groups the permissions are computed from.
+	// Authenticate the connection.
 	Valkey dexvalkey.Config `json:"valkey"`
 }
 

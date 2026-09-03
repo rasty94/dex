@@ -103,7 +103,11 @@ func TestConfigRefusesAnEmptyAdminGate(t *testing.T) {
 }
 
 func TestRequireAdmin(t *testing.T) {
-	a := &authenticator{sessions: newSessionStore(time.Hour, 0)}
+	a := &authenticator{
+		sessions: newSessionStore(time.Hour, 0),
+		admin:    AdminConfig{Emails: []string{"jane@example.com"}},
+		logger:   testLogger(),
+	}
 	reached := false
 	h := a.requireAdmin(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
@@ -173,7 +177,14 @@ func TestSessionExpires(t *testing.T) {
 }
 
 func TestRequireCSRF(t *testing.T) {
-	a := &authenticator{sessions: newSessionStore(time.Hour, 0), logger: testLogger()}
+	a := &authenticator{
+		sessions: newSessionStore(time.Hour, 0),
+		admin: AdminConfig{
+			Emails:      []string{"jane@example.com"},
+			WriteEmails: []string{"jane@example.com"},
+		},
+		logger: testLogger(),
+	}
 	sess := &session{Email: "jane@example.com", CSRFToken: "the-real-token"}
 	id, err := a.sessions.create(t.Context(), sess)
 	if err != nil {
@@ -208,7 +219,14 @@ func TestRequireCSRF(t *testing.T) {
 // A read-only session must not be able to reach a write handler even by posting
 // the URL directly: hiding the button is presentation, requireWrite is the gate.
 func TestRequireWrite(t *testing.T) {
-	a := &authenticator{sessions: newSessionStore(time.Hour, 0), logger: testLogger()}
+	a := &authenticator{
+		sessions: newSessionStore(time.Hour, 0),
+		admin: AdminConfig{
+			Emails:      []string{"jane@example.com"},
+			WriteEmails: []string{"jane@example.com"},
+		},
+		logger: testLogger(),
+	}
 
 	reached := false
 	h := a.requireAdmin(a.requireWrite(func(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +235,13 @@ func TestRequireWrite(t *testing.T) {
 
 	post := func(canWrite bool) *httptest.ResponseRecorder {
 		reached = false
-		id, err := a.sessions.create(t.Context(), &session{Email: "jane@example.com", CanWrite: canWrite})
+		// Write permission comes from the configuration, not from the session:
+		// the panel recomputes it on every request.
+		a.admin.WriteEmails = nil
+		if canWrite {
+			a.admin.WriteEmails = []string{"jane@example.com"}
+		}
+		id, err := a.sessions.create(t.Context(), &session{Email: "jane@example.com"})
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
@@ -239,7 +263,14 @@ func TestRequireWrite(t *testing.T) {
 // The write routes must chain the CSRF check too, so a cross-site POST from a
 // logged-in administrator's browser cannot delete anything.
 func TestWriteRoutesRequireCSRF(t *testing.T) {
-	a := &authenticator{sessions: newSessionStore(time.Hour, 0), logger: testLogger()}
+	a := &authenticator{
+		sessions: newSessionStore(time.Hour, 0),
+		admin: AdminConfig{
+			Emails:      []string{"jane@example.com"},
+			WriteEmails: []string{"jane@example.com"},
+		},
+		logger: testLogger(),
+	}
 	id, err := a.sessions.create(t.Context(), &session{Email: "jane@example.com", CanWrite: true, CSRFToken: "real"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
@@ -298,7 +329,11 @@ func TestSessionIdleTimeoutDisabled(t *testing.T) {
 func TestRequireFreshAuth(t *testing.T) {
 	st := newSessionStore(8*time.Hour, 0)
 	a := &authenticator{
-		sessions:     st,
+		sessions: st,
+		admin: AdminConfig{
+			Emails:      []string{"jane@example.com"},
+			WriteEmails: []string{"jane@example.com"},
+		},
 		reauthWindow: 15 * time.Minute,
 		logger:       testLogger(),
 		oauth2:       oauth2.Config{ClientID: "dashboard", Endpoint: oauth2.Endpoint{AuthURL: "https://dex.example.com/auth"}},
@@ -398,5 +433,65 @@ func TestHostCookiePrefix(t *testing.T) {
 	plain := &authenticator{secure: false}
 	if got := plain.cookie(sessionCookie, "v", 60).Name; got != sessionCookie {
 		t.Errorf("over HTTP the cookie name is %q, want no prefix", got)
+	}
+}
+
+// Permission is decided from the configuration on every request, not from what
+// was stored when the administrator signed in. With the sessions in Valkey they
+// outlive a restart of the panel, so this is the only thing that makes taking
+// someone out of admin.writeGroups take effect before their session expires.
+func TestPermissionIsRecomputedPerRequest(t *testing.T) {
+	a := &authenticator{
+		sessions: newSessionStore(time.Hour, 0),
+		admin: AdminConfig{
+			Groups:      []string{"dex-admins"},
+			WriteGroups: []string{"dex-writers"},
+		},
+		logger: testLogger(),
+	}
+
+	id, err := a.sessions.create(t.Context(), &session{
+		Email:  "jane@example.com",
+		Groups: []string{"dex-admins", "dex-writers"},
+		// Deliberately wrong: whatever is stored here must not decide anything.
+		CanWrite: false,
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	post := func() (*httptest.ResponseRecorder, bool) {
+		reached := false
+		h := a.requireAdmin(a.requireWrite(func(w http.ResponseWriter, r *http.Request) {
+			reached = true
+		}))
+		req := httptest.NewRequest(http.MethodPost, "/clients/delete", nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: id})
+		rr := httptest.NewRecorder()
+		h(rr, req)
+		return rr, reached
+	}
+
+	if _, reached := post(); !reached {
+		t.Fatal("a member of a write group should reach the handler, whatever the session recorded")
+	}
+
+	// Demoted while signed in: the very next request loses write permission.
+	a.admin.WriteGroups = nil
+	rr, reached := post()
+	if reached {
+		t.Error("a demoted administrator still reached a write handler")
+	}
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("demoted administrator: got %d, want %d", rr.Code, http.StatusForbidden)
+	}
+
+	// Access revoked entirely: the session is destroyed, not left to expire.
+	a.admin.Groups = nil
+	if _, reached := post(); reached {
+		t.Error("an administrator with no access left still reached a handler")
+	}
+	if _, ok := a.sessions.get(t.Context(), id); ok {
+		t.Error("the session of a revoked administrator should have been dropped, not left to expire")
 	}
 }

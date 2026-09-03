@@ -95,7 +95,10 @@ func (st *sessionStore) get(_ context.Context, id string) (*session, bool) {
 		return nil, false
 	}
 	sess.LastSeen = now
-	return sess, true
+	// Hand out a copy. The caller decides permission on it for one request, and
+	// two requests must not race over the same struct.
+	out := *sess
+	return &out, true
 }
 
 func (st *sessionStore) idle(sess *session, now time.Time) bool {
@@ -422,8 +425,25 @@ func (a *authenticator) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 		c, err := a.readCookie(r, sessionCookie)
 		if err == nil {
 			if sess, ok := a.sessions.get(r.Context(), c.Value); ok {
-				next(w, r.WithContext(context.WithValue(r.Context(), sessionCtxKey, sess)))
-				return
+				// Permission is decided here, on every request, from the running
+				// configuration -- never from what was stored at login. Sessions
+				// held in valkey outlive a restart of this panel, so taking an
+				// administrator out of admin.writeGroups has to bite on the next
+				// click rather than up to admin.sessionTTL later.
+				//
+				// The groups themselves are still the ones the ID token carried
+				// at login: a demotion made in the identity provider needs the
+				// administrator to sign in again before it is seen here.
+				canRead, canWrite := a.access(sess.Email, sess.Groups)
+				if canRead {
+					sess.CanWrite = canWrite
+					next(w, r.WithContext(context.WithValue(r.Context(), sessionCtxKey, sess)))
+					return
+				}
+				a.logger.Warn("dropped a session whose dashboard access was revoked",
+					"email", sess.Email, "groups", sess.Groups)
+				a.sessions.delete(r.Context(), c.Value)
+				http.SetCookie(w, a.cookie(sessionCookie, "", -1))
 			}
 		}
 		if r.Method != http.MethodGet {

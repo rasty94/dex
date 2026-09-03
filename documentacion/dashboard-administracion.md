@@ -144,11 +144,33 @@ renueva el TTL de la clave, capado por la vida máxima de la sesión — así qu
 falta un `LastSeen` que escribir en cada petición.
 
 **La frase que importa**: lo que se guarda en esa clave decide quién puede cambiar
-cosas — `CanWrite` y los grupos viajan ahí dentro —, así que **quien pueda escribir en
-ese Valkey se hace administrador con permiso de escritura sobre el panel**. Autentica
-la conexión (`valkey.username` / `valkey.password`) y ponle TLS (`valkey.tls`); no es
-una recomendación opcional, es la misma superficie que un token de administrador
-robado.
+cosas — el correo y los grupos, de los que se calculan los permisos, viajan ahí
+dentro —, así que **quien pueda escribir en ese Valkey se hace administrador sobre el
+panel**. Autentica la conexión (`valkey.username` / `valkey.password`) y ponle TLS
+(`valkey.tls`); no es una recomendación opcional, es la misma superficie que un token
+de administrador robado.
+
+### Quitar el permiso a alguien que ya ha entrado
+
+Con las sesiones en memoria había una forma tosca pero efectiva de revocar: reiniciar
+el panel las tiraba todas. En Valkey sobreviven, así que esa vía desaparece y hacía
+falta otra.
+
+**El permiso se recalcula en cada petición**, en `requireAdmin`, a partir del correo y
+los grupos guardados y de la configuración que el proceso tiene cargada. La sesión
+guarda un `CanWrite`, pero no decide nada: se sobrescribe antes de que el manejador lo
+vea. De ahí salen dos comportamientos:
+
+- Quitar a alguien de `admin.writeGroups` o `admin.writeEmails` le deja **sin escritura
+  en el siguiente clic**, no cuando caduque su sesión.
+- Quitarle también el acceso de lectura (`admin.groups` / `admin.emails`) **destruye su
+  sesión**: la clave se borra, la cookie se retira y la siguiente petición es una
+  pantalla de login. Queda un aviso en el log con el correo y los grupos.
+
+El límite, que conviene tener presente: los grupos son los que traía el ID token
+**cuando esa persona entró**. Si la baja se hace en el proveedor de identidad en vez de
+en la configuración del panel, aquí no se ve hasta que vuelva a autenticarse. Para una
+baja urgente, sacarla de `admin.groups` en el panel es lo que corta de inmediato.
 
 ### Qué pasa si Valkey deja de responder
 
@@ -319,6 +341,11 @@ proveedor de identidad.
 Ocultar los botones a quien no puede escribir es presentación. La puerta es
 `requireWrite`, que corre en cada ruta de escritura: un `POST` directo a
 `/clients/delete` desde una cuenta de solo lectura se lleva un `403` y queda en el log.
+
+Las dos listas se leen **en cada petición**, no al iniciar sesión: quitar a alguien de
+`writeGroups` surte efecto en su siguiente clic aunque su sesión siga abierta. El
+detalle, y su límite cuando la baja se hace en el proveedor de identidad, está en
+[«Quitar el permiso a alguien que ya ha entrado»](#quitar-el-permiso-a-alguien-que-ya-ha-entrado).
 
 ### Quién hizo qué
 

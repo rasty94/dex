@@ -126,8 +126,9 @@ services:
             # red de dex (network_mode: "service:dex" más abajo), así que
             # "valkey" resuelve igual que para dex: mismo hostname, sin
             # diferencia.
-            # Aviso: quien pueda escribir en este Valkey puede darse permiso de
-            # escritura en el panel, porque la sesión guardada lleva CanWrite.
+            # Aviso: quien pueda escribir en este Valkey puede entrar como
+            # administrador, porque la sesión guardada lleva el correo y los
+            # grupos de los que se calculan los permisos.
             # Aquí no lleva contraseña porque no sale de la red del ejemplo; en
             # un despliegue real hace falta credenciales y TLS.
             - DEX_DASHBOARD_VALKEY_ADDRESS=valkey:6379

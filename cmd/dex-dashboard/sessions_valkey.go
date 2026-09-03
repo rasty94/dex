@@ -23,9 +23,10 @@ const opTimeout = 2 * time.Second
 // LastSeen to write back on every request. The absolute lifetime caps that
 // refresh: a session in constant use still ends when its Expiry passes.
 //
-// What is stored decides who may change things -- CanWrite and Groups travel in
-// here -- so write access to this store is write access to the panel. The
-// deployment documentation says so next to the address.
+// What is stored decides who may change things: permission is recomputed from
+// the stored email and groups on every request, so forging those here is
+// forging an administrator. Write access to this store is write access to the
+// panel, and the deployment documentation says so next to the address.
 type valkeySessions struct {
 	c       *dexvalkey.Client
 	ttl     time.Duration
