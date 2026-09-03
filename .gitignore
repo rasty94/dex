@@ -36,3 +36,5 @@ devenv.local.yaml
 CLAUDE.md
 .gitattributes
 /cmd/dex-dashboard/dex-dashboard
+.worktrees/
+.superpowers/
