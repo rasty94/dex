@@ -74,12 +74,11 @@ func (v *valkeySessions) create(ctx context.Context, sess *session) (string, err
 }
 
 func (v *valkeySessions) get(ctx context.Context, id string) (*session, bool) {
-	ctx, cancel := context.WithTimeout(ctx, opTimeout)
-	defer cancel()
-
 	key := v.c.HashKey("sess", id)
 
-	raw, err := v.c.Do(ctx, v.c.B().Get().Key(key).Build()).AsBytes()
+	getCtx, cancel := context.WithTimeout(ctx, opTimeout)
+	raw, err := v.c.Do(getCtx, v.c.B().Get().Key(key).Build()).AsBytes()
+	cancel()
 	if err != nil {
 		// Unknown id, or the store is unreachable. Either way the panel cannot
 		// vouch for this session, so it asks for a login.
@@ -95,8 +94,12 @@ func (v *valkeySessions) get(ctx context.Context, id string) (*session, bool) {
 		v.delete(ctx, id)
 		return nil, false
 	}
-	// Push the idle window out, capped by the absolute expiry.
-	_ = v.c.Do(ctx, v.c.B().Pexpire().Key(key).Milliseconds(w.Milliseconds()).Build()).Error()
+	// Push the idle window out, capped by the absolute expiry. Its own
+	// timeout, separate from the GET above, so a slow read cannot starve this
+	// call of budget and silently skip the refresh while still reporting ok.
+	pexpireCtx, pcancel := context.WithTimeout(ctx, opTimeout)
+	_ = v.c.Do(pexpireCtx, v.c.B().Pexpire().Key(key).Milliseconds(w.Milliseconds()).Build()).Error()
+	pcancel()
 
 	sess.LastSeen = v.now()
 	return &sess, true

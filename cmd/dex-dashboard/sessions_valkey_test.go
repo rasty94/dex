@@ -131,8 +131,8 @@ func TestValkeyDownRefusesTheSession(t *testing.T) {
 }
 
 // Without a deadline on ctx, valkey-go retries a downed server forever, and
-// this call would hang instead of asking for a login. Asserting on elapsed
-// time makes a regression here fail with a clean assertion instead of hanging
+// this call would hang instead of asking for a login. get runs off the main
+// goroutine so a regression here fails with a clean t.Fatal instead of hanging
 // until go test's own global timeout.
 func TestValkeyDownRefusesPromptly(t *testing.T) {
 	m := miniredis.RunT(t)
@@ -142,14 +142,50 @@ func TestValkeyDownRefusesPromptly(t *testing.T) {
 	id, _ := s.create(ctx, &session{Email: "admin@example.com"})
 	m.Close()
 
-	start := time.Now()
-	_, ok := s.get(ctx, id)
-	elapsed := time.Since(start)
+	done := make(chan bool, 1)
+	go func() {
+		_, ok := s.get(ctx, id)
+		done <- ok
+	}()
 
-	if ok {
-		t.Error("a session was accepted with the store unreachable")
+	select {
+	case ok := <-done:
+		if ok {
+			t.Error("a session was accepted with the store unreachable")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("get did not return within 5s with the store down; opTimeout is not bounding the call")
 	}
-	if elapsed > 5*time.Second {
-		t.Errorf("get took %s with the store down; want well under 5s", elapsed)
+}
+
+// window() correctly caps the idle refresh by what is left of the absolute
+// lifetime, but that path is only exercised here: nothing else moves v.now
+// independently of Valkey's own key TTL. Without the cap, a session read
+// often enough would never end.
+func TestAbsoluteLifetimeCapsAConstantlyUsedSession(t *testing.T) {
+	m := miniredis.RunT(t)
+	ctx := t.Context()
+
+	s := valkeySessionsFor(t, m.Addr(), time.Hour, 30*time.Minute)
+
+	fakeNow := time.Now()
+	s.now = func() time.Time { return fakeNow }
+
+	id, _ := s.create(ctx, &session{Email: "admin@example.com"})
+
+	// Read it steadily, well inside the 30m idle window each time, so only
+	// the 1h absolute lifetime can end it.
+	for range 2 {
+		fakeNow = fakeNow.Add(25 * time.Minute)
+		if _, ok := s.get(ctx, id); !ok {
+			t.Fatal("session dropped before its absolute lifetime, even though it was in constant use")
+		}
+	}
+
+	// The third read lands at 75 minutes, past the 1h absolute expiry.
+	// Constant use must not make the session immortal.
+	fakeNow = fakeNow.Add(25 * time.Minute)
+	if _, ok := s.get(ctx, id); ok {
+		t.Error("a session in constant use survived its absolute lifetime")
 	}
 }
