@@ -279,8 +279,8 @@ func (d *dashboard) purgeConfirmation(r *http.Request, userID, connID, back stri
 	if pw, err := d.dex.localPasswordFor(ctx, email); err == nil && pw != nil {
 		c.Alert = "This also deletes the local password account " + pw.Email +
 			", because dex keys passwords by email alone. That account can sign in on its own and is not part of this connector. " +
-			"If it comes from dex's config file rather than storage, the erasure cannot delete it and will stop there — " +
-			"after it has already ended the sessions and revoked the tokens listed above."
+			"If it comes from dex's config file rather than storage, dex refuses the whole erasure and nothing is deleted: " +
+			"remove the user from the config file first."
 	}
 	return c
 }

@@ -73,11 +73,23 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
       va a desaparecer y nombra aparte la consecuencia que el título de la acción no
       sugiere: el almacén de contraseñas está indexado **por correo, sin conector**, así
       que purgar una identidad borra también la cuenta local con ese mismo correo.
-- [ ] **La purga no es atómica, y eso es de upstream.** Con usuarios estáticos falla al
-      llegar a la contraseña, pero para entonces ya ha cerrado las sesiones y revocado los
-      tokens. El panel explica ahora en qué estado queda, pero el arreglo de fondo es de
-      `server/apiserver`: o intentar primero lo que puede fallar, o no empezar la cascada
-      si el registro de contraseña es de solo lectura. Candidato a llevar a upstream.
+- [x] **La purga ya no deja el trabajo a medias.** La cascada recorre varios almacenes sin
+      transacción entre ellos, así que `server/apiserver` comprueba primero el único paso
+      que falla por un motivo predecible —una contraseña del fichero de configuración, que
+      la API no puede borrar— y se niega sin destruir nada. Antes se enteraba al llegar a
+      ella, con las sesiones ya cerradas y los tokens revocados.
+      Hizo falta exponer `IsStaticPassword` en el envoltorio de almacenamiento estático:
+      la pregunta «¿esto se puede borrar?» no se podía hacer sin intentarlo. Es una
+      aserción de interfaz en el apiserver, no parte de `storage.Storage`: solo la purga
+      necesita preguntarlo, y solo para negarse.
+      **La trampa**: los tres envoltorios estáticos incrustan `Storage` como *interfaz*,
+      así que no se promocionan métodos entre ellos. La primera versión solo funcionaba si
+      el de contraseñas quedaba el más externo —en `serve.go` no lo es— y pasó el test
+      mientras no hacía nada en el despliegue. Lo destapó probarlo de verdad. Ahora la
+      pregunta se reenvía hacia dentro y el test apila los envoltorios como `serve.go`.
+      El test falla por lo que importa —la sesión sigue viva— antes que por el texto.
+- [ ] **Llevar el arreglo a upstream.** Es un fallo suyo y el parche es pequeño, pero
+      choca con la política de no subir nada más al repo público. Pendiente de decidir.
 - [x] **«He perdido el móvil»: quitar un segundo factor desde el panel.** Los factores
       registrados tienen ahora su propia sección con una fila por autenticador y un botón
       que llama a `DeleteMFASecret`; el siguiente login ofrece darse de alta otra vez con

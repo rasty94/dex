@@ -142,10 +142,15 @@ func friendlyGRPCError(err error) string {
 		return "Browser sessions are gated behind dex's api_sessions_identities_crud feature flag, which is off."
 	case strings.Contains(msg, "sessions_enabled"), strings.Contains(msg, "sessions are not enabled"):
 		return "dex has browser sessions turned off (sessions_enabled). Refresh tokens are still listed below."
+	case strings.Contains(msg, "comes from dex's configuration file"):
+		// dex now settles this before it destroys anything, so the answer is
+		// simply what to do next.
+		return "This user's password comes from dex's config file, and dex cannot delete those. " +
+			"Nothing was deleted. Remove the user from the config file, reload it, and erase the identity then."
 	case strings.Contains(msg, "static passwords: read-only"):
-		// The erasure cascades before it reaches the password record, so by the
-		// time this fails the sessions are already gone. Saying so matters more
-		// than the error text: the operator has to know what state they are in.
+		// The check above races a config reload: dex can decide the password is
+		// deletable and find it static a moment later, having already cascaded.
+		// Rare, and precisely when the operator most needs to be told the state.
 		return "This user's password comes from dex's config file, and dex cannot delete those. " +
 			"The erasure stopped there, but it had already ended the user's sessions and revoked their tokens. " +
 			"The identity record itself is still present. Remove the user from the config file to finish."

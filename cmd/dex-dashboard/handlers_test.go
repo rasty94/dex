@@ -537,23 +537,38 @@ func TestConfirmationStillCarriesASingleField(t *testing.T) {
 	}
 }
 
-// The erasure cascades before it reaches the password record, so a failure
-// there leaves the user signed out with their identity intact. The message has
-// to say which half happened, or the operator retries against a state they do
-// not understand.
-func TestPurgeFailureExplainsThePartialState(t *testing.T) {
-	msg := friendlyGRPCError(errors.New("rpc error: code = Unknown desc = purge password: static passwords: read-only cannot delete password"))
+// A config-backed password stops the erasure. dex now refuses before the
+// cascade, so the usual message says nothing was deleted; the old half-done
+// state survives only as a race with a config reload, and the two have to be
+// told apart or the operator retries against a state they do not understand.
+func TestPurgeFailureSaysWhichStateItLeft(t *testing.T) {
+	refused := friendlyGRPCError(errors.New("rpc error: code = Unknown desc = purge user identity: " +
+		"the password for \"jane@example.com\" comes from dex's configuration file and cannot be deleted " +
+		"through the API; remove the user from the config file first. Nothing was deleted"))
+
+	for _, want := range []string{"config file", "Nothing was deleted"} {
+		if !strings.Contains(refused, want) {
+			t.Errorf("the refusal is missing %q; got: %s", want, refused)
+		}
+	}
+	if strings.Contains(refused, "already ended") {
+		t.Errorf("a refusal must not claim sessions were ended; got: %s", refused)
+	}
+
+	partial := friendlyGRPCError(errors.New("rpc error: code = Unknown desc = purge password: static passwords: read-only cannot delete password"))
 
 	for _, want := range []string{
 		"config file",   // why it failed
 		"already ended", // what happened anyway
 		"still present", // what did not
 	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the message is missing %q; got: %s", want, msg)
+		if !strings.Contains(partial, want) {
+			t.Errorf("the partial-state message is missing %q; got: %s", want, partial)
 		}
 	}
-	if strings.Contains(msg, "rpc error") {
-		t.Error("the raw gRPC error should not be shown for a case we recognize")
+	for _, msg := range []string{refused, partial} {
+		if strings.Contains(msg, "rpc error") {
+			t.Error("the raw gRPC error should not be shown for a case we recognize")
+		}
 	}
 }

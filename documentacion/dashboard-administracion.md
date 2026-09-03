@@ -259,11 +259,16 @@ de la consecuencia que el título no sugiere: el almacén de contraseñas de Dex
 indexa por correo, sin conector, así que purgar una identidad de *cualquier*
 conector borra también la cuenta local que use ese mismo correo.
 
-Con usuarios estáticos —los del fichero de configuración— **la purga no es
-atómica**: falla al llegar a la contraseña, que Dex no puede borrar, pero para
-entonces ya ha cerrado las sesiones y revocado los tokens. El panel explica qué
-mitad ocurrió y cómo terminar a mano. El arreglo de fondo está en el servidor,
-no aquí.
+Con usuarios del fichero de configuración, Dex **se niega antes de tocar nada**.
+La cascada recorre varios almacenes y no hay transacción entre ellos, así que el
+único paso que falla por un motivo predecible —la contraseña estática, que la API
+no puede borrar— se comprueba primero: si va a fallar, no se empieza. Enterarse a
+mitad dejaba al usuario sin sesiones, con los tokens revocados y la cuenta en pie,
+y sin forma de terminar desde el panel.
+
+Ese arreglo está en `server/apiserver`, no en el panel: el panel solo traduce la
+negativa a algo accionable («no se ha borrado nada, quita al usuario del fichero
+de configuración primero»).
 
 ## 9. Escritura: permisos y auditoría
 
