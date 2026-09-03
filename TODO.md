@@ -27,11 +27,11 @@
       argumentos; sus tests pasan sobre su árbol. DCO ✅, Snyk ✅, sin conflictos.
       Abierta el 2026-09-03, esperando revisión.
 - [ ] **[dexidp/dex#4986](https://github.com/dexidp/dex/pull/4986) — el `alg` del JWKS de
-      prueba.** ⚠️ **Bloqueada por nuestra culpa desde el 2026-08-26**: su commit no lleva
-      `Signed-off-by`, así que el check de DCO está en *action required* y nadie la va a
-      mirar. Se arregla con `git commit --amend -s` y un force-push a la rama
-      `fix/oidc-test-jwks-alg` de nuestro fork. Ocho días parada sin que nadie lo dijera:
-      un PR abierto hay que volver a mirarlo, no solo abrirlo.
+      prueba.** Estuvo nueve días parada por culpa nuestra: al commit le faltaba el
+      `Signed-off-by` y el DCO se quedó en *action required*, que es un estado donde nadie
+      mira nada. Desbloqueada el 2026-09-03 con `git commit --amend -s` y un force-push;
+      DCO ✅, Snyk ✅, sin conflictos. Esperando revisión. La lección no es el DCO: un PR
+      abierto hay que volver a mirarlo, no solo abrirlo.
 
 ---
 
