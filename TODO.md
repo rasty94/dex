@@ -40,6 +40,16 @@
 ### 1. 📊 Telemetría
 
 - [ ] Trazabilidad distribuida (OpenTelemetry) para peticiones hacia OpenStack.
+- [ ] **Ni el MFA nativo ni las sesiones de navegador exportan una sola
+      métrica.** Las dos cosas se encendieron en este fork y las dos son
+      material de alarma: un segundo factor fallido no lo cuenta nadie, y no
+      hay forma de saber cuántas sesiones se abren, cuántas caducan por
+      inactividad y cuántas las cierra alguien a mano. Lo que hay es
+      `dex_login_rate_limited_total`, `dex_login_rate_limit_backend_errors_total`
+      y las cinco de Keystone; el patrón está escrito dos veces
+      ([server/server.go:242](server/server.go#L242) y
+      [connector/keystone/metrics.go](connector/keystone/metrics.go)), así que
+      esto es seguir el que ya existe, no inventar nada.
 
 ### 2. 🚀 Rendimiento y Alta Disponibilidad (HA)
 
@@ -124,10 +134,16 @@
       falta uno pensado para un despliegue: secretos por fuera, TLS, red separada por
       servicio, y límites y reinicio declarados. La diferencia entre los dos ficheros es
       justo lo que hay que documentar.
-- [ ] **Sondas y arranque ordenado.** Dex ya tiene `/healthz` en el endpoint de
-      telemetría, pero nada declara que el panel no debe arrancar antes que dex, ni qué
-      hacer si Valkey no está: hoy dex se niega a arrancar, que es lo correcto, pero un
-      orquestador tiene que saber reintentar en vez de darlo por muerto.
+- [ ] **Sondas que digan la verdad.** El orden de arranque está resuelto por dentro
+      —`newAuthenticatorWithRetry` en [main.go:62](cmd/dex-dashboard/main.go#L62) reintenta
+      el discovery, así que el panel puede levantarse antes que dex— pero las sondas no
+      sirven para lo que un orquestador necesita: el `/healthz` del panel
+      ([main.go:75](cmd/dex-dashboard/main.go#L75)) devuelve 200 siempre, sin mirar si la
+      conexión gRPC con dex o el Valkey de las sesiones responden. Como sonda de vida está
+      bien; como sonda de disponibilidad miente, y el orquestador manda tráfico a un panel
+      donde todas las páginas van a fallar. Falta además decir qué hacer cuando Valkey no
+      está: dex se niega a arrancar, que es lo correcto, pero hay que reintentar en vez de
+      darlo por muerto.
 
 ### 4. 🔐 Autenticación Avanzada (Beyond TOTP)
 
@@ -139,8 +155,16 @@
 - [ ] **Passkeys sin contraseña para Keystone.** Esto sí es trabajo nuevo: WebAuthn de
       upstream es un segundo factor, no un primer factor, así que el login sin contraseña
       contra Keystone sigue sin base.
-- [ ] Políticas Condicionales: Permitir bloquear el login basado en roles o dominios específicos de OpenStack directamente en el Connector antes de emitir claims JWT.
-      Upstream trae ahora políticas CEL, que podrían servir de base en vez de escribirlo en el conector.
+- [ ] **Políticas Condicionales: bloquear el login por rol o dominio de OpenStack antes
+      de emitir los claims.** Lo que trae upstream es menos de lo que parece y también más:
+      `pkg/cel` compila y evalúa expresiones, con `IdentityFromConnector`,
+      `RequestFromContext` y `EvalBool` ya escritos —justo las piezas de esto— pero **no lo
+      importa nadie**: `go mod why cel-go` responde que el módulo principal no lo necesita,
+      y en el árbol de upstream tampoco hay un solo consumidor. Publicaron el evaluador
+      antes que su punto de enganche. Así que el trabajo no es escribir políticas: es el
+      campo de configuración y la llamada después de que el conector devuelva la identidad.
+      El evaluador sale gratis; conviene mirar antes si upstream va a poner ahí su propio
+      enganche, para no divergir en el mismo sitio.
 
 ### 6. 🎛️ Dashboard de administración
 
