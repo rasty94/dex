@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
+
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 )
 
 // Config is the dashboard's YAML configuration. It is deliberately separate
@@ -22,6 +24,13 @@ type Config struct {
 	Dex   DexConfig   `json:"dex"`
 	OIDC  OIDCConfig  `json:"oidc"`
 	Admin AdminConfig `json:"admin"`
+
+	// Valkey shares administrator sessions between replicas of this panel.
+	// Leaving the address empty keeps them in this process.
+	//
+	// Whatever can write here can grant itself write permission on the panel:
+	// the session carries CanWrite. Authenticate the connection.
+	Valkey dexvalkey.Config `json:"valkey"`
 }
 
 // DexConfig points at the dex gRPC API the dashboard administers.
@@ -150,6 +159,10 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.Listen == "" {
 		c.Listen = "127.0.0.1:5556"
+	}
+	if c.Valkey.KeyPrefix == "" {
+		// A Valkey shared with dex itself must not have the two mix keys.
+		c.Valkey.KeyPrefix = "dex-dashboard:"
 	}
 
 	return &c, c.validate()

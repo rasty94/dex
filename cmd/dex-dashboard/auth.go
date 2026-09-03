@@ -17,6 +17,8 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 )
 
 const (
@@ -60,7 +62,7 @@ func newSessionStore(ttl, idleTTL time.Duration) *sessionStore {
 	return &sessionStore{ttl: ttl, idleTTL: idleTTL, s: make(map[string]*session)}
 }
 
-func (st *sessionStore) create(sess *session) (string, error) {
+func (st *sessionStore) create(_ context.Context, sess *session) (string, error) {
 	id, err := randomToken()
 	if err != nil {
 		return "", err
@@ -77,7 +79,7 @@ func (st *sessionStore) create(sess *session) (string, error) {
 	return id, nil
 }
 
-func (st *sessionStore) get(id string) (*session, bool) {
+func (st *sessionStore) get(_ context.Context, id string) (*session, bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
@@ -100,7 +102,7 @@ func (st *sessionStore) idle(sess *session, now time.Time) bool {
 	return st.idleTTL > 0 && now.Sub(sess.LastSeen) > st.idleTTL
 }
 
-func (st *sessionStore) delete(id string) {
+func (st *sessionStore) delete(_ context.Context, id string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	delete(st.s, id)
@@ -124,12 +126,30 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
+// sessions is what the panel needs from a session store: the in-process one and
+// the shared one both satisfy it.
+type sessions interface {
+	create(ctx context.Context, sess *session) (string, error)
+	get(ctx context.Context, id string) (*session, bool)
+	delete(ctx context.Context, id string)
+}
+
+// sessionsFor picks where administrator sessions live. Without a valkey address
+// they stay in this process, which is what a single panel wants: nothing to
+// encrypt, nothing to rotate, and a restart just asks for a fresh login.
+func sessionsFor(c *Config, vk *dexvalkey.Client) sessions {
+	if vk != nil {
+		return newValkeySessions(vk, c.Admin.SessionTTL, c.Admin.IdleTTL)
+	}
+	return newSessionStore(c.Admin.SessionTTL, c.Admin.IdleTTL)
+}
+
 // authenticator runs the OIDC login against dex and decides who is an admin.
 type authenticator struct {
 	provider     *oidc.Provider
 	verifier     *oidc.IDTokenVerifier
 	oauth2       oauth2.Config
-	sessions     *sessionStore
+	sessions     sessions
 	admin        AdminConfig
 	secure       bool
 	reauthWindow time.Duration
@@ -137,7 +157,7 @@ type authenticator struct {
 	logger       *slog.Logger
 }
 
-func newAuthenticator(ctx context.Context, c *Config, logger *slog.Logger) (*authenticator, error) {
+func newAuthenticator(ctx context.Context, c *Config, vk *dexvalkey.Client, logger *slog.Logger) (*authenticator, error) {
 	provider, err := oidc.NewProvider(ctx, c.OIDC.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("query dex's OIDC discovery endpoint: %w", err)
@@ -164,7 +184,7 @@ func newAuthenticator(ctx context.Context, c *Config, logger *slog.Logger) (*aut
 			RedirectURL:  strings.TrimSuffix(c.BaseURL, "/") + "/callback",
 			Scopes:       scopes,
 		},
-		sessions:     newSessionStore(c.Admin.SessionTTL, c.Admin.IdleTTL),
+		sessions:     sessionsFor(c, vk),
 		admin:        c.Admin,
 		secure:       strings.HasPrefix(c.BaseURL, "https://"),
 		reauthWindow: c.Admin.ReauthWindow,
@@ -351,7 +371,7 @@ func (a *authenticator) handleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Login error.", http.StatusInternalServerError)
 		return
 	}
-	id, err := a.sessions.create(&session{
+	id, err := a.sessions.create(ctx, &session{
 		Email:     claims.Email,
 		Name:      claims.Name,
 		Groups:    claims.Groups,
@@ -365,7 +385,7 @@ func (a *authenticator) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.logger.Info("dashboard login", "email", claims.Email, "can_write", canWrite)
-	http.SetCookie(w, a.cookie(sessionCookie, id, int(a.sessions.ttl/time.Second)))
+	http.SetCookie(w, a.cookie(sessionCookie, id, int(a.admin.SessionTTL/time.Second)))
 
 	next := "/"
 	if c, err := a.readCookie(r, nextCookie); err == nil {
@@ -379,7 +399,7 @@ func (a *authenticator) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 func (a *authenticator) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := a.readCookie(r, sessionCookie); err == nil {
-		a.sessions.delete(c.Value)
+		a.sessions.delete(r.Context(), c.Value)
 	}
 	http.SetCookie(w, a.cookie(sessionCookie, "", -1))
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -401,7 +421,7 @@ func (a *authenticator) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := a.readCookie(r, sessionCookie)
 		if err == nil {
-			if sess, ok := a.sessions.get(c.Value); ok {
+			if sess, ok := a.sessions.get(r.Context(), c.Value); ok {
 				next(w, r.WithContext(context.WithValue(r.Context(), sessionCtxKey, sess)))
 				return
 			}
