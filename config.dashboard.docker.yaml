@@ -60,7 +60,9 @@ admin:
        Valkey shared with dex itself from mixing the two processes' keys.
        DEX_DASHBOARD_VALKEY_ADDRESS stays for the single-node case;
        DEX_DASHBOARD_VALKEY_ADDRESSES takes a comma-separated list for
-       sentinel and cluster. */}}
+       sentinel and cluster. If both are set, ADDRESSES wins -- getenv only
+       falls back to its default argument (here, the ADDRESS lookup) when the
+       first name is unset, checked by rendering both set at once. */}}
 {{- $dashboardValkeyAddrs := getenv "DEX_DASHBOARD_VALKEY_ADDRESSES" (getenv "DEX_DASHBOARD_VALKEY_ADDRESS" "") }}
 {{- if $dashboardValkeyAddrs }}
 valkey:

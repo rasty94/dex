@@ -44,7 +44,10 @@ grpc:
        when a connector asks for it, its caches. No address keeps everything
        in process, which is the default -- nothing below is rendered then.
        DEX_VALKEY_ADDRESS stays for the single-node case; DEX_VALKEY_ADDRESSES
-       takes a comma-separated list for sentinel and cluster. */}}
+       takes a comma-separated list for sentinel and cluster. If both are set,
+       DEX_VALKEY_ADDRESSES wins -- getenv only falls back to its default
+       argument (here, the DEX_VALKEY_ADDRESS lookup) when the first name is
+       unset, checked by rendering both set at once. */}}
 {{- $valkeyAddrs := getenv "DEX_VALKEY_ADDRESSES" (getenv "DEX_VALKEY_ADDRESS" "") }}
 {{- if $valkeyAddrs }}
 valkey:
