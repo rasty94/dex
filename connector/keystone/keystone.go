@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/dexidp/dex/connector"
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 )
 
 var (
@@ -85,14 +87,19 @@ type domainKeystone struct {
 //			groupMapping:
 //			  "admin@my-project": "platform-admins"
 type Config struct {
-	Domain        string            `json:"domain"`
-	Host          string            `json:"keystoneHost"`
-	AdminUsername string            `json:"keystoneUsername"`
-	AdminPassword string            `json:"keystonePassword"`
-	UserIDKey     string            `json:"userIDKey"`
-	CacheTTL      string            `json:"cacheTTL"`
-	FetchRoles    bool              `json:"fetchRoles"`
-	GroupMapping  map[string]string `json:"groupMapping"`
+	Domain        string `json:"domain"`
+	Host          string `json:"keystoneHost"`
+	AdminUsername string `json:"keystoneUsername"`
+	AdminPassword string `json:"keystonePassword"`
+	UserIDKey     string `json:"userIDKey"`
+	CacheTTL      string `json:"cacheTTL"`
+	// CacheShared puts the token cache in the shared store instead of this
+	// process, so replicas do not each revalidate the same token. It decides
+	// where the cache lives, not whether there is one: the lifetime is still
+	// CacheTTL, and without CacheTTL there is no cache either way.
+	CacheShared  bool              `json:"cacheShared"`
+	FetchRoles   bool              `json:"fetchRoles"`
+	GroupMapping map[string]string `json:"groupMapping"`
 }
 
 type loginRequestData struct {
@@ -186,7 +193,18 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
 		if importTime <= 0 {
 			return nil, fmt.Errorf("cacheTTL must be positive, got %q", c.CacheTTL)
 		}
-		tokenCache = newTimeCache(importTime)
+		if c.CacheShared {
+			shared := dexvalkey.Shared()
+			if shared == nil {
+				// Asking for a shared cache and silently getting a local one is
+				// the kind of quiet difference that is only discovered during an
+				// incident.
+				return nil, errors.New("cacheShared is set but no valkey address is configured")
+			}
+			tokenCache = newValkeyCache(shared, importTime)
+		} else {
+			tokenCache = newTimeCache(importTime)
+		}
 	}
 
 	return &conn{
