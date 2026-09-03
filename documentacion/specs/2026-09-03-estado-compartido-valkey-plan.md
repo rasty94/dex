@@ -790,6 +790,7 @@ Crear `connector/keystone/cache_test.go`:
 package keystone
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -831,6 +832,18 @@ func TestCacheRoundTripsAnIdentity(t *testing.T) {
 	}
 	if got.UserID != want.UserID || got.Email != want.Email || len(got.Groups) != 1 {
 		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+// A misspelled cacheTTL used to disable the cache and say nothing, so an
+// operator who asked for caching got none and had no way to notice.
+func TestAMisspelledCacheTTLIsRefused(t *testing.T) {
+	_, err := (&Config{Host: "http://keystone", CacheTTL: "5min"}).Open("kc", testLogger())
+	if err == nil {
+		t.Fatal("a cacheTTL that does not parse was accepted")
+	}
+	if !strings.Contains(err.Error(), "cacheTTL") {
+		t.Errorf("the error does not name the field: %v", err)
 	}
 }
 
@@ -942,7 +955,23 @@ func (c *timeCache) len() int {
 En `connector/keystone/keystone.go`:
 
 1. Línea 33, en la estructura `conn`: `tokenCache identityCache`.
-2. Línea ~180, en `Open`: la variable local pasa a `var tokenCache identityCache`, y sigue asignándose con `newTimeCache(importTime)`.
+2. Línea ~180, en `Open`, el bloque queda así. **Ojo al cambio de comportamiento**: hoy dice `if err == nil && importTime > 0`, de modo que un `cacheTTL` mal escrito desactiva la caché **sin decir nada**. Pasa a ser un error de arranque, y se declara en el CHANGELOG de la Task 7:
+
+```go
+	var tokenCache identityCache
+	if c.CacheTTL != "" {
+		importTime, err := time.ParseDuration(c.CacheTTL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cacheTTL %q: %v", c.CacheTTL, err)
+		}
+		if importTime <= 0 {
+			return nil, fmt.Errorf("cacheTTL must be positive, got %q", c.CacheTTL)
+		}
+		tokenCache = newTimeCache(importTime)
+	}
+```
+
+Comprobar que `fmt` está entre los imports del fichero.
 3. Línea ~298: `if cached, ok := p.tokenCache.get(ctx, subjectToken); ok {` y devolver `cached` directamente, sin la aserción `cached.(connector.Identity)`.
 4. Línea ~378: `p.tokenCache.set(ctx, subjectToken, identity)`.
 
@@ -1144,12 +1173,17 @@ En `connector/keystone/keystone.go`, en `Config`, tras `CacheTTL`:
 
 Y en `Open`, donde hoy se construye la caché:
 
+El bloque queda como lo dejó la Task 4, más la rama compartida:
+
 ```go
 	var tokenCache identityCache
 	if c.CacheTTL != "" {
 		importTime, err := time.ParseDuration(c.CacheTTL)
 		if err != nil {
 			return nil, fmt.Errorf("invalid cacheTTL %q: %v", c.CacheTTL, err)
+		}
+		if importTime <= 0 {
+			return nil, fmt.Errorf("cacheTTL must be positive, got %q", c.CacheTTL)
 		}
 		if c.CacheShared {
 			shared := dexvalkey.Shared()
@@ -1166,7 +1200,7 @@ Y en `Open`, donde hoy se construye la caché:
 	}
 ```
 
-Comprobar cómo trata hoy `Open` el error de `ParseDuration` y conservar ese comportamiento si difiere.
+`errors` tiene que estar entre los imports.
 
 - [ ] **Step 5: Ejecutar y comprobar que pasa**
 
@@ -1689,6 +1723,8 @@ El cambio de semántica del limitador es observable y va anotado:
 - La cache de tokens del conector Keystone comprobaba la caducidad al leer pero
   nunca borraba, asi que crecia sin limite mientras el proceso viviera. Afecta
   tambien a despliegues de una sola replica.
+- Un `cacheTTL` mal escrito en el conector Keystone desactivaba la cache en
+  silencio. Ahora dex no arranca y dice cual es el valor que no entiende.
 ```
 
 - [ ] **Step 6: Mover lo cerrado a DONE.md**
