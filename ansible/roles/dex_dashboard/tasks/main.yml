@@ -8,7 +8,8 @@
 
 - name: Token gRPC del panel
   # A diferencia de dex, el panel si sabe leer el token de fichero aparte
-  # (dex.tokenFile), asi que no hace falta meterlo en config.yaml.
+  # (dex.tokenFile), asi que no hace falta meterlo en config.yaml. no_log:
+  # es un secreto; --diff lo imprimiria entero al crear o cambiar el fichero.
   ansible.builtin.copy:
     content: "{{ dex_grpc_token }}"
     dest: "{{ dex_dashboard_config_dir }}/grpc-token"
@@ -16,6 +17,7 @@
     group: "{{ dex_dashboard_config_group }}"
     mode: "0600"
   notify: Reiniciar el panel
+  no_log: true
 
 - name: Certificado de la CA interna
   # Para verificar el TLS del gRPC de dex, firmado por esta misma CA.
@@ -28,6 +30,8 @@
   notify: Reiniciar el panel
 
 - name: Configuracion del panel
+  # no_log: la plantilla renderizada lleva clientSecret en claro; sin esto,
+  # un -v o --diff lo imprime en la consola.
   ansible.builtin.template:
     src: config.yaml.j2
     dest: "{{ dex_dashboard_config_dir }}/config.yaml"
@@ -35,6 +39,7 @@
     group: "{{ dex_dashboard_config_group }}"
     mode: "0600"
   notify: Reiniciar el panel
+  no_log: true
 
 - name: Compose
   ansible.builtin.template:

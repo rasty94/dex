@@ -79,6 +79,10 @@
   delegate_to: localhost
 
 - name: Publicar el certificado y la clave del host
+  # no_log: la clave privada del host pasa a ser un hecho en memoria; sin
+  # esto, un rerun con -v o --diff la imprimiria entera en la consola y en
+  # cualquier log de CI.
   ansible.builtin.set_fact:
     internal_ca_host_cert: "{{ lookup('file', internal_ca_dir + '/' + inventory_hostname + '-cert.pem') }}"
     internal_ca_host_key: "{{ lookup('file', internal_ca_dir + '/' + inventory_hostname + '-key.pem') }}"
+  no_log: true

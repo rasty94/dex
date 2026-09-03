@@ -8,6 +8,23 @@
     timeout: 10
   changed_when: false
 
+- name: Aviso si la base de datos no lleva TLS
+  # No es un fail: la base de datos no es nuestra, igual que
+  # WarnIfKeysCanBeEvicted en pkg/valkey/valkey.go avisa en vez de negarse a
+  # arrancar. dex_storage.ssl_mode "false" (el valor de fabrica) hace pasar
+  # la contrasena y cada sesion en claro por la red; con un host que no es
+  # esta misma maquina, eso es toda la red intermedia.
+  ansible.builtin.debug:
+    msg: >-
+      dex_storage.ssl_mode esta en "false" (o sin poner) y dex_storage.host
+      ("{{ dex_storage.host }}") no parece esta maquina: la contrasena de la
+      base de datos y cada sesion cruzan la red sin cifrar. Ver el
+      comentario junto a dex_storage en el inventario de ejemplo para
+      "skip-verify" o "true" con ssl_ca_file.
+  when:
+    - (dex_storage.ssl_mode | default('false')) == 'false'
+    - dex_storage.host not in ['127.0.0.1', 'localhost', '::1']
+
 - name: Directorio de configuracion
   ansible.builtin.file:
     path: "{{ dex_config_dir }}"
@@ -19,7 +36,8 @@
 - name: Configuracion de dex
   # El fichero ES el secreto: dex no sabe leer la contrasena de la base, la de
   # Valkey ni cookieEncryptionKey desde fichero aparte, y por entorno las
-  # ensena docker inspect.
+  # ensena docker inspect. no_log: la plantilla renderizada lleva esos tres
+  # secretos en claro; sin esto, un -v o --diff los imprime en la consola.
   ansible.builtin.template:
     src: config.yaml.j2
     dest: "{{ dex_config_dir }}/config.yaml"
@@ -27,6 +45,7 @@
     group: "{{ dex_config_group }}"
     mode: "0600"
   notify: Reiniciar dex
+  no_log: true
 
 - name: Certificado de la CA interna
   ansible.builtin.copy:
@@ -47,6 +66,8 @@
   notify: Reiniciar dex
 
 - name: Clave propia del nodo, para el TLS del gRPC
+  # no_log: es la clave privada del nodo; copy con --diff imprimiria el
+  # fichero entero al crearlo o al cambiar.
   ansible.builtin.copy:
     content: "{{ internal_ca_host_key }}"
     dest: "{{ dex_config_dir }}/dex-key.pem"
@@ -54,6 +75,7 @@
     group: "{{ dex_config_group }}"
     mode: "0600"
   notify: Reiniciar dex
+  no_log: true
 
 - name: Compose
   ansible.builtin.template:
