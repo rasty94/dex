@@ -1,0 +1,9 @@
+# docker compose solo recrea un contenedor cuando cambia la definicion del
+# propio servicio; el contenido de un fichero montado por bind mount (el
+# config.yaml renderizado) no cuenta como cambio para el. recreate: always
+# fuerza el reinicio cuando este handler salta.
+- name: Reiniciar dex
+  community.docker.docker_compose_v2:
+    project_src: "{{ dex_config_dir }}"
+    state: present
+    recreate: always

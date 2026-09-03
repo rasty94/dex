@@ -1,0 +1,30 @@
+dex_dashboard_config_dir: /etc/dex-dashboard
+
+# Igual que dex_container_name en el rol dex: para no chocar con otro panel
+# suelto en la misma maquina durante un converge de prueba.
+dex_dashboard_container_name: dex-dashboard
+
+dex_dashboard_listen_port: 5560
+
+# UID/GID del proceso dentro del contenedor (ver el Dockerfile del fork).
+dex_dashboard_config_owner: "1001"
+dex_dashboard_config_group: "1001"
+
+dex_dashboard_oidc_client_id: dex-dashboard
+
+# El panel se niega a arrancar sin al menos un administrador, a proposito:
+# admitir a cualquier usuario autenticado seria no tener puerta. Por eso estas
+# listas van vacias por defecto y hay que rellenarlas en el inventario.
+dex_dashboard_admin_groups: []
+dex_dashboard_admin_emails: []
+dex_dashboard_admin_write_groups: []
+dex_dashboard_admin_write_emails: []
+
+dex_dashboard_session_ttl: 8h
+dex_dashboard_idle_ttl: 1h
+dex_dashboard_reauth_window: 15m
+
+# El panel corre en el mismo nodo que su dex (mismos hosts en el inventario de
+# ejemplo), asi que le llega por localhost. default(5557) para no depender de
+# que el rol dex haya cargado sus propios defaults en este host.
+dex_dashboard_grpc_address: "127.0.0.1:{{ dex_grpc_port | default(5557) }}"

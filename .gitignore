@@ -36,3 +36,9 @@ devenv.local.yaml
 CLAUDE.md
 .gitattributes
 /cmd/dex-dashboard/dex-dashboard
+.venv/
+
+# Ansible: la clave privada de la CA interna nunca sale del control, y el
+# converge local escribe su propia configuracion desechable en el worktree.
+/.internal-ca/
+/.converge/

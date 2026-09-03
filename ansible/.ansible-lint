@@ -1,0 +1,6 @@
+---
+# Ejecutar con: ANSIBLE_COLLECTIONS_PATH=.venv/ansible_collections:~/.ansible/collections
+#   .venv/bin/ansible-lint ansible/
+profile: production
+exclude_paths:
+  - .venv/

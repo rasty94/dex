@@ -1,0 +1,16 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/dex_dashboard/templates/.
+services:
+    dex-dashboard:
+        image: {{ dex_image }}
+        container_name: {{ dex_dashboard_container_name }}
+        restart: unless-stopped
+        command: ["dex-dashboard", "--config", "/etc/dex-dashboard/config.yaml"]
+        # Sin variables de entorno con secretos: el token gRPC va en su propio
+        # fichero (tokenFile) y el resto en config.yaml, ambos modo 0600.
+        volumes:
+            - {{ dex_dashboard_config_dir }}/config.yaml:/etc/dex-dashboard/config.yaml:ro
+            - {{ dex_dashboard_config_dir }}/grpc-token:/etc/dex-dashboard/grpc-token:ro
+            - {{ dex_dashboard_config_dir }}/internal-ca.pem:/etc/dex-dashboard/internal-ca.pem:ro
+        ports:
+            - "{{ dex_dashboard_listen_port }}:5560"

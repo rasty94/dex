@@ -1,0 +1,24 @@
+dex_config_dir: /etc/dex
+
+# Nombre del contenedor. Parametrizado para poder correr un converge de
+# prueba en una maquina que ya tenga otro "dex" suelto sin chocar con el.
+dex_container_name: dex
+
+dex_http_port: 5556
+dex_grpc_port: 5557
+dex_telemetry_port: 5558
+
+# UID/GID del proceso dex dentro del contenedor (ver el Dockerfile del fork).
+# Parametrizados para poder apuntar a un usuario no root en un converge local.
+dex_config_owner: "1001"
+dex_config_group: "1001"
+
+dex_valkey_key_prefix: "dex:"
+dex_valkey_port: 6379
+dex_valkey_sentinel_port: 26379
+
+# Sin conectores externos, dex sirve con su base de contrasenas propia (el
+# mismo por defecto que trae config.yaml.dist). Rellenar dex_connectors con
+# los bloques de conector de verdad, tal cual van en config.yaml.
+dex_enable_password_db: true
+dex_connectors: []

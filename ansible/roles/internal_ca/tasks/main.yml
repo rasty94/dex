@@ -1,0 +1,84 @@
+# La CA se genera en el control (delegate_to: localhost), una sola vez
+# (run_once) para toda la ejecucion: dex, el panel y Valkey confian en la
+# misma. La clave privada de la CA nunca se copia a un host gestionado; solo
+# el certificado (publico) viaja, como hecho "internal_ca_cert".
+- name: Directorio de la CA en el control
+  ansible.builtin.file:
+    path: "{{ internal_ca_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  run_once: true
+
+- name: Clave privada de la CA
+  community.crypto.openssl_privatekey:
+    path: "{{ internal_ca_key_path }}"
+    type: RSA
+    size: 4096
+    mode: "0600"
+  delegate_to: localhost
+  run_once: true
+
+- name: Peticion de certificado de la CA
+  community.crypto.openssl_csr:
+    path: "{{ internal_ca_csr_path }}"
+    privatekey_path: "{{ internal_ca_key_path }}"
+    common_name: "{{ internal_ca_common_name }}"
+    basic_constraints:
+      - "CA:TRUE"
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Certificado de la CA (autofirmado)
+  community.crypto.x509_certificate:
+    path: "{{ internal_ca_cert_path }}"
+    csr_path: "{{ internal_ca_csr_path }}"
+    privatekey_path: "{{ internal_ca_key_path }}"
+    provider: selfsigned
+    selfsigned_not_after: "+{{ internal_ca_validity_days }}d"
+  delegate_to: localhost
+  run_once: true
+
+- name: Publicar el certificado de la CA para todos los hosts
+  # lookup() se ejecuta siempre en el control, así que no hace falta
+  # delegate_to aquí: cada host de la tanda se queda con el mismo contenido.
+  ansible.builtin.set_fact:
+    internal_ca_cert: "{{ lookup('file', internal_ca_cert_path) }}"
+
+- name: Clave privada del host
+  community.crypto.openssl_privatekey:
+    path: "{{ internal_ca_dir }}/{{ inventory_hostname }}-key.pem"
+    type: RSA
+    size: 2048
+    mode: "0600"
+  delegate_to: localhost
+
+- name: Peticion de certificado del host
+  community.crypto.openssl_csr:
+    path: "{{ internal_ca_dir }}/{{ inventory_hostname }}.csr"
+    privatekey_path: "{{ internal_ca_dir }}/{{ inventory_hostname }}-key.pem"
+    common_name: "{{ inventory_hostname }}"
+    subject_alt_name:
+      - "DNS:{{ inventory_hostname }}"
+      - "IP:{{ ansible_host | default('127.0.0.1') }}"
+  delegate_to: localhost
+
+- name: Certificado del host, firmado por la CA interna
+  community.crypto.x509_certificate:
+    path: "{{ internal_ca_dir }}/{{ inventory_hostname }}-cert.pem"
+    csr_path: "{{ internal_ca_dir }}/{{ inventory_hostname }}.csr"
+    provider: ownca
+    ownca_path: "{{ internal_ca_cert_path }}"
+    ownca_privatekey_path: "{{ internal_ca_key_path }}"
+    ownca_not_after: "+{{ internal_ca_host_cert_validity_days }}d"
+  delegate_to: localhost
+
+- name: Publicar el certificado y la clave del host
+  ansible.builtin.set_fact:
+    internal_ca_host_cert: "{{ lookup('file', internal_ca_dir + '/' + inventory_hostname + '-cert.pem') }}"
+    internal_ca_host_key: "{{ lookup('file', internal_ca_dir + '/' + inventory_hostname + '-key.pem') }}"

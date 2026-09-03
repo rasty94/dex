@@ -1,0 +1,44 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/dex_dashboard/templates/.
+listen: 0.0.0.0:5560
+
+baseURL: {{ dex_dashboard_base_url }}
+
+dex:
+  grpcAddress: {{ dex_dashboard_grpc_address }}
+  tokenFile: /etc/dex-dashboard/grpc-token
+  caCert: /etc/dex-dashboard/internal-ca.pem
+
+oidc:
+  issuer: {{ dex_issuer }}
+  clientID: {{ dex_dashboard_oidc_client_id }}
+  clientSecret: {{ dex_dashboard_oidc_client_secret | to_json }}
+
+admin:
+{% if dex_dashboard_admin_groups | length > 0 %}
+  groups:
+{% for g in dex_dashboard_admin_groups %}
+    - {{ g | to_json }}
+{% endfor %}
+{% endif %}
+{% if dex_dashboard_admin_emails | length > 0 %}
+  emails:
+{% for e in dex_dashboard_admin_emails %}
+    - {{ e | to_json }}
+{% endfor %}
+{% endif %}
+{% if dex_dashboard_admin_write_groups | length > 0 %}
+  writeGroups:
+{% for g in dex_dashboard_admin_write_groups %}
+    - {{ g | to_json }}
+{% endfor %}
+{% endif %}
+{% if dex_dashboard_admin_write_emails | length > 0 %}
+  writeEmails:
+{% for e in dex_dashboard_admin_write_emails %}
+    - {{ e | to_json }}
+{% endfor %}
+{% endif %}
+  sessionTTL: {{ dex_dashboard_session_ttl }}
+  idleTTL: {{ dex_dashboard_idle_ttl }}
+  reauthWindow: {{ dex_dashboard_reauth_window }}

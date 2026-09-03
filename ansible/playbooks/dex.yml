@@ -1,0 +1,21 @@
+# El orden importa: dex se niega a arrancar sin Valkey, y con razon.
+#
+# La Task 10 anade aqui, antes de "Dex", una tancada "Valkey" (hosts:
+# valkey:valkey_sentinel, roles: [valkey]) que crea ese servicio. Hasta
+# entonces ese rol no existe todavia en este arbol, y referenciarlo aqui
+# haria fallar el --syntax-check de esta misma tarea.
+- name: CA interna
+  # Antes que los demas: los tres roles (dex, el panel y, luego, valkey)
+  # consumen el hecho "internal_ca_cert" que publica este rol.
+  hosts: dex:dex_dashboard
+  roles: [internal_ca]
+
+- name: Dex
+  hosts: dex
+  serial: 1        # de una en una: una actualizacion no deja el servicio abajo
+  roles: [dex]
+
+- name: Panel de administracion
+  hosts: dex_dashboard
+  serial: 1
+  roles: [dex_dashboard]

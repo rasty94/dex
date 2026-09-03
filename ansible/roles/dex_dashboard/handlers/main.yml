@@ -1,0 +1,7 @@
+# Mismo motivo que en el rol dex: docker compose no ve el cambio dentro de un
+# fichero montado por bind mount, asi que hay que forzar la recreacion.
+- name: Reiniciar el panel
+  community.docker.docker_compose_v2:
+    project_src: "{{ dex_dashboard_config_dir }}"
+    state: present
+    recreate: always
