@@ -14,6 +14,9 @@ El stack trae además un Valkey y una segunda réplica de Dex, `dex-replica`, en
 <http://127.0.0.1:5566/dex> — misma imagen, misma `dex.yaml`, base de datos propia.
 Sirven para demostrar que el limitador de login se comparte de verdad entre
 réplicas cuando hay Valkey configurado; ver [más abajo](#límite-de-login-compartido-entre-réplicas).
+El servicio `dashboard` también apunta a ese mismo Valkey: sus sesiones de
+administrador quedan ahí en vez de en memoria del proceso, así que sobreviven
+a un reinicio del contenedor del panel en lugar de forzar un nuevo login.
 
 ---
 
