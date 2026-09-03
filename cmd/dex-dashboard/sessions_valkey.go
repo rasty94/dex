@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
+	"sync"
 	"time"
+
+	valkeygo "github.com/valkey-io/valkey-go"
 
 	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 )
@@ -27,10 +31,36 @@ type valkeySessions struct {
 	ttl     time.Duration
 	idleTTL time.Duration
 	now     func() time.Time
+	logger  *slog.Logger
+
+	warnMu   sync.Mutex
+	lastWarn time.Time
 }
 
-func newValkeySessions(c *dexvalkey.Client, ttl, idleTTL time.Duration) *valkeySessions {
-	return &valkeySessions{c: c, ttl: ttl, idleTTL: idleTTL, now: time.Now}
+func newValkeySessions(c *dexvalkey.Client, ttl, idleTTL time.Duration, logger *slog.Logger) *valkeySessions {
+	return &valkeySessions{c: c, ttl: ttl, idleTTL: idleTTL, now: time.Now, logger: logger}
+}
+
+// backendWarnInterval caps how often warnBackendError logs: a downed Valkey
+// fails every session lookup, and logging each one would flood the log at the
+// same rate as the outage that is being reported.
+const backendWarnInterval = 30 * time.Second
+
+// warnBackendError reports that a Valkey call failed -- as opposed to a normal
+// miss (unknown or expired key) -- so an operator sees why every admin is being
+// bounced to a login screen instead of it looking like ordinary session expiry.
+func (v *valkeySessions) warnBackendError(err error) {
+	if valkeygo.IsValkeyNil(err) {
+		return
+	}
+	v.warnMu.Lock()
+	defer v.warnMu.Unlock()
+	now := v.now()
+	if now.Sub(v.lastWarn) < backendWarnInterval {
+		return
+	}
+	v.lastWarn = now
+	v.logger.Warn("valkey session store unreachable", "err", err)
 }
 
 // window is how long the key should live from now: the idle timeout, or what is
@@ -63,10 +93,13 @@ func (v *valkeySessions) create(ctx context.Context, sess *session) (string, err
 	if err != nil {
 		return "", err
 	}
+	// Px, not Ex: Ex truncates to whole seconds, which turns any window under a
+	// second into "SET ... EX 0" -- rejected by Valkey, so create would fail
+	// for a sub-second idle timeout or absolute lifetime.
 	if err := v.c.Do(ctx, v.c.B().Set().
 		Key(v.c.HashKey("sess", id)).
 		Value(string(raw)).
-		Ex(v.window(sess)).
+		Px(v.window(sess)).
 		Build()).Error(); err != nil {
 		return "", err
 	}
@@ -81,7 +114,10 @@ func (v *valkeySessions) get(ctx context.Context, id string) (*session, bool) {
 	cancel()
 	if err != nil {
 		// Unknown id, or the store is unreachable. Either way the panel cannot
-		// vouch for this session, so it asks for a login.
+		// vouch for this session, so it asks for a login. A real backend error
+		// also gets a rate-limited warning, or a Valkey outage looks exactly
+		// like normal session expiry.
+		v.warnBackendError(err)
 		return nil, false
 	}
 	var sess session

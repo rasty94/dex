@@ -68,6 +68,26 @@ func TestTheSharedEntryExpires(t *testing.T) {
 	}
 }
 
+// Ex truncates to whole seconds, so a sub-second cacheTTL used to become
+// "SET ... EX 0" -- rejected by Valkey, silently, since set discards the
+// error. Px keeps millisecond precision, so the entry must still be there
+// right after it is set.
+func TestASubSecondTTLRoundTrips(t *testing.T) {
+	m := miniredis.RunT(t)
+	ctx := t.Context()
+
+	c := sharedCache(t, m.Addr(), 500*time.Millisecond)
+	c.set(ctx, "tok", connector.Identity{UserID: "u"})
+
+	got, ok := c.get(ctx, "tok")
+	if !ok {
+		t.Fatal("a sub-second TTL entry vanished instead of round-tripping")
+	}
+	if got.UserID != "u" {
+		t.Errorf("got %+v, want UserID %q", got, "u")
+	}
+}
+
 // A cache is an optimization. If Valkey is gone the login still has to work, so
 // every failure is a miss and never an error.
 func TestValkeyDownIsAMissAndNotAnError(t *testing.T) {

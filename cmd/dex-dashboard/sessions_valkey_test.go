@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,12 +14,17 @@ import (
 
 func valkeySessionsFor(t *testing.T, addr string, ttl, idle time.Duration) *valkeySessions {
 	t.Helper()
+	return valkeySessionsForWithLogger(t, addr, ttl, idle, testLogger())
+}
+
+func valkeySessionsForWithLogger(t *testing.T, addr string, ttl, idle time.Duration, logger *slog.Logger) *valkeySessions {
+	t.Helper()
 	c, err := dexvalkey.New(t.Context(), dexvalkey.Config{Address: addr, KeyPrefix: "dex-dashboard:"})
 	if err != nil {
 		t.Fatalf("valkey client: %v", err)
 	}
 	t.Cleanup(c.Close)
-	return newValkeySessions(c, ttl, idle)
+	return newValkeySessions(c, ttl, idle, logger)
 }
 
 // A replicated panel must not sign an administrator out just because the load
@@ -127,6 +135,59 @@ func TestValkeyDownRefusesTheSession(t *testing.T) {
 
 	if _, ok := s.get(ctx, id); ok {
 		t.Error("a session was accepted with the store unreachable")
+	}
+}
+
+// A dead store fails closed correctly, but that looks exactly like normal
+// session expiry unless something says otherwise. get must warn, so an
+// operator has something to find besides "everyone got logged out".
+func TestValkeyDownLogsAWarning(t *testing.T) {
+	m := miniredis.RunT(t)
+	ctx := t.Context()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	s := valkeySessionsForWithLogger(t, m.Addr(), time.Hour, 30*time.Minute, logger)
+	id, _ := s.create(ctx, &session{Email: "admin@example.com"})
+	m.Close()
+
+	s.get(ctx, id)
+
+	if !strings.Contains(logs.String(), "valkey session store unreachable") {
+		t.Errorf("no warning logged for an unreachable store, got: %s", logs.String())
+	}
+}
+
+// The warning is rate-limited, or a store that stays down floods the log at
+// the same rate as every bounced login.
+func TestValkeyDownWarningIsRateLimited(t *testing.T) {
+	m := miniredis.RunT(t)
+	ctx := t.Context()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	s := valkeySessionsForWithLogger(t, m.Addr(), time.Hour, 30*time.Minute, logger)
+	id, _ := s.create(ctx, &session{Email: "admin@example.com"})
+	m.Close()
+
+	fakeNow := time.Now()
+	s.now = func() time.Time { return fakeNow }
+
+	s.get(ctx, id)
+	s.get(ctx, id)
+	s.get(ctx, id)
+
+	if n := strings.Count(logs.String(), "valkey session store unreachable"); n != 1 {
+		t.Errorf("got %d warnings for three failures within the rate-limit window, want 1", n)
+	}
+
+	fakeNow = fakeNow.Add(31 * time.Second)
+	s.get(ctx, id)
+
+	if n := strings.Count(logs.String(), "valkey session store unreachable"); n != 2 {
+		t.Errorf("got %d warnings after the rate-limit window passed, want 2", n)
 	}
 }
 

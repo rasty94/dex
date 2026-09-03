@@ -15,6 +15,7 @@ import (
 // may be shared with other services, and key names are the first thing anyone
 // with access sees. The value is the identity as JSON -- personal data, which is
 // why the deployment documentation says what lives in here.
+
 // opTimeout bounds a single call to the shared store. Without a deadline on
 // ctx, the valkey client retries a downed server forever, and this cache
 // would hang every login instead of missing fast the way the rest of this
@@ -55,9 +56,12 @@ func (v *valkeyCache) set(ctx context.Context, token string, id connector.Identi
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 
+	// Px, not Ex: Ex truncates to whole seconds, which turns any cacheTTL under
+	// a second into "SET ... EX 0" -- rejected by Valkey, so the entry would
+	// silently never populate.
 	_ = v.c.Do(ctx, v.c.B().Set().
 		Key(v.c.HashKey("tok", token)).
 		Value(string(raw)).
-		Ex(v.ttl).
+		Px(v.ttl).
 		Build()).Error()
 }

@@ -68,4 +68,16 @@ valkey:
 {{- if getenv "DEX_DASHBOARD_VALKEY_PASSWORD" "" }}
   password: {{ .Env.DEX_DASHBOARD_VALKEY_PASSWORD | quote }}
 {{- end }}
+{{- if getenv "DEX_DASHBOARD_VALKEY_DB" "" }}
+  db: {{ .Env.DEX_DASHBOARD_VALKEY_DB }}
+{{- end }}
+{{- if or (getenv "DEX_DASHBOARD_VALKEY_TLS_CA_CERT" "") (conv.ToBool (getenv "DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY" "false")) }}
+  tls:
+{{- if getenv "DEX_DASHBOARD_VALKEY_TLS_CA_CERT" "" }}
+    caCert: {{ .Env.DEX_DASHBOARD_VALKEY_TLS_CA_CERT }}
+{{- end }}
+{{- if conv.ToBool (getenv "DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY" "false") }}
+    insecureSkipVerify: {{ conv.ToBool .Env.DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY }}
+{{- end }}
+{{- end }}
 {{- end }}

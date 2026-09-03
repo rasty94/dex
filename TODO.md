@@ -56,6 +56,25 @@
       local a propósito: protege el propio arranque de login del panel, no el
       login de Dex, y con una sola réplica del panel por despliegue el límite
       efectivo por proceso ya es el límite real.
+- [ ] `Client.Key` en `pkg/valkey/valkey.go` no tiene más uso que su propio
+      test: cada componente que necesita una clave pasa por `HashKey`. Un
+      ayudante de clave sin hashear y sin usuarios invita a que alguien meta un
+      secreto en el nombre de una clave donde no toca. Retirarlo, o darle un
+      uso real, antes de que alguien lo use mal.
+- [ ] En `server/ratelimit`, un cliente que aborta su petición cancela el
+      contexto, y eso hoy cuenta como fallo del backend igual que Valkey
+      inalcanzable — cae al bucket local y suma en
+      `dex_login_rate_limit_backend_errors_total`. No es un bypass del
+      límite, pero la métrica que debería significar "Valkey inalcanzable"
+      también cuenta desconexiones normales de cliente, lo que la hace menos
+      fiable como alarma. Distinguir `context.Canceled` del resto de errores
+      antes de contarlo.
+- [ ] La afirmación de que dex se niega a arrancar con un `cacheTTL` inválido
+      no es cierta con el feature flag `continue_on_connector_failure` activo
+      (su valor por defecto): ahí el conector falla, dex lo registra y arranca
+      igual sin él. La documentación del conector Keystone y el CHANGELOG
+      deberían decirlo explícitamente en vez de dar a entender que el arranque
+      siempre se detiene.
 
 ### 3. ☁️ Ecosistema Cloud Native e Integraciones
 
@@ -103,3 +122,9 @@
       paginar, y eso sí necesita que la API de dex lo soporte: hoy `ListClients` devuelve todo.
 - [ ] **htmx.** El panel no sirve JavaScript y la CSP está en `default-src 'none'`. Entra
       cuando alguna pantalla gane algo real con actualización parcial, no antes.
+- [ ] **Revocar una sesión de administrador ya no es tan simple como reiniciar el
+      panel.** Con las sesiones en Valkey, sobreviven un reinicio, así que quitar a
+      alguien de `admin.writeGroups` le deja la sesión que ya tenía con permiso de
+      escritura hasta que caduque — no hay forma de terminarla antes salvo borrar la
+      clave a mano en Valkey. Falta documentarlo y, más adelante, un botón en el panel
+      para cerrar una sesión concreta.

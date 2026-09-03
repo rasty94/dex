@@ -137,9 +137,9 @@ type sessions interface {
 // sessionsFor picks where administrator sessions live. Without a valkey address
 // they stay in this process, which is what a single panel wants: nothing to
 // encrypt, nothing to rotate, and a restart just asks for a fresh login.
-func sessionsFor(c *Config, vk *dexvalkey.Client) sessions {
+func sessionsFor(c *Config, vk *dexvalkey.Client, logger *slog.Logger) sessions {
 	if vk != nil {
-		return newValkeySessions(vk, c.Admin.SessionTTL, c.Admin.IdleTTL)
+		return newValkeySessions(vk, c.Admin.SessionTTL, c.Admin.IdleTTL, logger)
 	}
 	return newSessionStore(c.Admin.SessionTTL, c.Admin.IdleTTL)
 }
@@ -184,7 +184,7 @@ func newAuthenticator(ctx context.Context, c *Config, vk *dexvalkey.Client, logg
 			RedirectURL:  strings.TrimSuffix(c.BaseURL, "/") + "/callback",
 			Scopes:       scopes,
 		},
-		sessions:     sessionsFor(c, vk),
+		sessions:     sessionsFor(c, vk, logger),
 		admin:        c.Admin,
 		secure:       strings.HasPrefix(c.BaseURL, "https://"),
 		reauthWindow: c.Admin.ReauthWindow,
