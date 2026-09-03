@@ -29,3 +29,23 @@ valkey_maxmemory: 512mb
 # tiene que ser legible por el.
 valkey_config_owner: "999"
 valkey_config_group: "1000"
+
+# A que handler avisan las copias de tls.yml. standalone.yml lo deja en su
+# valor de fabrica; sentinel.yml lo cambia a "Reiniciar sentinel" al incluir
+# tls.yml, porque un voto puede no tener ningun valkey-server propio.
+valkey_tls_notify_handler: Reiniciar valkey
+
+# Sentinel (Task 11). Nombre del contenedor parametrizado por el mismo motivo
+# que valkey_container_name. El puerto de control (26379) se deja en claro a
+# proposito: es el que usan los propios sentinels entre si y el operador con
+# valkey-cli sin --tls (ver el comentario en sentinel.conf.j2 sobre el
+# certificado que sentinel si necesita para hablar con el master).
+valkey_sentinel_container_name: valkey-sentinel
+valkey_sentinel_port: 26379
+
+# Cuanto tarda sentinel en declarar caido al master y cuanto le da a un
+# failover antes de darlo por atascado. Valores de fabrica de Redis/Valkey;
+# variables por si una red mas lenta o mas rapida que la de referencia pide
+# otro numero.
+valkey_sentinel_down_after_ms: 5000
+valkey_sentinel_failover_timeout_ms: 60000

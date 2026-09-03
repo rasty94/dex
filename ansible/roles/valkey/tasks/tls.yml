@@ -2,6 +2,13 @@
 # el rol internal_ca ya lo hace y lo publica como hechos, para el mismo host,
 # siempre que el playbook incluya a este grupo en su tanda "CA interna" (ver
 # ansible/playbooks/dex.yml). Aqui solo se copia a disco.
+#
+# valkey_tls_notify_handler (por defecto "Reiniciar valkey", en defaults/
+# main.yml) parametriza a que handler avisan estas copias: sentinel.yml
+# incluye este mismo fichero para un voto que puede no tener ningun
+# valkey-server propio (fuera del grupo valkey), y avisar siempre a
+# "Reiniciar valkey" ahi intentaria un docker compose sobre un proyecto que
+# no existe.
 - name: Directorio de TLS
   ansible.builtin.file:
     path: "{{ valkey_config_dir }}/tls"
@@ -17,7 +24,7 @@
     owner: "{{ valkey_config_owner }}"
     group: "{{ valkey_config_group }}"
     mode: "0644"
-  notify: Reiniciar valkey
+  notify: "{{ valkey_tls_notify_handler }}"
 
 - name: Certificado propio del nodo
   ansible.builtin.copy:
@@ -26,7 +33,7 @@
     owner: "{{ valkey_config_owner }}"
     group: "{{ valkey_config_group }}"
     mode: "0644"
-  notify: Reiniciar valkey
+  notify: "{{ valkey_tls_notify_handler }}"
 
 - name: Clave propia del nodo
   # no_log: es la clave privada del nodo; --diff la imprimiria entera al
@@ -37,5 +44,5 @@
     owner: "{{ valkey_config_owner }}"
     group: "{{ valkey_config_group }}"
     mode: "0600"
-  notify: Reiniciar valkey
+  notify: "{{ valkey_tls_notify_handler }}"
   no_log: true

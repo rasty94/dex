@@ -7,9 +7,11 @@
 
 - name: Valkey
   # Antes que Dex: dex se niega a arrancar sin Valkey cuando esta configurado,
-  # asi que el orden no es cosmetico. La Task 11 (sentinel) y la Task 12
-  # (cluster) amplian "hosts" con "valkey_sentinel" cuando ese grupo exista.
-  hosts: valkey
+  # asi que el orden no es cosmetico. valkey_sentinel se suma aqui porque un
+  # voto de sentinel puede vivir en un nodo de dex, fuera del grupo valkey
+  # (Task 11): sin esto ese host nunca entraria en esta tanda y su sentinel
+  # no se desplegaria nunca.
+  hosts: valkey:valkey_sentinel
   serial: 1
   roles: [valkey]
 

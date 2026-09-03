@@ -1,0 +1,26 @@
+# Renderizado por Ansible una sola vez (force: false en la tarea que copia
+# este fichero). A partir de aqui es de sentinel: hace CONFIG REWRITE y
+# SENTINEL SET sobre este mismo fichero en cuanto detecta un cambio de
+# estado. Machacarlo en cada despliegue le devuelve un monitor caducado y
+# deshace el ultimo failover.
+port {{ valkey_sentinel_port | default(26379) }}
+
+# El master solo escucha en su puerto TLS (port 0 en managed.conf.j2), asi
+# que sentinel necesita certificado para hablar con el. El puerto de control
+# de este propio sentinel (arriba) se deja en claro a proposito: es el que
+# usan los sentinels entre si y el operador con valkey-cli, sin --tls.
+tls-cert-file /etc/valkey/tls/node.crt
+tls-key-file /etc/valkey/tls/node.key
+tls-ca-cert-file /etc/valkey/tls/ca.crt
+
+# El master puede llegar como el hostname del primer host del inventario
+# (arranque inicial, sin ningun sentinel corriendo todavia) o como la IP que
+# devuelva otro sentinel ya en marcha: sin esto, lo primero fallaria al
+# resolver.
+sentinel resolve-hostnames yes
+sentinel announce-hostnames yes
+
+sentinel monitor {{ valkey_master_set_effective }} {{ valkey_master_host }} {{ valkey_port }} {{ (groups['valkey_sentinel'] | length // 2) + 1 }}
+sentinel auth-pass {{ valkey_master_set_effective }} "{{ dex_valkey_password }}"
+sentinel down-after-milliseconds {{ valkey_master_set_effective }} {{ valkey_sentinel_down_after_ms | default(5000) }}
+sentinel failover-timeout {{ valkey_master_set_effective }} {{ valkey_sentinel_failover_timeout_ms | default(60000) }}

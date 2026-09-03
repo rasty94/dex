@@ -7,3 +7,15 @@
     project_src: "{{ valkey_config_dir }}"
     state: present
     recreate: always
+
+# Proyecto de compose separado (project_name distinto): el mismo directorio
+# aloja el compose de valkey y el de sentinel, y sin un nombre propio Docker
+# Compose los confundiria bajo el nombre del directorio.
+- name: Reiniciar sentinel
+  community.docker.docker_compose_v2:
+    project_src: "{{ valkey_config_dir }}"
+    project_name: "{{ valkey_sentinel_container_name }}"
+    files:
+      - sentinel-compose.yml
+    state: present
+    recreate: always

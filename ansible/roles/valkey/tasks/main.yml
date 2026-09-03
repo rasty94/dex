@@ -14,9 +14,24 @@
       valkey_allow_no_password: true.
     success_msg: dex_valkey_password no esta vacia (o el escape hatch esta activo).
 
-# La Task 11 (sentinel) y la Task 12 (cluster) anaden aqui su propio
-# include_tasks, condicionado a valkey_topology, cuando esos ficheros
-# existan. Hasta entonces, solo standalone: escribir un include hacia un
-# fichero que no esta todavia hace fallar el --syntax-check del playbook.
+# La Task 12 (cluster) anade aqui su propio include_tasks, condicionado a
+# valkey_topology, cuando ese fichero exista. Escribirlo ahora hace fallar el
+# --syntax-check del playbook contra un fichero que no existe todavia.
+#
+# standalone.yml solo en las maquinas de datos (grupo valkey): un voto de
+# sentinel que vive en un nodo de dex (en valkey_sentinel sin estar en
+# valkey) no corre un valkey-server propio, solo el proceso sentinel.
 - name: Valkey en topologia standalone
   ansible.builtin.include_tasks: standalone.yml
+  when: inventory_hostname in (groups['valkey'] | default([]))
+
+# sentinel.yml en las maquinas de datos con valkey_topology: sentinel, y en
+# cualquier host que el inventario meta en valkey_sentinel este o no en el
+# grupo valkey: precisamente asi vive un voto en un nodo de dex (§7 del
+# despliegue). El primer "or" cubre el caso normal; el segundo, el voto que
+# no tiene valkey_topology porque no pertenece al grupo valkey.
+- name: Valkey en topologia sentinel
+  ansible.builtin.include_tasks: sentinel.yml
+  when: >-
+    (valkey_topology | default('') == 'sentinel')
+    or inventory_hostname in (groups['valkey_sentinel'] | default([]))

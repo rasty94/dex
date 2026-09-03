@@ -1,0 +1,103 @@
+# El material TLS de este host: si es un voto que vive en un nodo de dex
+# (fuera del grupo valkey), standalone.yml no ha corrido aqui y tls.yml
+# tampoco. El master solo escucha en su puerto TLS (port 0 en managed.conf.j2
+# de standalone.yml), asi que sin certificado sentinel no podria ni
+# preguntarle nada.
+- name: Directorio de configuracion
+  ansible.builtin.file:
+    path: "{{ valkey_config_dir }}"
+    state: directory
+    owner: "{{ valkey_config_owner }}"
+    group: "{{ valkey_config_group }}"
+    mode: "0750"
+
+- name: Material TLS del nodo
+  # Reiniciar sentinel, no valkey: este include puede correr en un voto sin
+  # ningun valkey-server propio (ver el comentario de valkey_tls_notify_handler
+  # en defaults/main.yml).
+  ansible.builtin.include_tasks: tls.yml
+  vars:
+    valkey_tls_notify_handler: Reiniciar sentinel
+
+- name: Sentinel necesita un numero impar de votantes, y al menos tres
+  # Con dos, perder una maquina deja un sentinel solo: no alcanza quorum y no
+  # hay promocion. Es un failover que no funciona el dia que hace falta, y
+  # fallar aqui es mejor que descubrirlo entonces.
+  ansible.builtin.assert:
+    that:
+      - groups['valkey_sentinel'] | length >= 3
+      - groups['valkey_sentinel'] | length is odd
+    fail_msg: >-
+      El grupo valkey_sentinel tiene {{ groups['valkey_sentinel'] | length }}
+      votantes. Hacen falta al menos 3 y un numero impar. Con dos maquinas de
+      datos, pon el tercer sentinel en un nodo de dex.
+  run_once: true
+
+# valkey_master_set vive como var del grupo valkey (ver el inventario de
+# ejemplo): un voto en un nodo de dex no pertenece a ese grupo y no la
+# hereda. Se resuelve siempre desde el primer host de datos en vez de
+# asumir que esta definida localmente.
+- name: Nombre del conjunto de sentinel, resuelto desde el grupo valkey
+  ansible.builtin.set_fact:
+    valkey_master_set_effective: "{{ hostvars[groups['valkey'][0]].valkey_master_set }}"
+
+- name: Sabe algun sentinel quien es el master
+  # Contra el propio contenedor de sentinel, si ya esta arriba de una pasada
+  # anterior: valkey-cli no esta instalado en el host, solo dentro de la
+  # imagen. failed_when: false cubre tanto "el contenedor no existe todavia"
+  # (arranque inicial) como "sentinel no conoce el master set todavia".
+  community.docker.docker_container_exec:
+    container: "{{ valkey_sentinel_container_name }}"
+    command: >-
+      valkey-cli -p {{ valkey_sentinel_port | default(26379) }}
+      sentinel get-master-addr-by-name {{ valkey_master_set_effective }}
+  register: valkey_known_master
+  changed_when: false
+  failed_when: false
+  delegate_to: "{{ groups['valkey_sentinel'] | first }}"
+  run_once: true
+
+- name: El primer host del grupo es el master, solo en el arranque inicial
+  # Despues de esto manda sentinel. El rol no vuelve a asignar el papel de
+  # nadie: reasignar en cada pasada deshace las promociones. valkey_known_master.rc
+  # falta del todo (no solo "distinto de 0") cuando el contenedor ni existe
+  # todavia; de ahi el default antes de comparar.
+  ansible.builtin.set_fact:
+    valkey_master_host: >-
+      {{ (valkey_known_master.stdout | default('') | trim | split('\n') | first)
+         if (valkey_known_master.rc | default(1)) == 0
+            and (valkey_known_master.stdout | default('') | trim | length > 0)
+         else groups['valkey'] | first }}
+  run_once: true
+
+- name: El fichero sentinel.conf, creado una sola vez
+  # Igual que valkey.conf en standalone.yml: sentinel hace CONFIG REWRITE y
+  # SENTINEL SET sobre este fichero en cuanto detecta un cambio de estado.
+  # Sobrescribirlo en cada despliegue le devuelve un monitor caducado y
+  # deshace el ultimo failover. Los cambios posteriores van por SENTINEL SET,
+  # nunca reescribiendo el fichero.
+  # no_log: la plantilla renderizada lleva el auth-pass del master en claro.
+  ansible.builtin.template:
+    src: sentinel.conf.j2
+    dest: "{{ valkey_config_dir }}/sentinel.conf"
+    owner: "{{ valkey_config_owner }}"
+    group: "{{ valkey_config_group }}"
+    mode: "0640"
+    force: false
+  notify: Reiniciar sentinel
+  no_log: true
+
+- name: Compose de sentinel
+  ansible.builtin.template:
+    src: sentinel-compose.yml.j2
+    dest: "{{ valkey_config_dir }}/sentinel-compose.yml"
+    mode: "0644"
+  notify: Reiniciar sentinel
+
+- name: Levantar sentinel
+  community.docker.docker_compose_v2:
+    project_src: "{{ valkey_config_dir }}"
+    project_name: "{{ valkey_sentinel_container_name }}"
+    files:
+      - sentinel-compose.yml
+    state: present
