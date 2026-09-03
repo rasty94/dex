@@ -11,6 +11,12 @@ valkey_image: valkey/valkey:8-alpine
 
 valkey_port: 6379
 
+# Este nodo es nuestro (lo instala y lo arranca este rol), asi que una
+# dex_valkey_password vacia hace fallar el despliegue en vez de avisar: ver
+# el assert en tasks/main.yml. Solo un converge de prueba desechable tiene
+# motivo para poner esto a true, y nunca en un inventario de verdad.
+valkey_allow_no_password: false
+
 # Con noeviction (ver el comentario junto a maxmemory-policy en
 # managed.conf.j2) esto es un tope duro: llegar aqui rechaza escrituras en
 # vez de tirar claves.
