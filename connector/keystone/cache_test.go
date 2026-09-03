@@ -43,7 +43,7 @@ func TestCacheRoundTripsAnIdentity(t *testing.T) {
 	want := connector.Identity{UserID: "u-1", Email: "jane@example.com", Groups: []string{"admins"}}
 	c.set(ctx, "tok", want)
 
-	got, ok := c.get(ctx, "tok")
+	got, ok, _ := c.get(ctx, "tok")
 	if !ok {
 		t.Fatal("the entry just written was not found")
 	}
@@ -71,7 +71,7 @@ func TestExpiredEntryIsAMiss(t *testing.T) {
 	c.set(ctx, "tok", connector.Identity{UserID: "u"})
 	c.now = func() time.Time { return time.Now().Add(2 * time.Minute) }
 
-	if _, ok := c.get(ctx, "tok"); ok {
+	if _, ok, _ := c.get(ctx, "tok"); ok {
 		t.Error("an expired entry was served")
 	}
 }

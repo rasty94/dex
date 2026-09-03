@@ -1,10 +1,13 @@
 package ratelimit
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 )
@@ -91,5 +94,31 @@ func TestValkeyDownFallsBackToLocalBuckets(t *testing.T) {
 	}
 	if l.Allow(ctx, "k") {
 		t.Error("with Valkey down the limiter stopped limiting")
+	}
+}
+
+// dex_login_rate_limit_backend_errors_total exists to say "Valkey is
+// unreachable". A client that hangs up mid-login cancels the request context
+// and produces an error here too, and counting that would drown the signal in
+// normal disconnections.
+func TestClientCancellationIsNotCountedAsABackendError(t *testing.T) {
+	m := miniredis.RunT(t)
+	l := sharedLimiter(t, m.Addr(), 2)
+
+	errs := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_backend_errors_total"})
+	l.SetBackendErrorCounter(errs)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	l.Allow(ctx, "k")
+	if got := testutil.ToFloat64(errs); got != 0 {
+		t.Errorf("a canceled request counted as a backend error: got %v, want 0", got)
+	}
+
+	// A store that really is unreachable still has to count.
+	m.Close()
+	l.Allow(t.Context(), "k")
+	if got := testutil.ToFloat64(errs); got != 1 {
+		t.Errorf("an unreachable store should count as a backend error: got %v, want 1", got)
 	}
 }

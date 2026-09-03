@@ -34,7 +34,7 @@ var (
 
 	tokenCacheLookups = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "keystone_token_cache_lookups_total",
-		Help: "Count of token cache lookups by outcome. Absent when cacheTTL is unset.",
+		Help: "Count of token cache lookups by outcome: hit, miss, or error when the shared cache is unreachable. Absent when cacheTTL is unset.",
 	}, []string{"result"})
 )
 

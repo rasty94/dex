@@ -10,8 +10,14 @@ import (
 
 // identityCache is what the connector needs from a cache: an identity for a
 // Keystone token. Both the in-process cache and the shared one satisfy it.
+//
+// The error from get is not a lookup that found nothing -- that is (zero,
+// false, nil) -- but the cache itself being unreachable. The caller counts the
+// two apart: an outage that reported itself as a run of misses would look
+// exactly like a burst of new tokens, while every login quietly pays a full
+// round trip to Keystone.
 type identityCache interface {
-	get(ctx context.Context, token string) (connector.Identity, bool)
+	get(ctx context.Context, token string) (connector.Identity, bool, error)
 	set(ctx context.Context, token string, id connector.Identity)
 }
 
@@ -50,15 +56,16 @@ func (c *timeCache) set(_ context.Context, key string, value connector.Identity)
 	}
 }
 
-func (c *timeCache) get(_ context.Context, key string) (connector.Identity, bool) {
+// get never fails: a map in this process is either holding the entry or not.
+func (c *timeCache) get(_ context.Context, key string) (connector.Identity, bool, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	entry, ok := c.entries[key]
 	if !ok || c.now().After(entry.expiresAt) {
-		return connector.Identity{}, false
+		return connector.Identity{}, false, nil
 	}
-	return entry.value, true
+	return entry.value, true, nil
 }
 
 // sweep drops expired entries. Callers must hold c.mu.

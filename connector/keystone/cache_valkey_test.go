@@ -31,7 +31,7 @@ func TestASecondReplicaHitsWhatTheFirstCached(t *testing.T) {
 	want := connector.Identity{UserID: "u-1", Email: "jane@example.com", Groups: []string{"admins"}}
 	a.set(ctx, "keystone-token", want)
 
-	got, ok := b.get(ctx, "keystone-token")
+	got, ok, _ := b.get(ctx, "keystone-token")
 	if !ok {
 		t.Fatal("the second replica missed what the first stored")
 	}
@@ -63,7 +63,7 @@ func TestTheSharedEntryExpires(t *testing.T) {
 	c.set(ctx, "tok", connector.Identity{UserID: "u"})
 
 	m.FastForward(time.Minute + time.Second)
-	if _, ok := c.get(ctx, "tok"); ok {
+	if _, ok, _ := c.get(ctx, "tok"); ok {
 		t.Error("an expired entry was served")
 	}
 }
@@ -79,7 +79,7 @@ func TestASubSecondTTLRoundTrips(t *testing.T) {
 	c := sharedCache(t, m.Addr(), 500*time.Millisecond)
 	c.set(ctx, "tok", connector.Identity{UserID: "u"})
 
-	got, ok := c.get(ctx, "tok")
+	got, ok, _ := c.get(ctx, "tok")
 	if !ok {
 		t.Fatal("a sub-second TTL entry vanished instead of round-tripping")
 	}
@@ -90,7 +90,10 @@ func TestASubSecondTTLRoundTrips(t *testing.T) {
 
 // A cache is an optimization. If Valkey is gone the login still has to work, so
 // every failure is a miss and never an error.
-func TestValkeyDownIsAMissAndNotAnError(t *testing.T) {
+// A dead Valkey must not fail a login -- the cache is an optimization -- but it
+// must not pass for a cold cache either: the connector counts the two apart so
+// that an outage is visible instead of hiding in the miss rate.
+func TestValkeyDownIsReportedAndStillLetsTheLoginThrough(t *testing.T) {
 	m := miniredis.RunT(t)
 	ctx := t.Context()
 
@@ -98,8 +101,28 @@ func TestValkeyDownIsAMissAndNotAnError(t *testing.T) {
 	c.set(ctx, "tok", connector.Identity{UserID: "u"})
 	m.Close()
 
-	if _, ok := c.get(ctx, "tok"); ok {
+	_, ok, err := c.get(ctx, "tok")
+	if ok {
 		t.Error("a dead Valkey reported a hit")
 	}
+	if err == nil {
+		t.Error("a dead Valkey looked like a key that was simply not there")
+	}
 	c.set(ctx, "tok", connector.Identity{UserID: "u"}) // must not panic
+}
+
+// A key that is genuinely absent is not an error: it is the ordinary first time
+// a token is seen, and reporting it as a failure would cry wolf on every new
+// login.
+func TestAnAbsentKeyIsNotAnError(t *testing.T) {
+	m := miniredis.RunT(t)
+
+	c := sharedCache(t, m.Addr(), time.Minute)
+	_, ok, err := c.get(t.Context(), "never-cached")
+	if ok {
+		t.Error("an empty cache reported a hit")
+	}
+	if err != nil {
+		t.Errorf("a token that was never cached reported an error: %v", err)
+	}
 }

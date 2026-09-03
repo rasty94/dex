@@ -6,6 +6,7 @@ package ratelimit
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -142,7 +143,12 @@ func (l *Limiter) Allow(ctx context.Context, key string) bool {
 		// Fall through to the local buckets: a Valkey outage must not turn the
 		// limiter off. It is counted, because otherwise a store that stopped
 		// answering is indistinguishable from one that works.
-		if l.backendErrors != nil {
+		// A client that hangs up cancels the request context and lands here
+		// too. That is not the store failing, and counting it would leave this
+		// metric meaning "Valkey is unreachable, or somebody closed a tab" --
+		// which is no alarm at all. A deadline that ran out still counts: the
+		// store was too slow to answer inside the budget it was given.
+		if l.backendErrors != nil && !errors.Is(err, context.Canceled) {
 			l.backendErrors.Inc()
 		}
 	}

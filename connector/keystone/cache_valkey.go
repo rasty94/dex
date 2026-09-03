@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
+	valkeygo "github.com/valkey-io/valkey-go"
+
 	"github.com/dexidp/dex/connector"
 	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 )
@@ -31,21 +33,28 @@ func newValkeyCache(c *dexvalkey.Client, ttl time.Duration) *valkeyCache {
 	return &valkeyCache{c: c, ttl: ttl}
 }
 
-func (v *valkeyCache) get(ctx context.Context, token string) (connector.Identity, bool) {
+func (v *valkeyCache) get(ctx context.Context, token string) (connector.Identity, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
 
 	raw, err := v.c.Do(ctx, v.c.B().Get().Key(v.c.HashKey("tok", token)).Build()).AsBytes()
 	if err != nil {
-		// Missing key, or Valkey unreachable. Both are a cache miss: a login is
-		// never failed because the optimization is unavailable.
-		return connector.Identity{}, false
+		// A key that is not there and a Valkey that cannot be reached both mean
+		// the login goes on to Keystone -- the optimization being unavailable
+		// never fails a login. They are reported apart so that an outage does
+		// not hide behind a plausible-looking miss rate.
+		if valkeygo.IsValkeyNil(err) {
+			return connector.Identity{}, false, nil
+		}
+		return connector.Identity{}, false, err
 	}
 	var id connector.Identity
 	if err := json.Unmarshal(raw, &id); err != nil {
-		return connector.Identity{}, false
+		// Something else wrote this key, or wrote it in an older shape. Treat it
+		// as absent; it will be overwritten by the next successful login.
+		return connector.Identity{}, false, nil
 	}
-	return id, true
+	return id, true, nil
 }
 
 func (v *valkeyCache) set(ctx context.Context, token string, id connector.Identity) {

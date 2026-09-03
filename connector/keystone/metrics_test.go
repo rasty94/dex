@@ -137,3 +137,32 @@ func TestRefreshMetrics(t *testing.T) {
 		t.Errorf("refresh error = %v, want 1", got)
 	}
 }
+
+// unreachableCache stands in for a shared cache whose Valkey is down.
+type unreachableCache struct{}
+
+func (unreachableCache) get(context.Context, string) (connector.Identity, bool, error) {
+	return connector.Identity{}, false, errors.New("valkey is unreachable")
+}
+
+func (unreachableCache) set(context.Context, string, connector.Identity) {}
+
+// A cache that cannot be reached is not a cache miss. Counted as one, an outage
+// looks like a burst of first-time tokens, while in fact every login is paying a
+// full round trip to Keystone that the cache was there to save.
+func TestAnUnreachableCacheIsNotCountedAsAMiss(t *testing.T) {
+	tokenCacheLookups.Reset()
+
+	srv, _ := mockKeystoneServer(t)
+	c := newTestConn(srv.URL)
+	c.tokenCache = unreachableCache{}
+
+	_, _ = c.TokenIdentity(t.Context(), "urn:ietf:params:oauth:token-type:access_token", "tok")
+
+	if got := testutil.ToFloat64(tokenCacheLookups.WithLabelValues("error")); got != 1 {
+		t.Errorf("lookups against an unreachable cache: error = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(tokenCacheLookups.WithLabelValues("miss")); got != 0 {
+		t.Errorf("an unreachable cache was counted as a miss: miss = %v, want 0", got)
+	}
+}

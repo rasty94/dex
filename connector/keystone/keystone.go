@@ -317,11 +317,20 @@ func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, pas
 
 func (p *conn) TokenIdentity(ctx context.Context, subjectTokenType, subjectToken string) (identity connector.Identity, err error) {
 	if p.tokenCache != nil {
-		if cached, ok := p.tokenCache.get(ctx, subjectToken); ok {
+		cached, ok, err := p.tokenCache.get(ctx, subjectToken)
+		switch {
+		case err != nil:
+			// The shared cache is unreachable. The login carries on to Keystone,
+			// but this is not a miss: counted as one, an outage would look like
+			// a burst of first-time tokens instead of a store that has stopped
+			// answering while every login pays the full round trip.
+			tokenCacheLookups.WithLabelValues("error").Inc()
+		case ok:
 			tokenCacheLookups.WithLabelValues("hit").Inc()
 			return cached, nil
+		default:
+			tokenCacheLookups.WithLabelValues("miss").Inc()
 		}
-		tokenCacheLookups.WithLabelValues("miss").Inc()
 	}
 
 	// Only the calls that actually reach Keystone are timed; cache hits above
