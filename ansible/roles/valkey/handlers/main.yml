@@ -1,0 +1,9 @@
+# Igual que en el rol dex: docker compose solo recrea un contenedor cuando
+# cambia la definicion del propio servicio, no el contenido de un fichero
+# montado por bind mount. recreate: always fuerza el reinicio cuando este
+# handler salta.
+- name: Reiniciar valkey
+  community.docker.docker_compose_v2:
+    project_src: "{{ valkey_config_dir }}"
+    state: present
+    recreate: always

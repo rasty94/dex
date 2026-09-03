@@ -1,0 +1,31 @@
+# Renderizado por Ansible en cada despliegue. Lo escribe este rol; lo incluye
+# valkey.conf, que es de Valkey (ver tasks/standalone.yml).
+port 0
+tls-port {{ valkey_port | default(6379) }}
+tls-cert-file /etc/valkey/tls/node.crt
+tls-key-file /etc/valkey/tls/node.key
+tls-ca-cert-file /etc/valkey/tls/ca.crt
+tls-replication yes
+{% if valkey_topology == 'cluster' %}
+tls-cluster yes
+cluster-enabled yes
+cluster-config-file /data/nodes.conf
+{% endif %}
+# Entrecomillado: sin comillas, una dex_valkey_password vacia (el converge de
+# prueba no pone ninguna) deja "requirepass" sin argumento y Valkey se niega
+# a arrancar ("wrong number of arguments"). Con comillas, vacia es la forma
+# documentada de desactivar la autenticacion.
+requirepass "{{ dex_valkey_password }}"
+masterauth "{{ dex_valkey_password }}"
+
+# Todo lo que dex guarda aqui lleva caducidad, asi que volatile-* se llevaria
+# justo sus claves: los contadores del limitador de login y las sesiones del
+# panel. noeviction rechaza escrituras en vez de tirar claves, que es lo que
+# mantiene callado el aviso de WarnIfKeysCanBeEvicted (pkg/valkey/valkey.go)
+# en nuestros propios despliegues.
+maxmemory-policy noeviction
+maxmemory {{ valkey_maxmemory | default('512mb') }}
+
+# Un master que reinicia con el conjunto vacio y vuelve a ser master replica
+# ese vacio a los demas.
+appendonly yes

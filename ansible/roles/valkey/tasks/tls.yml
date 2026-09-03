@@ -1,0 +1,41 @@
+# El material TLS no lo genera este rol (Ruling 2 del brief de la Task 10):
+# el rol internal_ca ya lo hace y lo publica como hechos, para el mismo host,
+# siempre que el playbook incluya a este grupo en su tanda "CA interna" (ver
+# ansible/playbooks/dex.yml). Aqui solo se copia a disco.
+- name: Directorio de TLS
+  ansible.builtin.file:
+    path: "{{ valkey_config_dir }}/tls"
+    state: directory
+    owner: "{{ valkey_config_owner }}"
+    group: "{{ valkey_config_group }}"
+    mode: "0750"
+
+- name: Certificado de la CA interna
+  ansible.builtin.copy:
+    content: "{{ internal_ca_cert }}"
+    dest: "{{ valkey_config_dir }}/tls/ca.crt"
+    owner: "{{ valkey_config_owner }}"
+    group: "{{ valkey_config_group }}"
+    mode: "0644"
+  notify: Reiniciar valkey
+
+- name: Certificado propio del nodo
+  ansible.builtin.copy:
+    content: "{{ internal_ca_host_cert }}"
+    dest: "{{ valkey_config_dir }}/tls/node.crt"
+    owner: "{{ valkey_config_owner }}"
+    group: "{{ valkey_config_group }}"
+    mode: "0644"
+  notify: Reiniciar valkey
+
+- name: Clave propia del nodo
+  # no_log: es la clave privada del nodo; --diff la imprimiria entera al
+  # crearla o al cambiar.
+  ansible.builtin.copy:
+    content: "{{ internal_ca_host_key }}"
+    dest: "{{ valkey_config_dir }}/tls/node.key"
+    owner: "{{ valkey_config_owner }}"
+    group: "{{ valkey_config_group }}"
+    mode: "0600"
+  notify: Reiniciar valkey
+  no_log: true

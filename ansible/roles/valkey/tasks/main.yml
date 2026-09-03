@@ -1,0 +1,6 @@
+# La Task 11 (sentinel) y la Task 12 (cluster) anaden aqui su propio
+# include_tasks, condicionado a valkey_topology, cuando esos ficheros
+# existan. Hasta entonces, solo standalone: escribir un include hacia un
+# fichero que no esta todavia hace fallar el --syntax-check del playbook.
+- name: Valkey en topologia standalone
+  ansible.builtin.include_tasks: standalone.yml

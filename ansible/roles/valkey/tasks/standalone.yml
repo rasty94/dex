@@ -1,0 +1,50 @@
+- name: Directorio de configuracion
+  ansible.builtin.file:
+    path: "{{ valkey_config_dir }}"
+    state: directory
+    owner: "{{ valkey_config_owner }}"
+    group: "{{ valkey_config_group }}"
+    mode: "0750"
+
+- name: Material TLS del nodo
+  ansible.builtin.include_tasks: tls.yml
+
+- name: El fichero managed.conf, lo unico que Ansible posee
+  # no_log: la plantilla renderizada lleva requirepass/masterauth en claro;
+  # sin esto, un -v o --diff los imprimiria enteros en la consola.
+  ansible.builtin.template:
+    src: managed.conf.j2
+    dest: "{{ valkey_config_dir }}/managed.conf"
+    owner: "{{ valkey_config_owner }}"
+    group: "{{ valkey_config_group }}"
+    mode: "0640"
+  notify: Reiniciar valkey
+  no_log: true
+
+- name: El fichero valkey.conf, creado una sola vez
+  # Valkey reescribe su propia configuracion: sentinel hace CONFIG REWRITE en
+  # cada failover y un cluster mantiene su nodes.conf. Un rol que sobrescriba
+  # este fichero le devuelve al nodo un replicaof caducado y deshace la
+  # promocion que acababa de pasar. El include va en la primera linea a
+  # proposito: las directivas posteriores ganan, asi que lo que escriba
+  # Valkey despues manda.
+  ansible.builtin.copy:
+    content: "include /etc/valkey/managed.conf\n"
+    dest: "{{ valkey_config_dir }}/valkey.conf"
+    owner: "{{ valkey_config_owner }}"
+    group: "{{ valkey_config_group }}"
+    force: false
+    mode: "0640"
+  notify: Reiniciar valkey
+
+- name: Compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ valkey_config_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Reiniciar valkey
+
+- name: Levantar valkey
+  community.docker.docker_compose_v2:
+    project_src: "{{ valkey_config_dir }}"
+    state: present

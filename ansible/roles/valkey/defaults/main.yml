@@ -1,0 +1,25 @@
+# La regla que hace idempotente este rol vive en tasks/standalone.yml:
+# managed.conf es de Ansible (se reescribe en cada despliegue), valkey.conf
+# es de Valkey (se crea una sola vez y no se vuelve a tocar).
+valkey_config_dir: /etc/valkey
+
+# Nombre del contenedor y de la imagen. Parametrizado por el mismo motivo que
+# dex_container_name en el rol dex: poder correr un converge de prueba en una
+# maquina que ya tenga otro "valkey" suelto sin chocar con el.
+valkey_container_name: valkey
+valkey_image: valkey/valkey:8-alpine
+
+valkey_port: 6379
+
+# Con noeviction (ver el comentario junto a maxmemory-policy en
+# managed.conf.j2) esto es un tope duro: llegar aqui rechaza escrituras en
+# vez de tirar claves.
+valkey_maxmemory: 512mb
+
+# UID/GID fijos del usuario "valkey" en la imagen oficial valkey/valkey (no
+# parametrizables desde fuera: vienen en su /etc/passwd). Su entrypoint hace
+# setpriv a este usuario para todo lo que no sea su propio directorio de
+# trabajo (/data, cubierto por el volumen con nombre), asi que /etc/valkey
+# tiene que ser legible por el.
+valkey_config_owner: "999"
+valkey_config_group: "1000"
