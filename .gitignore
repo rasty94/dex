@@ -35,3 +35,4 @@ devenv.local.yaml
 /.claude/
 CLAUDE.md
 .gitattributes
+/cmd/dex-dashboard/dex-dashboard
