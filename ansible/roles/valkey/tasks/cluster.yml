@@ -1,0 +1,65 @@
+# Formar un cluster es la unica operacion realmente destructiva de todo el
+# rol: --cluster create contra un cluster ya vivo destruye su asignacion de
+# slots. Por eso se detecta antes de tocar nada, y hay tres salidas, no dos:
+# ok (no se hace nada), nadie conoce a nadie (se crea, una sola vez) y medio
+# formado (se para y se avisa; repararlo solo es como se pierden datos).
+#
+# valkey-cli no esta instalado en el host (mismo motivo que en sentinel.yml):
+# corre dentro de la imagen, de ahi docker_container_exec en vez de command.
+# El nodo solo escucha en su puerto TLS (port 0 en managed.conf.j2) y con
+# requirepass puesto, asi que hacen falta certificado y contrasena hasta para
+# preguntarle a si mismo.
+- name: Esta el cluster formado
+  community.docker.docker_container_exec:
+    container: "{{ valkey_container_name }}"
+    command: >-
+      valkey-cli --tls --cacert /etc/valkey/tls/ca.crt
+      --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key
+      -a "{{ dex_valkey_password }}" -p {{ valkey_port }} cluster info
+  register: valkey_cluster_info
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Un cluster a medias se para y se avisa, no se repara
+  # Reparar automaticamente un cluster medio formado es como se pierden datos.
+  ansible.builtin.assert:
+    that: >-
+      ('cluster_state:ok' in valkey_cluster_info.stdout)
+      or ('cluster_known_nodes:1' in valkey_cluster_info.stdout)
+    fail_msg: >-
+      {{ inventory_hostname }} conoce a otros nodos pero el cluster no esta en
+      estado ok. No se toca nada: revisa 'valkey-cli --cluster check' a mano.
+
+- name: Formar el cluster
+  # Solo cuando ningun nodo conoce a nadie. Repetir --cluster create sobre un
+  # cluster vivo destruye la asignacion de slots.
+  community.docker.docker_container_exec:
+    container: "{{ valkey_container_name }}"
+    command: >-
+      valkey-cli --tls --cacert /etc/valkey/tls/ca.crt
+      --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key
+      -a "{{ dex_valkey_password }}" --cluster create
+      {% for h in groups['valkey'] %}{{ hostvars[h].ansible_host }}:{{ valkey_port }} {% endfor %}
+      {% for h in groups['valkey'] %}{{ hostvars[h].ansible_host }}:{{ valkey_replica_port | default(6380) }} {% endfor %}
+      --cluster-replicas 1 --cluster-yes
+  when: "'cluster_known_nodes:1' in valkey_cluster_info.stdout"
+  run_once: true
+  delegate_to: "{{ groups['valkey'] | first }}"
+  no_log: true
+
+- name: Ninguna replica puede caer en la maquina de su master
+  # --cluster create reparte replicas evitando la colocalizacion cuando
+  # puede, pero con tres maquinas y seis nodos conviene comprobarlo en vez de
+  # asumirlo: revisar la salida a mano la primera vez.
+  community.docker.docker_container_exec:
+    container: "{{ valkey_container_name }}"
+    command: >-
+      valkey-cli --tls --cacert /etc/valkey/tls/ca.crt
+      --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key
+      -a "{{ dex_valkey_password }}" --cluster check
+      127.0.0.1:{{ valkey_port }}
+  register: valkey_cluster_check
+  changed_when: false
+  run_once: true
+  no_log: true
