@@ -26,6 +26,18 @@ services:
             MYSQL_PASSWORD: mysql
             MYSQL_ROOT_PASSWORD: root
 
+    mariadb:
+        # Verificacion del despliegue Ansible: dex apunta a MariaDB, no a MySQL.
+        # Puerto 3307 para no chocar con un mysql/mysql8 local en 3306.
+        image: mariadb:11.4
+        environment:
+            MARIADB_DATABASE: dex
+            MARIADB_USER: mysql
+            MARIADB_PASSWORD: mysql
+            MARIADB_ROOT_PASSWORD: root
+        ports:
+            - 3307:3306
+
     postgres:
         image: postgres:10.15
         environment:
