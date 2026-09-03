@@ -16,12 +16,22 @@
 
 ## ⏳ En manos de otros
 
-- [ ] **[dexidp/dex#5000](https://github.com/dexidp/dex/pull/5000) — el arreglo de la
-      purga, enviado a upstream.** Decidido hacer una excepción a la política de no
-      contribuir más al repo público: el fallo destruye datos a medias y no se puede
-      terminar desde su API. Portado a la forma que `storage/static.go` tiene allí y
-      firmado con DCO; sus tests pasan sobre su árbol. Queda esperar revisión.
-      Si lo rechazan o lo dejan morir, no cambia nada aquí: el fork ya lo tiene.
+> Lo enviado a upstream. Nada de esto bloquea al fork: los dos arreglos ya están aquí.
+> La política sigue siendo no contribuir al repo público; estas dos son excepciones
+> decididas una a una.
+
+- [ ] **[dexidp/dex#5000](https://github.com/dexidp/dex/pull/5000) — la purga RGPD que se
+      quedaba a medias.** El fallo destruye datos y luego no se puede terminar desde su
+      API, que es lo que justificó la excepción. Portado a la forma que `storage/static.go`
+      tiene allí —receptores por valor, sin recarga dinámica— y con `NewAPI` de seis
+      argumentos; sus tests pasan sobre su árbol. DCO ✅, Snyk ✅, sin conflictos.
+      Abierta el 2026-09-03, esperando revisión.
+- [ ] **[dexidp/dex#4986](https://github.com/dexidp/dex/pull/4986) — el `alg` del JWKS de
+      prueba.** ⚠️ **Bloqueada por nuestra culpa desde el 2026-08-26**: su commit no lleva
+      `Signed-off-by`, así que el check de DCO está en *action required* y nadie la va a
+      mirar. Se arregla con `git commit --amend -s` y un force-push a la rama
+      `fix/oidc-test-jwks-alg` de nuestro fork. Ocho días parada sin que nadie lo dijera:
+      un PR abierto hay que volver a mirarlo, no solo abrirlo.
 
 ---
 
