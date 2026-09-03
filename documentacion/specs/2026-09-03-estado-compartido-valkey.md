@@ -146,8 +146,13 @@ contando igual con la caché compartida.
 ### Sesiones del panel (`cmd/dex-dashboard`)
 
 Misma forma `create/get/delete`, valor en JSON. La caducidad por inactividad la lleva **el
-propio Valkey**: `GETEX` refresca el TTL a `min(idleTTL, lo que quede de la absoluta)`. Con
-eso desaparece el `LastSeen` que hoy hay que escribir en cada petición.
+propio Valkey**: cada lectura empuja el TTL a `min(idleTTL, lo que quede de la absoluta)`.
+Con eso desaparece el `LastSeen` que hoy hay que escribir en cada petición.
+
+Son `GET` y luego `PEXPIRE`, no un `GETEX`: el tope depende de la caducidad absoluta que
+va **dentro** del valor, así que no se puede calcular antes de leerlo. La ventana entre las
+dos órdenes no hace daño —si el proceso muere en medio, la sesión caduca por donde ya
+estaba—.
 
 ## Degradación
 
@@ -157,8 +162,10 @@ eso desaparece el `LastSeen` que hoy hay que escribir en cada petición.
 | Caché de Keystone | fallo de caché | el login sigue; Keystone recibe más carga |
 | Sesiones del panel | pide login | no se puede fingir una sesión |
 
-Los errores de backend se registran y se cuentan en una métrica; el log va limitado para
-que un Valkey caído no llene el disco.
+Las caídas al camino local se cuentan en `dex_login_rate_limit_backend_errors_total`. Es
+una métrica y no un log a propósito: pasa una vez por intento de login, así que registrarlo
+llenaría el disco justo cuando el sistema ya va mal. Que el almacén compartido esté activo
+se dice una vez, al arrancar.
 
 ## Seguridad
 
