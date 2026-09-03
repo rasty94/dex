@@ -14,13 +14,14 @@
 
 ---
 
-## ⏸️ Pendiente de decidir
+## ⏳ En manos de otros
 
-- [ ] **Llevar a upstream el arreglo de la purga.** La purga RGPD de `server/apiserver`
-      cerraba las sesiones y revocaba los tokens antes de descubrir que no podía borrar
-      una contraseña del fichero de configuración. Arreglado aquí: se comprueba antes de
-      empezar. Es un fallo suyo y el parche es pequeño, pero choca con la política de no
-      subir nada más al repo público.
+- [ ] **[dexidp/dex#5000](https://github.com/dexidp/dex/pull/5000) — el arreglo de la
+      purga, enviado a upstream.** Decidido hacer una excepción a la política de no
+      contribuir más al repo público: el fallo destruye datos a medias y no se puede
+      terminar desde su API. Portado a la forma que `storage/static.go` tiene allí y
+      firmado con DCO; sus tests pasan sobre su árbol. Queda esperar revisión.
+      Si lo rechazan o lo dejan morir, no cambia nada aquí: el fork ya lo tiene.
 
 ---
 

@@ -197,8 +197,10 @@
 - [x] **Bloque E — El `sub` plano.** Decidido: cedemos al formato de upstream. El `sub` vuelve a ser el par `(userID, connectorID)` en protobuf-base64, y con él se va el escaneo de conectores de `api.go`, que solo existía para compensarlo. Es un cambio incompatible para quien indexe por `sub`; documentado en el `CHANGELOG`. A cambio quedamos alineados para heredar `sid`, back-channel logout y revocación con alcance de sesión en el bloque F.
 - [x] **Bloque G — Devolver a upstream.** [dexidp/dex#4986](https://github.com/dexidp/dex/pull/4986) enviado: el fixture de `connector/oidc/oidc_test.go` publica `"RSA"` como `alg` y `kty`, lo que les romperá los tests en cuanto suban a go-oidc 3.20. El otro candidato (nuestro fix de token exchange, `21c99b5e`) resultó innecesario: el refactor de upstream a `server/grants/tokenexchange.go` ya no persiste refresh token ni offline session, así que el bug murió por el camino.
 
-> Nota: es la última contribución al repo público. A partir de aquí los arreglos que
-> encontremos en upstream se quedan en el fork.
+> Nota: era la última contribución prevista al repo público —a partir de ahí los arreglos
+> se quedaban en el fork—, pero la purga RGPD resultó lo bastante grave para hacer una
+> excepción: [dexidp/dex#5000](https://github.com/dexidp/dex/pull/5000). La regla sigue
+> siendo esa; las excepciones las decide el usuario, caso por caso.
 
 ### Bloque F — El re-port sobre el layout nuevo de upstream
 
@@ -481,6 +483,9 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
       mientras no hacía nada en el despliegue. Lo destapó probarlo de verdad. Ahora la
       pregunta se reenvía hacia dentro y el test apila los envoltorios como `serve.go`.
       El test falla por lo que importa —la sesión sigue viva— antes que por el texto.
+      **Llevado a upstream**: [dexidp/dex#5000](https://github.com/dexidp/dex/pull/5000),
+      portado a la forma que tiene allí `storage/static.go` —receptores por valor, sin
+      recarga dinámica— y con `NewAPI` de seis argumentos. Sus tests pasan sobre su árbol.
 - [x] **«He perdido el móvil»: quitar un segundo factor desde el panel.** Los factores
       registrados tienen ahora su propia sección con una fila por autenticador y un botón
       que llama a `DeleteMFASecret`; el siguiente login ofrece darse de alta otra vez con
