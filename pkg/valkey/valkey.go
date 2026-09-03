@@ -32,6 +32,9 @@ type Client struct {
 // New opens and verifies the connection. Empty addresses return (nil, nil):
 // that is the configuration saying everything stays in memory.
 func New(ctx context.Context, cfg Config) (*Client, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	if len(cfg.Addresses) == 0 {
 		return nil, nil
 	}
@@ -47,6 +50,23 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		// implement the server-assisted invalidation tracking it needs.
 		DisableCache: true,
 	}
+
+	switch cfg.mode() {
+	case ModeSentinel:
+		// The addresses are the sentinels, not the data nodes: valkey-go asks
+		// them for the master and follows the +switch-master events, so a
+		// failover needs nothing from us.
+		opt.Sentinel = valkeygo.SentinelOption{
+			MasterSet: cfg.MasterSet,
+			Username:  firstNonEmpty(cfg.SentinelUsername, cfg.Username),
+			Password:  firstNonEmpty(cfg.SentinelPassword, cfg.Password),
+		}
+	case ModeCluster:
+		// Cluster mode is detected from the nodes themselves. Shuffling keeps
+		// every replica from hammering the same node while it starts up.
+		opt.ShuffleInit = true
+	}
+
 	if cfg.TLS.CACert != "" || cfg.TLS.InsecureSkipVerify {
 		tlsCfg := &tls.Config{
 			MinVersion:         tls.VersionTLS12,
@@ -64,6 +84,9 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 			tlsCfg.RootCAs = pool
 		}
 		opt.TLSConfig = tlsCfg
+		if opt.Sentinel.MasterSet != "" {
+			opt.Sentinel.TLSConfig = tlsCfg
+		}
 	}
 
 	c, err := valkeygo.NewClient(opt)
@@ -76,6 +99,15 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("ping valkey: %w", err)
 	}
 	return &Client{Client: c, prefix: cfg.KeyPrefix}, nil
+}
+
+// firstNonEmpty returns a, or b when a is empty. Sentinels can carry their own
+// credentials; when they are not given, they are the data nodes' credentials.
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // Key namespaces a key that carries nothing secret.
