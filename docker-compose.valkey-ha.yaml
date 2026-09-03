@@ -4,26 +4,49 @@
 #   docker compose -f docker-compose.valkey-ha.yaml --profile sentinel up -d
 #   DEX_VALKEY_SENTINEL_ADDRS=127.0.0.1:26379,127.0.0.1:26380,127.0.0.1:26381 go test ./pkg/valkey/
 #
-# network_mode: host porque sentinel y cluster se anuncian por IP real: dentro de
-# una red bridge anunciarían direcciones de contenedor que el test no alcanza.
+# Cada perfil tiene un contenedor "-net" que solo existe para poseer el espacio
+# de red y publicar sus puertos (sentinel-net, cluster-net); el resto de
+# contenedores del perfil se unen a él con network_mode: "service:<net>" en
+# vez de network_mode: host — el mismo patrón que usa
+# Ejemplos/dashboard/docker-compose.yml para que el panel comparta el espacio
+# de red de dex. Al compartir un único namespace, 127.0.0.1 significa lo mismo
+# para el gossip entre contenedores que para los puertos publicados al host,
+# así que esta pila funciona igual en un portátil con Docker Desktop que en un
+# runner Linux. El rol de Ansible de producción hace justo lo contrario y usa
+# la red del host: allí los nodos viven en máquinas distintas, y 127.0.0.1
+# sería cada nodo hablando consigo mismo.
 services:
+    sentinel-net:
+        profiles: ["sentinel"]
+        image: valkey/valkey:8-alpine
+        command: ["sleep", "infinity"]
+        ports:
+            - "6390:6390"
+            - "6391:6391"
+            - "26379:26379"
+            - "26380:26380"
+            - "26381:26381"
+
     valkey-master:
         profiles: ["sentinel"]
         image: valkey/valkey:8-alpine
-        network_mode: host
+        network_mode: "service:sentinel-net"
+        depends_on: [sentinel-net]
         command: ["valkey-server", "--port", "6390", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
 
     valkey-replica:
         profiles: ["sentinel"]
         image: valkey/valkey:8-alpine
-        network_mode: host
-        command: ["valkey-server", "--port", "6391", "--replicaof", "127.0.0.1", "6390", "--appendonly", "no"]
+        network_mode: "service:sentinel-net"
+        command:
+            ["valkey-server", "--port", "6391", "--replicaof", "127.0.0.1", "6390",
+             "--replica-announce-ip", "127.0.0.1", "--appendonly", "no"]
         depends_on: [valkey-master]
 
     sentinel-1: &sentinel
         profiles: ["sentinel"]
         image: valkey/valkey:8-alpine
-        network_mode: host
+        network_mode: "service:sentinel-net"
         entrypoint: ["sh", "-c"]
         command:
             - |
@@ -60,25 +83,43 @@ services:
               EOF
               exec valkey-sentinel /tmp/s.conf
 
+    cluster-net:
+        profiles: ["cluster"]
+        image: valkey/valkey:8-alpine
+        command: ["sleep", "infinity"]
+        ports:
+            - "7001:7001"
+            - "7002:7002"
+            - "7003:7003"
+            # Puertos de bus del cluster (puerto de datos + 10000): sin ellos
+            # los nodos no se hacen gossip entre sí a través del netns compartido.
+            - "17001:17001"
+            - "17002:17002"
+            - "17003:17003"
+
     cluster-1: &clusternode
         profiles: ["cluster"]
         image: valkey/valkey:8-alpine
-        network_mode: host
+        network_mode: "service:cluster-net"
+        depends_on: [cluster-net]
         command:
             ["valkey-server", "--port", "7001", "--cluster-enabled", "yes",
-             "--cluster-config-file", "/tmp/nodes-7001.conf", "--appendonly", "no"]
+             "--cluster-config-file", "/tmp/nodes-7001.conf", "--cluster-announce-ip", "127.0.0.1",
+             "--appendonly", "no"]
 
     cluster-2:
         <<: *clusternode
         command:
             ["valkey-server", "--port", "7002", "--cluster-enabled", "yes",
-             "--cluster-config-file", "/tmp/nodes-7002.conf", "--appendonly", "no"]
+             "--cluster-config-file", "/tmp/nodes-7002.conf", "--cluster-announce-ip", "127.0.0.1",
+             "--appendonly", "no"]
 
     cluster-3:
         <<: *clusternode
         command:
             ["valkey-server", "--port", "7003", "--cluster-enabled", "yes",
-             "--cluster-config-file", "/tmp/nodes-7003.conf", "--appendonly", "no"]
+             "--cluster-config-file", "/tmp/nodes-7003.conf", "--cluster-announce-ip", "127.0.0.1",
+             "--appendonly", "no"]
 
     # Forma el cluster una vez y sale. --cluster-yes evita la confirmación
     # interactiva; sin réplicas, porque estos tests prueban el enrutado por
@@ -86,7 +127,7 @@ services:
     cluster-init:
         profiles: ["cluster"]
         image: valkey/valkey:8-alpine
-        network_mode: host
+        network_mode: "service:cluster-net"
         restart: "no"
         entrypoint:
             ["sh", "-c",
