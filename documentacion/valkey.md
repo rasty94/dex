@@ -1,6 +1,6 @@
 # Valkey — el estado que las réplicas comparten
 
-Valkey es **opcional y está apagado por defecto**. Sin `valkey.address` cada proceso
+Valkey es **opcional y está apagado por defecto**. Sin `valkey.addresses` cada proceso
 guarda su estado en memoria y no hace falta ningún servidor: es lo que quiere un
 despliegue de una sola réplica de dex y un solo panel.
 
@@ -14,21 +14,28 @@ de cada componente están en su propia documentación:
 - Caché de tokens del conector Keystone → [keystone_connector.md](keystone_connector.md)
 - Sesiones del panel de administración → [dashboard-administracion.md](dashboard-administracion.md)
 - Contadores del limitador de login → sin configuración propia: van a Valkey en cuanto
-  `valkey.address` está puesto en el `dex.yaml`.
+  `valkey.addresses` está puesto en el `dex.yaml`.
 
 ## Configuración
 
 ```yaml
 valkey:
-  address: valkey.interno:6379
+  mode: standalone         # standalone (por defecto), sentinel o cluster
+  addresses:
+    - valkey.interno:6379
   keyPrefix: "dex:"        # por defecto "dex:"
   username: dex            # opcional
   password: "…"            # opcional
-  db: 0                    # opcional
+  db: 0                    # opcional; el modo cluster no admite otra que 0
   tls:
     caCert: /etc/dex/valkey-ca.pem
     insecureSkipVerify: false
 ```
+
+`mode` es explícito a propósito: deducirlo del número de direcciones falla en
+silencio. Dadas varias direcciones que resultan no formar un cluster, el cliente no
+falla — cae a standalone contra una de ellas sin decir nada. `masterSet` (ver más
+abajo) solo se usa, y hace falta, en modo `sentinel`.
 
 El panel tiene un bloque `valkey` idéntico en su propio fichero. Pueden apuntar al
 mismo servidor: las claves llevan prefijos distintos y no se pisan.
@@ -86,11 +93,68 @@ que para un ejemplo está bien.
 
 ### Alta disponibilidad
 
-Hoy la conexión admite **una sola dirección**: ni sentinel ni cluster. Con
-`valkey.address` puesto, dex se niega a arrancar si ese servidor no responde —a
+Con `valkey.addresses` puesto, dex se niega a arrancar si el servidor no responde —a
 propósito: arrancar sin él significa arrancar sin límite de login compartido—, así que
-un orquestador tiene que reintentar en vez de dar el contenedor por muerto. Está
-anotado en [TODO.md](../TODO.md).
+un orquestador tiene que reintentar en vez de dar el contenedor por muerto. Eso vale
+para las tres topologías siguientes.
+
+`mode` no se deduce del número de direcciones: se declara. Dado un `standalone` con
+varias direcciones que en realidad no forman un cluster, `valkey-go` no falla — cae a
+hablar con una sola de ellas sin decir nada, y el operador se queda creyendo que tiene
+un cluster cuando tiene un nodo.
+
+#### Un solo nodo (`standalone`)
+
+Sin réplicas de Valkey. Es el modo por defecto y el que usa `Ejemplos/dashboard`.
+
+```yaml
+valkey:
+  mode: standalone
+  addresses:
+    - valkey:6379
+```
+
+#### Sentinel
+
+Varios sentinels vigilan un maestro y sus réplicas, y hacen el failover cuando el
+maestro cae. `addresses` lleva los sentinels, no el maestro: `valkey-go` les pregunta
+quién es el maestro ahora mismo y sigue el failover sin que dex tenga que hacer nada.
+`masterSet` es obligatorio — es el nombre bajo el que los sentinels vigilan ese
+maestro, y sin él no hay forma de saber a cuál de los que vigilan.
+
+```yaml
+valkey:
+  mode: sentinel
+  addresses:
+    - sentinel1:26379
+    - sentinel2:26379
+    - sentinel3:26379
+  masterSet: dex
+```
+
+**La regla de los tres votantes**: un sentinel necesita mayoría para decidir que el
+maestro está caído y promocionar una réplica. Con dos sentinels, uno solo ya no es
+mayoría de nada — un corte de red entre ambos deja al sistema sin poder decidir. Tres
+es el mínimo que sobrevive a la caída de uno sin perder la capacidad de votar.
+
+#### Cluster
+
+Los datos se reparten en particiones (`hash slots`) entre varios nodos. `addresses`
+lleva un subconjunto de los nodos del cluster — no hacen falta todos, `valkey-go`
+descubre el resto al conectar — y las redirecciones (`MOVED`, `ASK`) las sigue el
+cliente, no dex.
+
+```yaml
+valkey:
+  mode: cluster
+  addresses:
+    - valkey1:6379
+    - valkey2:6379
+    - valkey3:6379
+```
+
+Un cluster no tiene más base de datos que la 0: `db` distinto de `0` en este modo es
+un error de arranque, no una conexión que falla más tarde en el primer comando.
 
 ## Qué pasa si Valkey se cae con dex ya sirviendo
 

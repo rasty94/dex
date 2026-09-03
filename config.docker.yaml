@@ -41,11 +41,21 @@ grpc:
 {{- end }}
 
 {{- /* Shared store between replicas: the login rate limiter's counters and,
-       when a connector asks for it, its caches. Empty address keeps everything
-       in process, which is the default -- nothing below is rendered then. */}}
-{{- if getenv "DEX_VALKEY_ADDRESS" "" }}
+       when a connector asks for it, its caches. No address keeps everything
+       in process, which is the default -- nothing below is rendered then.
+       DEX_VALKEY_ADDRESS stays for the single-node case; DEX_VALKEY_ADDRESSES
+       takes a comma-separated list for sentinel and cluster. */}}
+{{- $valkeyAddrs := getenv "DEX_VALKEY_ADDRESSES" (getenv "DEX_VALKEY_ADDRESS" "") }}
+{{- if $valkeyAddrs }}
 valkey:
-  address: {{ .Env.DEX_VALKEY_ADDRESS }}
+  mode: {{ getenv "DEX_VALKEY_MODE" "standalone" }}
+  addresses:
+{{- range (strings.Split "," $valkeyAddrs) }}
+  - {{ . | strings.TrimSpace }}
+{{- end }}
+{{- if getenv "DEX_VALKEY_MASTER_SET" "" }}
+  masterSet: {{ .Env.DEX_VALKEY_MASTER_SET | quote }}
+{{- end }}
   keyPrefix: {{ getenv "DEX_VALKEY_KEY_PREFIX" "dex:" | quote }}
 {{- if getenv "DEX_VALKEY_USERNAME" "" }}
   username: {{ .Env.DEX_VALKEY_USERNAME | quote }}
