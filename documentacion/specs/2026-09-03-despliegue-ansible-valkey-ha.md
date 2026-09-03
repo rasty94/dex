@@ -1,7 +1,10 @@
-# Despliegue con Ansible y Valkey en alta disponibilidad
+# Fases 1 y 2 — Valkey en alta disponibilidad y los roles de Ansible
 
 > Estado: aprobada, pendiente de plan de implementación.
 > Fecha: 2026-09-03.
+> Fases 1 y 2 de la
+> [hoja de ruta del despliegue](2026-09-03-despliegue-hoja-de-ruta.md), que ordena las
+> cinco y guarda las decisiones de las que aún no tienen spec.
 > Cierra las entradas «Rol de Ansible», «Un `docker compose` de producción» y
 > «Valkey es hoy un punto único de fallo» de [TODO.md](../../TODO.md).
 
@@ -32,18 +35,19 @@ El orden no es negociable: sin lo primero, el rol no tiene nada que configurar.
 - Un inventario de ejemplo y la documentación de operación.
 - Tests de integración para las topologías nuevas, y una verificación manual documentada
   del failover entre máquinas.
+- **El panel replicado**, con su limitador de intentos pasado a Valkey (ver 6.5).
 
-**No entra, y es deliberado:**
+**No entra en estas dos fases, porque tiene la suya:**
 
-- **Desplegar la base de datos.** El inventario da un MariaDB o MySQL que ya existe; el
-  rol comprueba que responde y falla claro si no. Desplegar y dar alta disponibilidad a
-  un motor SQL es un producto entero y ya hay roles hechos que lo hacen mejor.
-- **El balanceador de carga.** Queda documentado qué tiene que hacer —repartir entre los
-  nodos de dex, comprobar `/healthz`— pero no lo gestiona el rol.
-- **Una colección de Ansible publicable.** Los roles se empaquetan el día que haga falta
-  instalarlos desde varios sitios; hacerlo ahora no cambia nada de lo que hay que
-  escribir.
-- **Alta disponibilidad del panel.** Es una consola de administración: una instancia.
+- **La base de datos** la despliega la fase 4. Aquí el inventario da un MariaDB o MySQL
+  que ya existe y el rol comprueba que responde antes de arrancar dex. Cuando la fase 4
+  esté, lo único que cambia es de dónde salen esas variables.
+- **El balanceador** es la fase 3. Aquí se documenta qué tiene que hacer —repartir entre
+  los nodos de dex y del panel, comprobar `/healthz`, y **no** hacer afinidad de sesión—
+  y se deja el `issuer` apuntando a su URL desde el primer día, para que enchufarlo no
+  obligue a reconfigurar dex.
+- **La colección publicable** es la fase 5, y va al final por definición: no se puede
+  empaquetar lo que aún no existe.
 
 ## 3. Decisiones y su porqué
 
@@ -227,12 +231,30 @@ entender que está cubierta.
 
 ### 6.4 Detalles del despliegue
 
-- El panel es su propio grupo del inventario, normalmente una máquina.
+- El panel es su propio grupo del inventario, con una o dos máquinas (ver 6.5).
 - El `issuer` de dex es la URL del balanceador, nunca la del nodo.
 - **No hace falta afinidad de sesión** en el balanceador: es justo lo que se compra con
   el estado compartido, y la documentación lo dice explícitamente.
 - La imagen se fija por variable a una etiqueta `fork-vX.Y.Z`, nunca `latest`, y la
   actualización usa `serial: 1` sobre el grupo `dex`.
+
+### 6.5 El panel replicado, y el agujero que abre
+
+Con las sesiones de administrador en Valkey, replicar el panel es barato: no hace falta
+afinidad de sesión, el estado ya se comparte y las cookies de `state` y `next` del login
+OIDC viven en el navegador, no en el proceso. Dos instancias necesitan lo mismo: el mismo
+token gRPC, la misma CA y un `redirect_uri` que apunte al balanceador.
+
+Lo que **no** es barato, y hay que arreglar aquí: `cmd/dex-dashboard/auth.go` tiene un
+`attemptLimiter` local al proceso. El TODO lo justificaba diciendo que con una sola
+réplica el límite por proceso ya es el límite real —cierto entonces—, pero replicar el
+panel convierte su límite de intentos de login en `intentos × réplicas`, que es
+exactamente el agujero que el estado compartido cerró en dex.
+
+Pasa a contar en Valkey reutilizando el `sharedCounter` de `server/ratelimit`, con el
+mismo comportamiento ante una caída: cae al contador local, que degrada a «una réplica»
+y nunca a «sin límite». La entrada del TODO se corrige explicando por qué dejó de ser
+cierta, no se cierra sin más.
 
 ## 7. Inventario
 
@@ -248,7 +270,7 @@ dex:
     dex_issuer: https://sso.interno/dex
     dex_storage: {type: mysql, host: mariadb.interno, database: dex, user: dex}
 dex_dashboard:
-  hosts: {dex-1: {}}
+  hosts: {dex-1: {}, dex-2: {}}
 ```
 
 `valkey_sentinel` está separado de `valkey` precisamente para permitir el caso de dos
@@ -324,10 +346,16 @@ Recogidas aquí para que el plan no las redescubra:
 6. Dos réplicas de dex con bases separadas tienen claves de firma distintas: un token
    emitido por una no valida contra el JWKS de la otra. De ahí que la base compartida sea
    un requisito y no una opción.
+7. Dex fija `SERIALIZABLE` en cada conexión, y Galera no lo soporta. Condiciona la fase 4
+   y está razonado en la hoja de ruta; se anota aquí para que nadie proponga Galera al
+   leer solo esta spec.
+8. Replicar el panel invalida el razonamiento por el que su `attemptLimiter` era local
+   (§6.5).
 
-## 11. Qué queda fuera y va al TODO
+## 11. Qué queda fuera de estas dos fases
 
-- Sonda de disponibilidad de verdad para el panel (ya anotada).
-- Colección de Ansible publicable.
-- Despliegue y alta disponibilidad de la base de datos.
-- El camino `ent` con MariaDB.
+- Sonda de disponibilidad de verdad para el panel: sigue siendo una entrada del TODO y
+  la documentación del rol la cita en vez de dar a entender que está cubierta.
+- El camino `ent` con MariaDB, documentado como no soportado.
+- Las fases 3, 4 y 5, con sus decisiones ya guardadas en la
+  [hoja de ruta](2026-09-03-despliegue-hoja-de-ruta.md).
