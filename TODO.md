@@ -80,6 +80,25 @@
 
 - [ ] Provider para HashiCorp Vault: Leer el `adminPassword` y los app-credentials nativamente de Vault sin exponerlos en el `config.yaml`.
 - [ ] Helm Chart u Operator Kubernetes Mejorado: Adaptar configuraciones del Fork directamente en los values nativos del chart oficial de la comunidad.
+- [ ] **Rol de Ansible para desplegar el fork.** Lo que hay hoy es un ejemplo para
+      probar en local y una guía de TLS escrita a mano
+      ([despliegue-docker-tls.md](documentacion/despliegue-docker-tls.md)): no hay nada
+      que ponga esto en una máquina de verdad sin repetir los pasos a mano cada vez.
+      El rol tendría que cubrir la imagen y su versión, el fichero de configuración con
+      sus secretos fuera del repositorio, los certificados, el arranque como servicio, y
+      el panel como su propio proceso. Con Valkey recién integrado hay además una pieza
+      más que instalar y a la que hay que apuntar a los dos binarios.
+- [ ] **Un `docker compose` de producción, separado de los ejemplos.** Los de
+      `Ejemplos/` dicen en su primera línea que no se usen tal cual, y con razón:
+      publican en `127.0.0.1`, llevan los secretos escritos en el fichero, comparten
+      espacio de red entre servicios para no tocar `/etc/hosts`, y no tienen TLS. Hace
+      falta uno pensado para un despliegue: secretos por fuera, TLS, red separada por
+      servicio, y límites y reinicio declarados. La diferencia entre los dos ficheros es
+      justo lo que hay que documentar.
+- [ ] **Sondas y arranque ordenado.** Dex ya tiene `/healthz` en el endpoint de
+      telemetría, pero nada declara que el panel no debe arrancar antes que dex, ni qué
+      hacer si Valkey no está: hoy dex se niega a arrancar, que es lo correcto, pero un
+      orquestador tiene que saber reintentar en vez de darlo por muerto.
 
 ### 4. 🔐 Autenticación Avanzada (Beyond TOTP)
 
