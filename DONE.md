@@ -217,10 +217,11 @@
       `dex-dashboard:`, distinto del de dex (`dex:`), para que un Valkey compartido
       entre los dos procesos no mezcle sus claves.
       **La frase que importa, documentada junto a `valkey.address` en las dos guías**:
-      lo que se guarda en esa clave decide quién puede escribir en el panel —
-      `CanWrite` viaja ahí dentro—, así que quien pueda escribir en ese Valkey se hace
-      administrador con permiso de escritura. Esa conexión necesita autenticación y
-      TLS igual que cualquier otro credencial de administración.
+      lo que se guarda en esa clave decide quién entra en el panel, así que quien pueda
+      escribir en ese Valkey se hace administrador. Esa conexión necesita autenticación
+      y TLS igual que cualquier otro credencial de administración. (El `CanWrite`
+      guardado dejó de decidir nada al cerrar los bordes, más abajo; el correo y los
+      grupos sí siguen decidiendo.)
 - [x] **Verificado en vivo contra dos réplicas reales.** Ejemplo ampliado
       (`Ejemplos/dashboard/docker-compose.yml`) con un Valkey y una segunda réplica de
       dex (`dex-replica`, puerto 5566) que comparte Valkey pero tiene su propia base de
@@ -229,6 +230,64 @@
       propio** — la prueba de que el presupuesto es de verdad compartido y no
       `attempts × réplicas`. Transcripción completa en
       `.superpowers/sdd/2026-09-03-estado-compartido-valkey-plan/task-7-report.md`.
+
+#### 19.1 Los bordes operativos de Valkey, cerrados
+
+> Entregar el estado compartido dejó tres bordes abiertos que solo se ven cuando el
+> almacén está encendido de verdad. Los tres son la misma clase de fallo: algo que
+> antes era imposible pasó a ser posible, y nada lo decía.
+
+- [x] **El permiso de administrador se recalcula en cada petición.** Con las sesiones en
+      memoria había una revocación tosca pero real: reiniciar el panel las tiraba todas.
+      En Valkey sobreviven, así que quitar a alguien de `admin.writeGroups` le dejaba la
+      escritura hasta ocho horas más. Ahora `requireAdmin` recalcula el permiso con la
+      configuración cargada y el correo y los grupos guardados: sin escritura en el
+      siguiente clic, y si pierde también la lectura se le borra la sesión y se le retira
+      la cookie. El almacén en memoria devuelve una copia, así que dos peticiones no se
+      pisan la misma estructura.
+      **El límite, documentado**: los grupos son los del ID token de cuando esa persona
+      entró. Una baja hecha en el proveedor de identidad no se ve hasta que vuelva a
+      autenticarse; la que corta de inmediato es sacarla de `admin.groups`.
+      **Verificado en vivo**: sesión abierta con el conector mock, se le quita `authors`
+      de `writeGroups`, se recrea el panel —la sesión sobrevive, que es el escenario— y
+      el `POST` se lleva un 403 con la página ya marcada *read only*. Quitándole también
+      la lectura, la clave desaparece de Valkey y el intento de volver a entrar lo
+      rechaza el panel: **dos puertas distintas y las dos dejaron su línea en el log**.
+- [x] **Un Valkey caído ya no se disfraza de fallo de caché.** La caché de tokens de
+      Keystone devolvía cualquier error como «no estaba», así que una caída se veía igual
+      que una racha de tokens nuevos mientras cada login pagaba el viaje entero. `get`
+      devuelve ahora el error aparte y `keystone_token_cache_lookups_total` tiene una
+      etiqueta `error`. Sigue fallando abierto: ningún login se rompe por esto.
+      **Lo que destapó escribirlo**: nadie había mirado nunca `IsValkeyNil`. Cada fallo
+      de caché normal venía como error de `AsBytes()` y el código lo doblaba en el mismo
+      `false` que un servidor muerto. Funcionaba de casualidad, y solo se vio al dar al
+      error un significado propio.
+- [x] **`context.Canceled` deja de contar como fallo del almacén.** Un cliente que corta
+      su petición sumaba en `dex_login_rate_limit_backend_errors_total` igual que un
+      Valkey inalcanzable, lo que convertía la alarma en un contador de pestañas
+      cerradas. Un plazo agotado sí sigue contando: ahí el almacén fue demasiado lento.
+- [x] **Aviso al arrancar si el servidor puede desalojar las claves de dex.** Todo lo que
+      dex guarda ahí lleva caducidad, y esa es la trampa: bajo un `maxmemory`, `allkeys-*`
+      tira cualquier clave y `volatile-*` tira justo las que tienen TTL —todas las
+      nuestras—. Con ellas se van los contadores del limitador, o sea que **el presupuesto
+      de intentos se reinicia solo bajo presión de memoria**, que es exactamente lo que el
+      límite existe para impedir. Es fácil de incumplir sin querer: mucha gente ya tiene
+      un Valkey levantado como caché, con su política de desalojo, y apuntar dex ahí
+      parece gratis. Solo un aviso, porque el servidor puede no ser suyo, y ninguno si no
+      responde a `CONFIG` —los servicios gestionados suelen desactivarlo y un aviso sobre
+      el que nadie puede actuar es ruido—. Con su propio plazo de 2 segundos: es una
+      lectura, y el cliente reintenta contra un servidor muerto sin rendirse.
+      **Probado en el ejemplo** con `volatile-lru` y 64 MB: avisan los dos procesos; con
+      `noeviction`, ninguno.
+- [x] **Una página propia para Valkey** ([documentacion/valkey.md](documentacion/valkey.md)):
+      lo que el servidor tiene que cumplir estaba repartido entre la guía de Keystone, la
+      del panel y la spec. Recoge la política de memoria, qué se pierde en un reinicio, la
+      elección de cada componente cuando el almacén se cae y las dos métricas que lo
+      dicen.
+      **Lo que destapó leer el log en vivo**: el aviso, tal y como lo escribí, le contaba
+      al panel que sus contadores del limitador estaban en peligro. El panel no guarda
+      ninguno —su `attemptLimiter` es local—. Un mensaje compartido por dos procesos no
+      puede nombrar lo que solo tiene uno.
 
 ### 21. 🛠️ API de Gestión gRPC (con Autenticación)
 

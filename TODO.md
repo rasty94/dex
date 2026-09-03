@@ -71,24 +71,6 @@
       ayudante de clave sin hashear y sin usuarios invita a que alguien meta un
       secreto en el nombre de una clave donde no toca. Retirarlo, o darle un
       uso real, antes de que alguien lo use mal.
-- [ ] En `server/ratelimit`, un cliente que aborta su petición cancela el
-      contexto, y eso hoy cuenta como fallo del backend igual que Valkey
-      inalcanzable — cae al bucket local y suma en
-      `dex_login_rate_limit_backend_errors_total`. No es un bypass del
-      límite, pero la métrica que debería significar "Valkey inalcanzable"
-      también cuenta desconexiones normales de cliente, lo que la hace menos
-      fiable como alarma. Distinguir `context.Canceled` del resto de errores
-      antes de contarlo.
-- [ ] **Un Valkey caído no se distingue de una caché fría.** En
-      `connector/keystone/cache_valkey.go` cualquier error de `GET` se devuelve
-      como fallo de caché —correcto, el login no debe romperse porque la
-      optimización no esté— pero no se registra ni se cuenta: el `set` que
-      falla se descarta igual de callado. Con Valkey inalcanzable,
-      `keystone_token_cache_lookups_total{result="miss"}` marca el 100 % y
-      parece tráfico nuevo, mientras cada login paga un viaje entero a
-      Keystone. Es el mismo agujero que ya está anotado arriba para el
-      limitador: falta la etiqueta o el contador que diga *por qué* no hubo
-      acierto.
 - [ ] **Valkey es hoy un punto único de fallo, y `New` solo admite una
       dirección.** `pkg/valkey/valkey.go` pasa un `InitAddress` con un
       elemento: sin sentinel, sin cluster y sin certificado de cliente (el
@@ -96,18 +78,9 @@
       autenticación del cliente es la contraseña). Mientras Valkey esté
       apagado la configuración sigue siendo opcional y esto no importa; en
       cuanto se encienda en producción, dex deja de arrancar si el servidor no
-      responde. `valkey-go` soporta las tres cosas.
-- [ ] **Nadie ha dicho con qué política de memoria debe correr ese Valkey.**
-      Si el operador lo levanta con `maxmemory` y `allkeys-lru`, los
-      contadores del limitador de login se pueden desalojar antes de que cierre
-      su ventana: bajo presión de memoria el presupuesto de intentos se
-      reinicia solo, que es justo lo que el límite existe para impedir. Y sin
-      persistencia —el ejemplo usa `--save ""`, que ahí está bien— un reinicio
-      se lleva por delante todas las sesiones del panel y todos los contadores.
-      Hace falta escribir qué exige dex del servidor (`noeviction` o
-      `volatile-*`, y qué se pierde en un reinicio), hoy repartido entre
-      [keystone_connector.md](documentacion/keystone_connector.md), la del panel
-      y la spec, sin una página propia.
+      responde. `valkey-go` soporta las tres cosas, y
+      [documentacion/valkey.md](documentacion/valkey.md) ya avisa de la
+      limitación.
 - [ ] La afirmación de que dex se niega a arrancar con un `cacheTTL` inválido
       no es cierta con el feature flag `continue_on_connector_failure` activo
       (su valor por defecto): ahí el conector falla, dex lo registra y arranca
@@ -194,9 +167,9 @@
       paginar, y eso sí necesita que la API de dex lo soporte: hoy `ListClients` devuelve todo.
 - [ ] **htmx.** El panel no sirve JavaScript y la CSP está en `default-src 'none'`. Entra
       cuando alguna pantalla gane algo real con actualización parcial, no antes.
-- [ ] **Revocar una sesión de administrador ya no es tan simple como reiniciar el
-      panel.** Con las sesiones en Valkey, sobreviven un reinicio, así que quitar a
-      alguien de `admin.writeGroups` le deja la sesión que ya tenía con permiso de
-      escritura hasta que caduque — no hay forma de terminarla antes salvo borrar la
-      clave a mano en Valkey. Falta documentarlo y, más adelante, un botón en el panel
-      para cerrar una sesión concreta.
+- [ ] **Cerrar una sesión de administrador concreta desde el panel.** Quitarle los
+      permisos a alguien ya funciona sin esperar a que caduque —el permiso se recalcula
+      en cada petición, ver [DONE.md](DONE.md)—, pero eso resuelve la baja, no la cookie
+      robada: para terminar *una* sesión sin tocar la configuración sigue habiendo que
+      borrar la clave a mano en Valkey. Falta la lista de sesiones abiertas del propio
+      panel y un botón por fila.

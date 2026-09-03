@@ -20,6 +20,14 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 - Métrica `dex_login_rate_limit_backend_errors_total`: cuenta las veces que el
   almacén compartido no respondió y el limitador cayó de vuelta a sus cubos
   locales.
+- Aviso al arrancar cuando el servidor de Valkey puede desalojar claves: todo lo
+  que dex guarda ahí lleva caducidad, así que un `maxmemory` con cualquier
+  política que no sea `noeviction` puede llevarse los contadores del limitador de
+  login —el presupuesto de intentos se reiniciaría solo— y las sesiones del panel.
+  Es solo un aviso; si el servidor no responde a `CONFIG`, no se dice nada.
+- `documentacion/valkey.md`: lo que el servidor compartido tiene que cumplir,
+  qué se pierde en un reinicio, qué hace cada componente cuando el almacén se cae
+  y las métricas que lo delatan.
 
 ### Cambiado
 
@@ -33,6 +41,14 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
   panel. Quien pueda escribir ahi se hace administrador con permiso de
   escritura sobre el panel: esa conexion necesita autenticacion y TLS igual que
   cualquier otro credencial de administracion.
+- El panel recalcula el permiso de administrador **en cada petición**, con la
+  configuración cargada y el correo y los grupos que guarda la sesión, en vez de
+  confiar en el permiso que se calculó al entrar. Con las sesiones en Valkey
+  sobreviven a un reinicio del panel, así que sin esto quitar a alguien de
+  `admin.writeGroups` no surtía efecto hasta que su sesión caducara. Perder el
+  acceso de lectura destruye la sesión. Los grupos siguen siendo los del ID token
+  de cuando esa persona entró: una baja hecha en el proveedor de identidad no se
+  ve hasta que vuelva a autenticarse.
 - El conector Keystone puede compartir su cache de tokens entre replicas con
   `cacheShared: true`, cuando `dex.yaml` tiene `valkey.address` configurado.
   `cacheShared` decide donde vive la cache, no si existe: eso lo sigue decidiendo
@@ -40,6 +56,14 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 
 ### Arreglado
 
+- Un Valkey inalcanzable se contaba como fallo de caché normal en
+  `keystone_token_cache_lookups_total`, así que una caída se veía igual que una
+  racha de tokens nuevos mientras cada login pagaba el viaje entero a Keystone.
+  Ahora tiene su propia etiqueta, `result="error"`. Sigue fallando abierto:
+  ningún login se rompe porque la caché no esté.
+- Un cliente que abandonaba su petición cancelaba el contexto y eso se contaba en
+  `dex_login_rate_limit_backend_errors_total` igual que un Valkey inalcanzable,
+  lo que dejaba la alarma sin valor. Un plazo agotado sí sigue contando.
 - La cache de tokens del conector Keystone comprobaba la caducidad al leer pero
   nunca borraba, asi que crecia sin limite mientras el proceso viviera. Afecta
   tambien a despliegues de una sola replica.
