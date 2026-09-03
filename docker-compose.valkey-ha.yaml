@@ -1,0 +1,94 @@
+# Pilas de Valkey en alta disponibilidad para los tests de integración.
+# Se levantan a mano o desde CI; no forman parte de ningún despliegue.
+#
+#   docker compose -f docker-compose.valkey-ha.yaml --profile sentinel up -d
+#   DEX_VALKEY_SENTINEL_ADDRS=127.0.0.1:26379,127.0.0.1:26380,127.0.0.1:26381 go test ./pkg/valkey/
+#
+# network_mode: host porque sentinel y cluster se anuncian por IP real: dentro de
+# una red bridge anunciarían direcciones de contenedor que el test no alcanza.
+services:
+    valkey-master:
+        profiles: ["sentinel"]
+        image: valkey/valkey:8-alpine
+        network_mode: host
+        command: ["valkey-server", "--port", "6390", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
+
+    valkey-replica:
+        profiles: ["sentinel"]
+        image: valkey/valkey:8-alpine
+        network_mode: host
+        command: ["valkey-server", "--port", "6391", "--replicaof", "127.0.0.1", "6390", "--appendonly", "no"]
+        depends_on: [valkey-master]
+
+    sentinel-1: &sentinel
+        profiles: ["sentinel"]
+        image: valkey/valkey:8-alpine
+        network_mode: host
+        entrypoint: ["sh", "-c"]
+        command:
+            - |
+              cat >/tmp/s.conf <<EOF
+              port 26379
+              sentinel monitor dex 127.0.0.1 6390 2
+              sentinel down-after-milliseconds dex 1000
+              sentinel failover-timeout dex 5000
+              EOF
+              exec valkey-sentinel /tmp/s.conf
+        depends_on: [valkey-master]
+
+    sentinel-2:
+        <<: *sentinel
+        command:
+            - |
+              cat >/tmp/s.conf <<EOF
+              port 26380
+              sentinel monitor dex 127.0.0.1 6390 2
+              sentinel down-after-milliseconds dex 1000
+              sentinel failover-timeout dex 5000
+              EOF
+              exec valkey-sentinel /tmp/s.conf
+
+    sentinel-3:
+        <<: *sentinel
+        command:
+            - |
+              cat >/tmp/s.conf <<EOF
+              port 26381
+              sentinel monitor dex 127.0.0.1 6390 2
+              sentinel down-after-milliseconds dex 1000
+              sentinel failover-timeout dex 5000
+              EOF
+              exec valkey-sentinel /tmp/s.conf
+
+    cluster-1: &clusternode
+        profiles: ["cluster"]
+        image: valkey/valkey:8-alpine
+        network_mode: host
+        command:
+            ["valkey-server", "--port", "7001", "--cluster-enabled", "yes",
+             "--cluster-config-file", "/tmp/nodes-7001.conf", "--appendonly", "no"]
+
+    cluster-2:
+        <<: *clusternode
+        command:
+            ["valkey-server", "--port", "7002", "--cluster-enabled", "yes",
+             "--cluster-config-file", "/tmp/nodes-7002.conf", "--appendonly", "no"]
+
+    cluster-3:
+        <<: *clusternode
+        command:
+            ["valkey-server", "--port", "7003", "--cluster-enabled", "yes",
+             "--cluster-config-file", "/tmp/nodes-7003.conf", "--appendonly", "no"]
+
+    # Forma el cluster una vez y sale. --cluster-yes evita la confirmación
+    # interactiva; sin réplicas, porque estos tests prueban el enrutado por
+    # slots, no el failover.
+    cluster-init:
+        profiles: ["cluster"]
+        image: valkey/valkey:8-alpine
+        network_mode: host
+        restart: "no"
+        entrypoint:
+            ["sh", "-c",
+             "sleep 3 && valkey-cli --cluster create 127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 --cluster-yes"]
+        depends_on: [cluster-1, cluster-2, cluster-3]

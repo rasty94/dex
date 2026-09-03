@@ -184,6 +184,16 @@ jobs:
 
           DEX_KUBERNETES_CONFIG_PATH: ~/.kube/config
 
+      - name: Test Valkey HA topologies
+        run: |
+          docker compose -f docker-compose.valkey-ha.yaml --profile sentinel up -d
+          docker compose -f docker-compose.valkey-ha.yaml --profile cluster up -d
+          sleep 10
+          go test ./pkg/valkey/ -run 'TestSentinel|TestCluster' -v
+        env:
+          DEX_VALKEY_SENTINEL_ADDRS: 127.0.0.1:26379,127.0.0.1:26380,127.0.0.1:26381
+          DEX_VALKEY_CLUSTER_ADDRS: 127.0.0.1:7001,127.0.0.1:7002,127.0.0.1:7003
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
