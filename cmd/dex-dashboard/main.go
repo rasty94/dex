@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 )
 
 func main() {
@@ -44,10 +46,20 @@ func run() error {
 	}
 	defer dex.Close()
 
+	ctx := context.Background()
+
+	vk, err := dexvalkey.New(ctx, c.Valkey)
+	if err != nil {
+		return fmt.Errorf("valkey: %w", err)
+	}
+	if vk != nil {
+		defer vk.Close()
+		logger.Info("config valkey", "address", c.Valkey.Address, "key_prefix", c.Valkey.KeyPrefix)
+	}
+
 	// Discovery has to reach dex, which may still be starting; a short retry
 	// keeps the two services from having to be ordered at deploy time.
-	ctx := context.Background()
-	auth, err := newAuthenticatorWithRetry(ctx, c, logger)
+	auth, err := newAuthenticatorWithRetry(ctx, c, vk, logger)
 	if err != nil {
 		return err
 	}
@@ -181,10 +193,10 @@ func run() error {
 
 // newAuthenticatorWithRetry gives dex a minute to come up before giving up on
 // its discovery document.
-func newAuthenticatorWithRetry(ctx context.Context, c *Config, logger *slog.Logger) (*authenticator, error) {
+func newAuthenticatorWithRetry(ctx context.Context, c *Config, vk *dexvalkey.Client, logger *slog.Logger) (*authenticator, error) {
 	var lastErr error
 	for attempt := 0; attempt < 12; attempt++ {
-		auth, err := newAuthenticator(ctx, c, logger)
+		auth, err := newAuthenticator(ctx, c, vk, logger)
 		if err == nil {
 			return auth, nil
 		}

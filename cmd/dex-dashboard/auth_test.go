@@ -141,7 +141,7 @@ func TestRequireAdmin(t *testing.T) {
 	}
 
 	// A real session gets through.
-	id, err := a.sessions.create(&session{Email: "jane@example.com"})
+	id, err := a.sessions.create(t.Context(), &session{Email: "jane@example.com"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -156,18 +156,18 @@ func TestRequireAdmin(t *testing.T) {
 
 func TestSessionExpires(t *testing.T) {
 	st := newSessionStore(time.Hour, 0)
-	id, err := st.create(&session{Email: "jane@example.com"})
+	id, err := st.create(t.Context(), &session{Email: "jane@example.com"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if _, ok := st.get(id); !ok {
+	if _, ok := st.get(t.Context(), id); !ok {
 		t.Fatal("fresh session should be readable")
 	}
 
 	// Expiry is enforced on read, not only by the cookie's max-age, so a client
 	// that keeps presenting the id past the TTL still loses access.
 	st.s[id].Expiry = time.Now().Add(-time.Second)
-	if _, ok := st.get(id); ok {
+	if _, ok := st.get(t.Context(), id); ok {
 		t.Error("expired session should not be readable")
 	}
 }
@@ -175,7 +175,7 @@ func TestSessionExpires(t *testing.T) {
 func TestRequireCSRF(t *testing.T) {
 	a := &authenticator{sessions: newSessionStore(time.Hour, 0), logger: testLogger()}
 	sess := &session{Email: "jane@example.com", CSRFToken: "the-real-token"}
-	id, err := a.sessions.create(sess)
+	id, err := a.sessions.create(t.Context(), sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestRequireWrite(t *testing.T) {
 
 	post := func(canWrite bool) *httptest.ResponseRecorder {
 		reached = false
-		id, err := a.sessions.create(&session{Email: "jane@example.com", CanWrite: canWrite})
+		id, err := a.sessions.create(t.Context(), &session{Email: "jane@example.com", CanWrite: canWrite})
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
@@ -240,7 +240,7 @@ func TestRequireWrite(t *testing.T) {
 // logged-in administrator's browser cannot delete anything.
 func TestWriteRoutesRequireCSRF(t *testing.T) {
 	a := &authenticator{sessions: newSessionStore(time.Hour, 0), logger: testLogger()}
-	id, err := a.sessions.create(&session{Email: "jane@example.com", CanWrite: true, CSRFToken: "real"})
+	id, err := a.sessions.create(t.Context(), &session{Email: "jane@example.com", CanWrite: true, CSRFToken: "real"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -263,32 +263,32 @@ func TestWriteRoutesRequireCSRF(t *testing.T) {
 // session that goes untouched has to die even though its absolute TTL is long.
 func TestSessionIdleTimeout(t *testing.T) {
 	st := newSessionStore(8*time.Hour, time.Hour)
-	id, err := st.create(&session{Email: "jane@example.com"})
+	id, err := st.create(t.Context(), &session{Email: "jane@example.com"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
-	if _, ok := st.get(id); !ok {
+	if _, ok := st.get(t.Context(), id); !ok {
 		t.Fatal("a fresh session should be readable")
 	}
 
 	// Reading it refreshes LastSeen, so an active session survives.
 	st.s[id].LastSeen = time.Now().Add(-30 * time.Minute)
-	if _, ok := st.get(id); !ok {
+	if _, ok := st.get(t.Context(), id); !ok {
 		t.Error("a session used half an hour ago should survive a one hour idle limit")
 	}
 
 	st.s[id].LastSeen = time.Now().Add(-90 * time.Minute)
-	if _, ok := st.get(id); ok {
+	if _, ok := st.get(t.Context(), id); ok {
 		t.Error("a session idle beyond the limit should be dropped")
 	}
 }
 
 func TestSessionIdleTimeoutDisabled(t *testing.T) {
 	st := newSessionStore(8*time.Hour, 0)
-	id, _ := st.create(&session{Email: "jane@example.com"})
+	id, _ := st.create(t.Context(), &session{Email: "jane@example.com"})
 	st.s[id].LastSeen = time.Now().Add(-72 * time.Hour)
-	if _, ok := st.get(id); !ok {
+	if _, ok := st.get(t.Context(), id); !ok {
 		t.Error("with the idle limit disabled, only the absolute TTL should end a session")
 	}
 }
@@ -296,8 +296,9 @@ func TestSessionIdleTimeoutDisabled(t *testing.T) {
 // Destructive actions demand a recent login. Without this, deleting a connector
 // eight hours into a session costs two clicks.
 func TestRequireFreshAuth(t *testing.T) {
+	st := newSessionStore(8*time.Hour, 0)
 	a := &authenticator{
-		sessions:     newSessionStore(8*time.Hour, 0),
+		sessions:     st,
 		reauthWindow: 15 * time.Minute,
 		logger:       testLogger(),
 		oauth2:       oauth2.Config{ClientID: "dashboard", Endpoint: oauth2.Endpoint{AuthURL: "https://dex.example.com/auth"}},
@@ -309,11 +310,11 @@ func TestRequireFreshAuth(t *testing.T) {
 		h := a.requireAdmin(a.requireFreshAuth(func(w http.ResponseWriter, r *http.Request) {
 			reached = true
 		}))
-		id, err := a.sessions.create(&session{Email: "jane@example.com", CanWrite: true})
+		id, err := a.sessions.create(t.Context(), &session{Email: "jane@example.com", CanWrite: true})
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
-		a.sessions.s[id].AuthAt = authAt
+		st.s[id].AuthAt = authAt
 
 		req := httptest.NewRequest(method, "/clients/delete?id=x", nil)
 		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: id})

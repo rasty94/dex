@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/dexidp/dex/connector"
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 )
 
 var (
@@ -30,7 +32,7 @@ type conn struct {
 	client        *http.Client
 	Logger        *slog.Logger
 	UserIDKey     string
-	tokenCache    *timeCache
+	tokenCache    identityCache
 	groupMap      map[string]string
 	fetchRoles    bool
 }
@@ -85,14 +87,19 @@ type domainKeystone struct {
 //			groupMapping:
 //			  "admin@my-project": "platform-admins"
 type Config struct {
-	Domain        string            `json:"domain"`
-	Host          string            `json:"keystoneHost"`
-	AdminUsername string            `json:"keystoneUsername"`
-	AdminPassword string            `json:"keystonePassword"`
-	UserIDKey     string            `json:"userIDKey"`
-	CacheTTL      string            `json:"cacheTTL"`
-	FetchRoles    bool              `json:"fetchRoles"`
-	GroupMapping  map[string]string `json:"groupMapping"`
+	Domain        string `json:"domain"`
+	Host          string `json:"keystoneHost"`
+	AdminUsername string `json:"keystoneUsername"`
+	AdminPassword string `json:"keystonePassword"`
+	UserIDKey     string `json:"userIDKey"`
+	CacheTTL      string `json:"cacheTTL"`
+	// CacheShared puts the token cache in the shared store instead of this
+	// process, so replicas do not each revalidate the same token. It decides
+	// where the cache lives, not whether there is one: the lifetime is still
+	// CacheTTL, and without CacheTTL there is no cache either way.
+	CacheShared  bool              `json:"cacheShared"`
+	FetchRoles   bool              `json:"fetchRoles"`
+	GroupMapping map[string]string `json:"groupMapping"`
 }
 
 type loginRequestData struct {
@@ -177,10 +184,25 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
 		}
 	}
 
-	var tokenCache *timeCache
+	var tokenCache identityCache
 	if c.CacheTTL != "" {
 		importTime, err := time.ParseDuration(c.CacheTTL)
-		if err == nil && importTime > 0 {
+		if err != nil {
+			return nil, fmt.Errorf("invalid cacheTTL %q: %v", c.CacheTTL, err)
+		}
+		if importTime <= 0 {
+			return nil, fmt.Errorf("cacheTTL must be positive, got %q", c.CacheTTL)
+		}
+		if c.CacheShared {
+			shared := dexvalkey.Shared()
+			if shared == nil {
+				// Asking for a shared cache and silently getting a local one is
+				// the kind of quiet difference that is only discovered during an
+				// incident.
+				return nil, errors.New("cacheShared is set but no valkey address is configured")
+			}
+			tokenCache = newValkeyCache(shared, importTime)
+		} else {
 			tokenCache = newTimeCache(importTime)
 		}
 	}
@@ -295,9 +317,9 @@ func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, pas
 
 func (p *conn) TokenIdentity(ctx context.Context, subjectTokenType, subjectToken string) (identity connector.Identity, err error) {
 	if p.tokenCache != nil {
-		if cached, ok := p.tokenCache.get(subjectToken); ok {
+		if cached, ok := p.tokenCache.get(ctx, subjectToken); ok {
 			tokenCacheLookups.WithLabelValues("hit").Inc()
-			return cached.(connector.Identity), nil
+			return cached, nil
 		}
 		tokenCacheLookups.WithLabelValues("miss").Inc()
 	}
@@ -375,7 +397,7 @@ func (p *conn) TokenIdentity(ctx context.Context, subjectTokenType, subjectToken
 	}
 
 	if p.tokenCache != nil {
-		p.tokenCache.set(subjectToken, identity)
+		p.tokenCache.set(ctx, subjectToken, identity)
 	}
 
 	return identity, nil

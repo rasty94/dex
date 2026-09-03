@@ -6,8 +6,23 @@
 # Los dos servicios salen de la MISMA imagen. El panel es un binario aparte que
 # corre como su propio contenedor: mismo build y mismo publicado, pero proceso,
 # ciclo de vida y exposición separados.
+#
+# Hay además un Valkey y una segunda réplica de Dex (dex-replica, puerto 5566),
+# para demostrar que el limitador de intentos de login se comparte entre
+# réplicas cuando hay Valkey configurado. La réplica no monta la vista del
+# panel ni el healthcheck: su único propósito aquí es demostrar el límite
+# compartido.
 
 services:
+    valkey:
+        image: valkey/valkey:8-alpine
+        container_name: valkey
+        # Sin contraseña porque no sale de la red del ejemplo. En un despliegue
+        # de verdad esto lleva credenciales y TLS: quien escriba aquí puede
+        # darse permiso de escritura en el panel.
+        command: ["valkey-server", "--save", ""]
+        restart: unless-stopped
+
     dex:
         build:
             context: ../../
@@ -16,6 +31,12 @@ services:
         container_name: dex
         command: ["dex", "serve", "/etc/dex/config.yaml"]
         restart: unless-stopped
+        # dex.yaml trae valkey.address: si Valkey no responde al arrancar, dex
+        # se niega a servir. depends_on solo ordena el arranque de contenedores,
+        # no basta por sí solo si Valkey tarda en aceptar conexiones, pero para
+        # este ejemplo es suficiente.
+        depends_on:
+            - valkey
         environment:
             # Sin esto, ListConnectors responde que el flag esta apagado y la
             # vista de conectores del panel sale vacia con un aviso. El flag
@@ -98,5 +119,42 @@ services:
             - DEX_DASHBOARD_IDLE_TTL=30m
             - DEX_DASHBOARD_REAUTH_WINDOW=5m
 
+            # Sesiones del panel en el mismo Valkey que usa dex. Sin esto, cada
+            # réplica del panel guarda sus sesiones en memoria y un reinicio la
+            # pierde; con esto sobreviven al reinicio y se comparten entre
+            # réplicas del panel. El servicio dashboard comparte el espacio de
+            # red de dex (network_mode: "service:dex" más abajo), así que
+            # "valkey" resuelve igual que para dex: mismo hostname, sin
+            # diferencia.
+            # Aviso: quien pueda escribir en este Valkey puede darse permiso de
+            # escritura en el panel, porque la sesión guardada lleva CanWrite.
+            # Aquí no lleva contraseña porque no sale de la red del ejemplo; en
+            # un despliegue real hace falta credenciales y TLS.
+            - DEX_DASHBOARD_VALKEY_ADDRESS=valkey:6379
+
+    # Segunda réplica de Dex, misma imagen y misma configuración (dex.yaml),
+    # pero con su propia base de datos: lo único que se comparte con la
+    # primera réplica es Valkey. Sirve para demostrar que el limitador de
+    # login cuenta en Valkey y no en cada proceso por separado — ver el README.
+    # No monta el panel ni la API gRPC de administración: para eso ya está dex.
+    dex-replica:
+        image: dex-con-panel:local
+        container_name: dex-replica
+        command: ["dex", "serve", "/etc/dex/config.yaml"]
+        restart: unless-stopped
+        depends_on:
+            dex:
+                condition: service_healthy
+        environment:
+            - DEX_API_CONNECTORS_CRUD=true
+            - DEX_SESSIONS_ENABLED=true
+            - DEX_API_SESSIONS_IDENTITIES_CRUD=true
+        volumes:
+            - ./dex.yaml:/etc/dex/config.yaml:ro
+            - dex-replica-data:/var/dex
+        ports:
+            - "127.0.0.1:5566:5556"
+
 volumes:
     dex-data:
+    dex-replica-data:

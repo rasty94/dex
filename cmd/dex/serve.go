@@ -43,6 +43,7 @@ import (
 	"github.com/dexidp/dex/api/v2"
 	"github.com/dexidp/dex/connector/keystone"
 	"github.com/dexidp/dex/pkg/featureflags"
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 	"github.com/dexidp/dex/server"
 	"github.com/dexidp/dex/server/apiserver"
 	"github.com/dexidp/dex/server/authflow"
@@ -409,6 +410,18 @@ func runServe(options serveOptions) error {
 		return fmt.Errorf("unknown signer type %q", c.Signer.Type)
 	}
 
+	valkeyClient, err := dexvalkey.New(context.Background(), c.Valkey)
+	if err != nil {
+		return fmt.Errorf("valkey: %v", err)
+	}
+	if valkeyClient != nil {
+		defer valkeyClient.Close()
+		// Published for components that cannot be handed a dependency: see
+		// pkg/valkey/registry.go.
+		dexvalkey.SetShared(valkeyClient)
+		logger.Info("config valkey", "address", c.Valkey.Address, "key_prefix", c.Valkey.KeyPrefix)
+	}
+
 	serverConfig := server.Config{
 		AllowedGrantTypes:      c.OAuth2.GrantTypes,
 		SupportedResponseTypes: c.OAuth2.ResponseTypes,
@@ -435,6 +448,7 @@ func runServe(options serveOptions) error {
 		MFAProviders:               buildMFAProviders(c.MFA.Authenticators, c.Issuer, logger),
 		DefaultMFAChain:            c.MFA.DefaultMFAChain,
 	}
+	serverConfig.Valkey = valkeyClient
 
 	serverConfig.LoginRateLimit.Enabled = c.LoginRateLimit.Enabled
 	serverConfig.LoginRateLimit.Attempts = c.LoginRateLimit.Attempts
@@ -802,6 +816,13 @@ func applyConfigOverrides(options serveOptions, config *Config) {
 
 	if config.Frontend.Dir == "" {
 		config.Frontend.Dir = os.Getenv("DEX_FRONTEND_DIR")
+	}
+
+	if config.Valkey.KeyPrefix == "" {
+		// Mirrors the dashboard's own default (cmd/dex-dashboard/config.go): an
+		// empty prefix on a Valkey shared with anything else on that server
+		// risks colliding with keys that are not dex's.
+		config.Valkey.KeyPrefix = "dex:"
 	}
 
 	if len(config.OAuth2.GrantTypes) == 0 {

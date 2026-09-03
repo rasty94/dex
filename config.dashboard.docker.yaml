@@ -51,3 +51,33 @@ admin:
   sessionTTL: {{ getenv "DEX_DASHBOARD_SESSION_TTL" "8h" }}
   idleTTL: {{ getenv "DEX_DASHBOARD_IDLE_TTL" "1h" }}
   reauthWindow: {{ getenv "DEX_DASHBOARD_REAUTH_WINDOW" "15m" }}
+
+{{- /* Shares administrator sessions between replicas of this panel. Empty
+       address keeps them in this process, which is the default. Whoever can
+       write here can grant itself write permission on the panel -- the stored
+       session carries CanWrite -- so this store needs the same authentication
+       and TLS as any other credential store. The default key prefix keeps a
+       Valkey shared with dex itself from mixing the two processes' keys. */}}
+{{- if getenv "DEX_DASHBOARD_VALKEY_ADDRESS" "" }}
+valkey:
+  address: {{ .Env.DEX_DASHBOARD_VALKEY_ADDRESS }}
+  keyPrefix: {{ getenv "DEX_DASHBOARD_VALKEY_KEY_PREFIX" "dex-dashboard:" | quote }}
+{{- if getenv "DEX_DASHBOARD_VALKEY_USERNAME" "" }}
+  username: {{ .Env.DEX_DASHBOARD_VALKEY_USERNAME | quote }}
+{{- end }}
+{{- if getenv "DEX_DASHBOARD_VALKEY_PASSWORD" "" }}
+  password: {{ .Env.DEX_DASHBOARD_VALKEY_PASSWORD | quote }}
+{{- end }}
+{{- if getenv "DEX_DASHBOARD_VALKEY_DB" "" }}
+  db: {{ .Env.DEX_DASHBOARD_VALKEY_DB }}
+{{- end }}
+{{- if or (getenv "DEX_DASHBOARD_VALKEY_TLS_CA_CERT" "") (conv.ToBool (getenv "DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY" "false")) }}
+  tls:
+{{- if getenv "DEX_DASHBOARD_VALKEY_TLS_CA_CERT" "" }}
+    caCert: {{ .Env.DEX_DASHBOARD_VALKEY_TLS_CA_CERT }}
+{{- end }}
+{{- if conv.ToBool (getenv "DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY" "false") }}
+    insecureSkipVerify: {{ conv.ToBool .Env.DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY }}
+{{- end }}
+{{- end }}
+{{- end }}

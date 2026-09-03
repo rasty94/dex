@@ -237,6 +237,7 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 	// One limiter shared by the login form and the password grant, so failures on
 	// either path count against the same budget.
 	loginLimiter := ratelimit.New(c.LoginRateLimit, rc.now)
+	loginLimiter.SetSharedStore(c.Valkey)
 	if loginLimiter != nil && c.PrometheusRegistry != nil {
 		rejected := prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "dex_login_rate_limited_total",
@@ -246,6 +247,14 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 			loginLimiter.SetRejectedCounter(rejected)
 		} else {
 			s.logger.Warn("failed to register login rate limit metric", "err", err)
+		}
+
+		backendErrors := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "dex_login_rate_limit_backend_errors_total",
+			Help: "Number of times the shared rate limit store could not be reached and the local buckets were used.",
+		})
+		if err := c.PrometheusRegistry.Register(backendErrors); err == nil {
+			loginLimiter.SetBackendErrorCounter(backendErrors)
 		}
 	}
 

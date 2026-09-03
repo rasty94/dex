@@ -97,7 +97,46 @@ connectors:
           # [Opcional] Dominio multi-tenant: si se activa, el campo "domain"
           # se muestra en el formulario de login y el usuario puede introducir el suyo.
           # showDomain: true
+
+          # [Opcional] Cache de identidades por token, para no revalidar contra
+          # Keystone en cada petición mientras el token siga siendo el mismo.
+          # cacheTTL: "5m"
+
+          # [Opcional] Sin cacheTTL no hay caché de ninguna clase: cacheShared
+          # por sí solo no activa nada, solo decide DÓNDE vive la caché si ya
+          # existe. Con cacheShared: true y el bloque valkey.address del propio
+          # dex.yaml configurado, la caché va a Valkey y las réplicas de dex se
+          # la reparten en vez de revalidar cada una por su cuenta. Sin
+          # cacheShared (o sin valkey.address), la caché es local al proceso,
+          # como siempre.
+          # cacheShared: true
 ```
+
+### Caché de identidades y datos personales
+
+Lo que la caché guarda por token es **correo y grupos: datos personales**, no el
+token en claro. La clave con la que se indexa es un hash SHA-256 del token, nunca
+el token mismo — ni en Valkey ni en la caché local aparece el valor que un
+usuario podría reutilizar para autenticarse.
+
+Un `cacheTTL` que no se puede interpretar como duración, o que no es positivo, es
+un error de arranque: dex se niega a arrancar y dice qué valor no entendió, en vez
+de arrancar sin caché en silencio.
+
+Con `cacheShared: true` y sin `valkey.address` configurado en `dex.yaml`, dex
+también se niega a arrancar: pedir una caché compartida y obtener en silencio una
+local por proceso es justo el tipo de diferencia que solo se descubre en un
+incidente.
+
+### Qué pasa si Valkey deja de responder
+
+Con `cacheShared: true`, si Valkey se cae o deja de responder mientras dex está
+sirviendo, cada lectura de la caché falla y se trata como si la entrada no
+existiera: es un **fallo abierto**, un simple fallo de caché. El login sigue su
+curso normal y Keystone recibe exactamente el tráfico que habría recibido sin
+caché — nada se rechaza ni se bloquea por esto. Cada llamada a Valkey lleva un
+plazo de 2 segundos, así que un almacén que ha dejado de contestar no alarga los
+logins más que ese margen.
 
 ### Parámetros opcionales de TOTP
 

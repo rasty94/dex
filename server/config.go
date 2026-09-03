@@ -16,6 +16,7 @@ import (
 	gosundheit "github.com/AppsFlyer/go-sundheit"
 	"github.com/prometheus/client_golang/prometheus"
 
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 	"github.com/dexidp/dex/server/authflow"
 	"github.com/dexidp/dex/server/mfa"
 	"github.com/dexidp/dex/server/oauth2"
@@ -78,6 +79,9 @@ type Config struct {
 	// LoginRateLimit throttles failed password logins on both the login form and
 	// the password grant. Disabled by default.
 	LoginRateLimit ratelimit.Config
+
+	// Valkey is the shared store, or nil when everything stays in process.
+	Valkey *dexvalkey.Client
 
 	// PKCE configuration
 	PKCE authflow.PKCEConfig

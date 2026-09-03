@@ -121,17 +121,49 @@ peor que no arrancar.
 
 ## 5. Sesiones y cookies
 
-Las sesiones viven **en memoria del proceso** (`sessionStore`, en `auth.go`). La cookie
-del navegador solo lleva un identificador aleatorio de 32 bytes; todo lo demás —
-email, grupos, token CSRF, caducidad — se queda en el servidor.
+Por defecto las sesiones viven **en memoria del proceso** (`sessionStore`, en
+`auth.go`). La cookie del navegador solo lleva un identificador aleatorio de 32
+bytes; todo lo demás — email, grupos, token CSRF, caducidad — se queda en el
+servidor.
 
 La consecuencia buena: no hay nada que cifrar en la cookie, nada que firmar, ninguna
 clave que rotar.
 
-La consecuencia a asumir, anotada como `ponytail:` en el código: **un reinicio del
-panel pide login de nuevo, y el panel no sobrevive a estar replicado**. Para una
-consola de administración de una sola instancia es el intercambio correcto. Si algún
-día se replica, hay que mover el almacén a un sitio compartido.
+La consecuencia a asumir con el almacén en memoria, anotada como `ponytail:` en el
+código: **un reinicio del panel pide login de nuevo, y el panel no sobrevive a estar
+replicado sin más**. Para una consola de administración de una sola instancia es el
+intercambio correcto.
+
+### Sesiones compartidas entre réplicas (`valkey`)
+
+Con `valkey.address` configurado en el fichero del panel, las sesiones de
+administrador pasan a vivir en Valkey y las réplicas del panel las comparten: un
+reinicio no obliga a volver a entrar, y da igual a qué réplica llegue la siguiente
+petición. La caducidad por inactividad la lleva el propio almacén — cada lectura
+renueva el TTL de la clave, capado por la vida máxima de la sesión — así que no hace
+falta un `LastSeen` que escribir en cada petición.
+
+**La frase que importa**: lo que se guarda en esa clave decide quién puede cambiar
+cosas — `CanWrite` y los grupos viajan ahí dentro —, así que **quien pueda escribir en
+ese Valkey se hace administrador con permiso de escritura sobre el panel**. Autentica
+la conexión (`valkey.username` / `valkey.password`) y ponle TLS (`valkey.tls`); no es
+una recomendación opcional, es la misma superficie que un token de administrador
+robado.
+
+### Qué pasa si Valkey deja de responder
+
+Aquí la elección es la contraria a la de la caché de Keystone: si Valkey se cae o
+deja de contestar, la lectura de una sesión **falla cerrado**. El panel no puede
+dar por buena una sesión que no puede leer, así que trata ese fallo igual que un
+identificador desconocido y pide login de nuevo — no deja pasar la petición como
+si estuviera autenticada. Es la elección opuesta a propósito: en la caché de
+Keystone, fallar abierto solo cuesta una consulta de más a Keystone; aquí, fallar
+abierto costaría dejar entrar a alguien sin comprobar quién es. Cada lectura
+lleva también un plazo de 2 segundos, así que un Valkey caído no cuelga la
+petición, la convierte en una pantalla de login.
+
+Sin `valkey.address` nada cambia: es el valor por defecto y las sesiones se quedan en
+memoria como hasta ahora.
 
 La caducidad se comprueba **al leer**, no solo por el `max-age` de la cookie: un
 cliente que siga presentando el identificador pasado el TTL pierde el acceso igual.

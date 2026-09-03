@@ -693,3 +693,36 @@ enablePasswordDB: true
 		})
 	}
 }
+
+// The shared store is configuration, not a feature flag: an operator turns it on
+// by naming an address.
+func TestUnmarshalValkeyConfig(t *testing.T) {
+	rawConfig := []byte(`
+issuer: http://127.0.0.1:5556/dex
+storage:
+  type: sqlite3
+  config:
+    file: /var/dex/dex.db
+valkey:
+  address: valkey:6379
+  username: dex
+  password: secret
+  keyPrefix: "dex:"
+  tls:
+    caCert: /etc/ssl/valkey-ca.pem
+`)
+
+	var c Config
+	if err := yaml.Unmarshal(rawConfig, &c); err != nil {
+		t.Fatalf("failed to decode config: %v", err)
+	}
+	if c.Valkey.Address != "valkey:6379" {
+		t.Errorf("address = %q", c.Valkey.Address)
+	}
+	if c.Valkey.KeyPrefix != "dex:" {
+		t.Errorf("keyPrefix = %q", c.Valkey.KeyPrefix)
+	}
+	if c.Valkey.TLS.CACert != "/etc/ssl/valkey-ca.pem" {
+		t.Errorf("caCert = %q", c.Valkey.TLS.CACert)
+	}
+}

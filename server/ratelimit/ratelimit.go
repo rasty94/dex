@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 	"github.com/dexidp/dex/server/reqctx"
 )
 
@@ -32,9 +33,9 @@ type Config struct {
 // attempts count: a successful login clears the counter for that key, so a
 // legitimate user, or a service using the password grant, is never throttled.
 //
-// ponytail: in-process state, so with several dex replicas the effective limit
-// is Attempts × replicas. Move the buckets to the storage backend or Redis if
-// that ceiling matters.
+// With SetSharedStore the counting happens in Valkey, so several replicas share
+// one budget. Without it the buckets are in process and the effective limit is
+// Attempts x replicas.
 type Limiter struct {
 	limit rate.Limit
 	burst int
@@ -43,6 +44,17 @@ type Limiter struct {
 	// Counts refused attempts. Without it there is no way to tell a limit that
 	// is stopping an attack from one that is locking real users out.
 	rejected prometheus.Counter
+
+	// shared counts in Valkey instead of the local buckets. When it is nil, or
+	// when it fails, the buckets below are used: that degrades to the behavior
+	// of a single replica rather than to no limit at all.
+	shared *sharedCounter
+	window time.Duration
+
+	// Counts falls back to the local buckets. Without it a Valkey that started
+	// refusing connections looks exactly like one that is working: the limiter
+	// keeps limiting, just per replica again.
+	backendErrors prometheus.Counter
 
 	mu      sync.Mutex
 	buckets map[string]*bucket
@@ -80,6 +92,7 @@ func New(cfg Config, now func() time.Time) *Limiter {
 		limit:   rate.Every(cfg.Window / time.Duration(cfg.Attempts)),
 		burst:   cfg.Attempts,
 		now:     now,
+		window:  cfg.Window,
 		buckets: make(map[string]*bucket),
 	}
 }
@@ -92,12 +105,54 @@ func (l *Limiter) SetRejectedCounter(c prometheus.Counter) {
 	l.rejected = c
 }
 
+// SetSharedStore makes the limiter count in Valkey, so replicas share a budget.
+func (l *Limiter) SetSharedStore(c *dexvalkey.Client) {
+	if l == nil || c == nil {
+		return
+	}
+	l.shared = &sharedCounter{c: c}
+}
+
+// SetBackendErrorCounter counts the times the shared store could not be reached
+// and the local buckets took over.
+func (l *Limiter) SetBackendErrorCounter(c prometheus.Counter) {
+	if l == nil {
+		return
+	}
+	l.backendErrors = c
+}
+
 // Allow reports whether another login attempt may be made for key.
-func (l *Limiter) Allow(key string) bool {
+func (l *Limiter) Allow(ctx context.Context, key string) bool {
 	if l == nil {
 		return true
 	}
 
+	if l.shared != nil {
+		n, err := l.shared.incr(ctx, key, l.window)
+		if err == nil {
+			if n <= int64(l.burst) {
+				return true
+			}
+			if l.rejected != nil {
+				l.rejected.Inc()
+			}
+			return false
+		}
+		// Fall through to the local buckets: a Valkey outage must not turn the
+		// limiter off. It is counted, because otherwise a store that stopped
+		// answering is indistinguishable from one that works.
+		if l.backendErrors != nil {
+			l.backendErrors.Inc()
+		}
+	}
+
+	return l.allowLocal(key)
+}
+
+// allowLocal is the in-process token bucket, used when there is no shared store
+// and when the shared store cannot be reached.
+func (l *Limiter) allowLocal(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -120,14 +175,16 @@ func (l *Limiter) Allow(key string) bool {
 }
 
 // Reset forgets the failed attempts recorded for key.
-func (l *Limiter) Reset(key string) {
+func (l *Limiter) Reset(ctx context.Context, key string) {
 	if l == nil {
 		return
+	}
+	if l.shared != nil {
+		_ = l.shared.reset(ctx, key)
 	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
 	delete(l.buckets, key)
 }
 

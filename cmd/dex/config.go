@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/dexidp/dex/pkg/featureflags"
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 	"github.com/dexidp/dex/server"
 	"github.com/dexidp/dex/server/connectors"
 	"github.com/dexidp/dex/server/signer"
@@ -47,6 +48,11 @@ type Config struct {
 	Logger    Logger    `json:"logger"`
 
 	Frontend server.WebConfig `json:"frontend"`
+
+	// Valkey is the store dex shares with its replicas: the login rate limiter's
+	// counters and, when a connector asks for it, its caches. Leaving the
+	// address empty keeps all of that in process, which is the default.
+	Valkey dexvalkey.Config `json:"valkey"`
 
 	// LoginRateLimit throttles failed password logins before they reach the
 	// upstream identity provider.

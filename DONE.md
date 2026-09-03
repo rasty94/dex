@@ -167,7 +167,68 @@
 ### 18. 🚀 Rendimiento y Alta Disponibilidad (HA)
 
 - [x] Rate Limiting en Backend: `loginRateLimit` (`enabled`, `attempts`, `window`) limita los intentos **fallidos** por pareja IP + usuario antes de llamar a Keystone, tanto en el formulario de login como en el grant `password`. Un login correcto pone el contador a cero.
-    - ⚠️ Los buckets viven en memoria del proceso: con N réplicas el límite efectivo es `attempts × N`. Migrarlo a Redis sigue pendiente, va de la mano con la caché distribuida.
+    - Los buckets en memoria del proceso, con `N` réplicas el límite efectivo `attempts × N`, siguen siendo el comportamiento por defecto. Con Valkey configurado (más abajo) el límite es correcto entre réplicas.
+
+### 19. 🧊 Estado compartido entre réplicas (Valkey)
+
+> Lo que en la sección 2 del TODO se llamaba «caché distribuida»: un almacén Valkey
+> opcional (`pkg/valkey`), apagado salvo que `valkey.address` se configure. Cierra
+> también «sesiones compartidas entre réplicas» del panel, sección 6 del TODO.
+
+- [x] **Cliente compartido en `pkg/valkey`.** Abre y verifica la conexión al arrancar
+      —`Ping` antes de servir, no en el primer login— y expone dos formas de nombrar
+      claves: `Key` para lo que no lleva secreto y `HashKey` para lo que sí (un token,
+      un id de sesión): el hash sha256 va en la clave, nunca el valor original.
+      `Address` vacío es `(nil, nil)`: todo se queda en memoria, que sigue siendo el
+      valor por defecto. `TLS.caCert` e `insecureSkipVerify` opcionales. El cliente
+      `valkey-go` corre con `DisableCache: true` a propósito: cada llamador aquí lee y
+      escribe sus propias claves, así que la caché de cliente no ahorra nada y además
+      miniredis —lo que usan los tests— no implementa la invalidación que necesitaría.
+      Queda anotado en el TODO como mejora futura, no como pendiente bloqueante.
+- [x] **El limitador de login cuenta en Valkey cuando hay almacén compartido.** El
+      contador local es un cubo de fichas (`x/time/rate`), que no se puede repartir
+      entre procesos sin cambiar de algoritmo; el compartido es una **ventana fija**
+      (`INCR` + `PEXPIRE` en un script Lua, atómico para que un proceso no muera entre
+      los dos comandos y deje una clave sin caducar) — admite hasta `2 × attempts` a
+      caballo entre dos ventanas, el trade-off aceptado a cambio de que el límite sea
+      correcto entre réplicas y no `attempts × réplicas`. Si Valkey deja de responder el
+      limitador cae de vuelta a los cubos locales en vez de dejar pasar todo, contado en
+      la métrica nueva `dex_login_rate_limit_backend_errors_total` — sin ella una caída
+      del almacén compartido se ve exactamente igual que uno que funciona.
+- [x] **Caché de tokens del conector Keystone, compartida con `cacheShared: true`.**
+      Guarda correo y grupos —datos personales— indexados por un hash del token, nunca
+      el token en claro. `cacheShared` decide *dónde* vive la caché, no si existe: eso
+      lo sigue decidiendo `cacheTTL` como siempre, y pedir `cacheShared` sin
+      `valkey.address` configurado es ahora un error de arranque en vez de una caché
+      local silenciosa donde se esperaba una compartida.
+      **De paso, un bug de antes de esta tarea**: la caché local comprobaba la
+      caducidad al leer pero nunca borraba la entrada caducada, así que crecía sin
+      límite mientras el proceso viviera — corregido con el mismo cambio, y afecta
+      también a despliegues de una sola réplica.
+      **Y una segunda corrección de comportamiento**: un `cacheTTL` que no parseaba, o
+      que no era positivo, apagaba la caché en silencio. Ahora es un error de arranque
+      que dice qué valor no entendió dex.
+- [x] **Sesiones de administrador del panel, compartidas con `valkey.address`.** Sin
+      él siguen en memoria del proceso, como siempre — un reinicio pide login otra vez
+      y el panel no sobrevive replicado sin más. Con Valkey, la caducidad por
+      inactividad la lleva el TTL de la propia clave, refrescado en cada lectura y
+      capado por la vida máxima de la sesión, así que no hace falta escribir un
+      `LastSeen` en cada petición. El prefijo de clave por defecto es
+      `dex-dashboard:`, distinto del de dex (`dex:`), para que un Valkey compartido
+      entre los dos procesos no mezcle sus claves.
+      **La frase que importa, documentada junto a `valkey.address` en las dos guías**:
+      lo que se guarda en esa clave decide quién puede escribir en el panel —
+      `CanWrite` viaja ahí dentro—, así que quien pueda escribir en ese Valkey se hace
+      administrador con permiso de escritura. Esa conexión necesita autenticación y
+      TLS igual que cualquier otro credencial de administración.
+- [x] **Verificado en vivo contra dos réplicas reales.** Ejemplo ampliado
+      (`Ejemplos/dashboard/docker-compose.yml`) con un Valkey y una segunda réplica de
+      dex (`dex-replica`, puerto 5566) que comparte Valkey pero tiene su propia base de
+      datos. Con `loginRateLimit` a `attempts: 3` se agotó el límite contra la primera
+      réplica y la segunda rechazó su primer intento **sin haber recibido ninguno
+      propio** — la prueba de que el presupuesto es de verdad compartido y no
+      `attempts × réplicas`. Transcripción completa en
+      `.superpowers/sdd/2026-09-03-estado-compartido-valkey-plan/task-7-report.md`.
 
 ### 21. 🛠️ API de Gestión gRPC (con Autenticación)
 
@@ -539,7 +600,7 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
 | Tematización por `client_id`                |   ✅   | `frontend.clientThemes`, logo + color     |
 | MFA Trust (dispositivo de confianza)        |   ✅   | `mfaTrust`, limitado al TTL de Keystone   |
 | Tests en CI                                 |   ✅   | Job `test` (`go test -race ./...`)        |
-| Rate limiting de login                      |   ✅   | `loginRateLimit`, en memoria por réplica  |
+| Rate limiting de login                      |   ✅   | `loginRateLimit`, compartible con Valkey  |
 | Fixes de seguridad del bloque A             |   ✅   | device callback, timing, open redirect    |
 | Dependencias criptográficas al día          |   ✅   | x/crypto, x/net, go-jose, SAML            |
 | Gate de lint real en CI                     |   ✅   | fuera el `continue-on-error`              |
@@ -556,3 +617,4 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
 | API de sesiones e identidades               |   ✅   | expuesta en el panel: identidad, factores |
 | Purga RGPD atómica                          |   ✅   | se niega antes de romper nada             |
 | MFA nativo junto al de Keystone             |   ✅   | por `connectorTypes`, con aviso al arrancar |
+| Estado compartido entre réplicas (Valkey)   |   ✅   | opcional, `valkey.address`, verificado en vivo |
