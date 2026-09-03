@@ -150,6 +150,18 @@ la conexión (`valkey.username` / `valkey.password`) y ponle TLS (`valkey.tls`);
 una recomendación opcional, es la misma superficie que un token de administrador
 robado.
 
+### Qué pasa si Valkey deja de responder
+
+Aquí la elección es la contraria a la de la caché de Keystone: si Valkey se cae o
+deja de contestar, la lectura de una sesión **falla cerrado**. El panel no puede
+dar por buena una sesión que no puede leer, así que trata ese fallo igual que un
+identificador desconocido y pide login de nuevo — no deja pasar la petición como
+si estuviera autenticada. Es la elección opuesta a propósito: en la caché de
+Keystone, fallar abierto solo cuesta una consulta de más a Keystone; aquí, fallar
+abierto costaría dejar entrar a alguien sin comprobar quién es. Cada lectura
+lleva también un plazo de 2 segundos, así que un Valkey caído no cuelga la
+petición, la convierte en una pantalla de login.
+
 Sin `valkey.address` nada cambia: es el valor por defecto y las sesiones se quedan en
 memoria como hasta ahora.
 

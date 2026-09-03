@@ -818,6 +818,13 @@ func applyConfigOverrides(options serveOptions, config *Config) {
 		config.Frontend.Dir = os.Getenv("DEX_FRONTEND_DIR")
 	}
 
+	if config.Valkey.KeyPrefix == "" {
+		// Mirrors the dashboard's own default (cmd/dex-dashboard/config.go): an
+		// empty prefix on a Valkey shared with anything else on that server
+		// risks colliding with keys that are not dex's.
+		config.Valkey.KeyPrefix = "dex:"
+	}
+
 	if len(config.OAuth2.GrantTypes) == 0 {
 		config.OAuth2.GrantTypes = []string{
 			"authorization_code",

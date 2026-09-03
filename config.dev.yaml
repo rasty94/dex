@@ -90,16 +90,18 @@ grpc:
 #   duration: 720h
 #   encryptionKey: a-32-byte-key-for-aes-256-here!!
 
-# Estado compartido entre replicas. Sin address, cada proceso guarda lo suyo en
-# memoria y no hay dependencia ninguna: es el valor por defecto.
+# Shared state between replicas. Without address, each process keeps its own
+# state in memory and has no dependency at all: that is the default.
 #
-# Lo que pasa a Valkey: los contadores del limitador de login --que sin esto
-# valen attempts x replicas, o sea el limite multiplicado-- y, si un conector lo
-# pide, sus caches. Las sesiones de navegador de dex NO viven aqui: estan en el
-# almacenamiento desde siempre.
+# What moves to Valkey: the login rate limiter's counters -- which without this
+# are attempts x replicas, i.e. the limit multiplied -- and, when a connector
+# asks for it, its caches. dex's own browser sessions do NOT live here: they
+# have always been in storage.
 #
-# Quien pueda escribir aqui influye en decisiones de seguridad. Autentica la
-# conexion y ponle TLS.
+# Whoever can write here influences security decisions. Authenticate the
+# connection and put TLS on it.
+#
+# keyPrefix defaults to "dex:" when left unset.
 #
 # valkey:
 #   address: valkey:6379

@@ -128,6 +128,16 @@ también se niega a arrancar: pedir una caché compartida y obtener en silencio 
 local por proceso es justo el tipo de diferencia que solo se descubre en un
 incidente.
 
+### Qué pasa si Valkey deja de responder
+
+Con `cacheShared: true`, si Valkey se cae o deja de responder mientras dex está
+sirviendo, cada lectura de la caché falla y se trata como si la entrada no
+existiera: es un **fallo abierto**, un simple fallo de caché. El login sigue su
+curso normal y Keystone recibe exactamente el tráfico que habría recibido sin
+caché — nada se rechaza ni se bloquea por esto. Cada llamada a Valkey lleva un
+plazo de 2 segundos, así que un almacén que ha dejado de contestar no alarga los
+logins más que ese margen.
+
 ### Parámetros opcionales de TOTP
 
 No hay configuración adicional para activar TOTP. El conector detecta automáticamente si Keystone responde con un `401 + Openstack-Auth-Receipt`. En ese caso:

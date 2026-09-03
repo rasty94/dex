@@ -27,3 +27,18 @@ func TestNewLogger(t *testing.T) {
 		require.Equal(t, (*slog.Logger)(nil), logger)
 	})
 }
+
+func TestApplyConfigOverridesValkeyKeyPrefix(t *testing.T) {
+	t.Run("defaults when empty", func(t *testing.T) {
+		var c Config
+		applyConfigOverrides(serveOptions{}, &c)
+		require.Equal(t, "dex:", c.Valkey.KeyPrefix)
+	})
+
+	t.Run("leaves an explicit prefix alone", func(t *testing.T) {
+		c := Config{}
+		c.Valkey.KeyPrefix = "custom:"
+		applyConfigOverrides(serveOptions{}, &c)
+		require.Equal(t, "custom:", c.Valkey.KeyPrefix)
+	})
+}
