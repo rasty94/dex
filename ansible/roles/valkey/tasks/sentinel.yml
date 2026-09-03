@@ -61,10 +61,16 @@
   # Despues de esto manda sentinel. El rol no vuelve a asignar el papel de
   # nadie: reasignar en cada pasada deshace las promociones. valkey_known_master.rc
   # falta del todo (no solo "distinto de 0") cuando el contenedor ni existe
-  # todavia; de ahi el default antes de comparar.
+  # todavia; de ahi el default antes de comparar. split sin separador (no
+  # split('\n')): en un bloque YAML >- la barra invertida no se interpreta
+  # como salto de linea (solo en escalares con comillas dobles), asi que
+  # split('\n') buscaba el texto literal "\n" y nunca partia nada -- bug real
+  # encontrado probando esto contra sentinels de verdad (Ruling 14). split()
+  # sin argumento parte por cualquier espacio en blanco, salto de linea
+  # incluido, y no depende de ese escape.
   ansible.builtin.set_fact:
     valkey_master_host: >-
-      {{ (valkey_known_master.stdout | default('') | trim | split('\n') | first)
+      {{ (valkey_known_master.stdout | default('') | trim | split | first)
          if (valkey_known_master.rc | default(1)) == 0
             and (valkey_known_master.stdout | default('') | trim | length > 0)
          else groups['valkey'] | first }}
