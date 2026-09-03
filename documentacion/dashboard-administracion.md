@@ -187,6 +187,9 @@ petición, la convierte en una pantalla de login.
 Sin `valkey.address` nada cambia: es el valor por defecto y las sesiones se quedan en
 memoria como hasta ahora.
 
+Lo que ese servidor tiene que cumplir para que las sesiones no se cierren solas
+—`maxmemory-policy: noeviction`, entre otras cosas— está en [valkey.md](valkey.md).
+
 La caducidad se comprueba **al leer**, no solo por el `max-age` de la cookie: un
 cliente que siga presentando el identificador pasado el TTL pierde el acceso igual.
 Por defecto son 8 horas, ajustable con `admin.sessionTTL`.

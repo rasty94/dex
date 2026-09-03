@@ -138,6 +138,15 @@ caché — nada se rechaza ni se bloquea por esto. Cada llamada a Valkey lleva u
 plazo de 2 segundos, así que un almacén que ha dejado de contestar no alarga los
 logins más que ese margen.
 
+Fallar abierto no es fallar en silencio: esas lecturas se cuentan aparte, en
+`keystone_token_cache_lookups_total{result="error"}`, y no como `result="miss"`.
+La diferencia importa porque un Valkey caído produce el 100 % de fallos de caché
+y, contado como acierto que no hubo, se ve exactamente igual que una racha de
+tokens nuevos mientras cada login está pagando el viaje entero a Keystone.
+
+Lo que el servidor de Valkey tiene que cumplir —empezando por
+`maxmemory-policy: noeviction`— está en [valkey.md](valkey.md).
+
 ### Parámetros opcionales de TOTP
 
 No hay configuración adicional para activar TOTP. El conector detecta automáticamente si Keystone responde con un `401 + Openstack-Auth-Receipt`. En ese caso:

@@ -55,6 +55,7 @@ func run() error {
 	if vk != nil {
 		defer vk.Close()
 		logger.Info("config valkey", "address", c.Valkey.Address, "key_prefix", c.Valkey.KeyPrefix)
+		vk.WarnIfKeysCanBeEvicted(ctx, logger)
 	}
 
 	// Discovery has to reach dex, which may still be starting; a short retry

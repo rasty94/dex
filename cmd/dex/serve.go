@@ -420,6 +420,7 @@ func runServe(options serveOptions) error {
 		// pkg/valkey/registry.go.
 		dexvalkey.SetShared(valkeyClient)
 		logger.Info("config valkey", "address", c.Valkey.Address, "key_prefix", c.Valkey.KeyPrefix)
+		valkeyClient.WarnIfKeysCanBeEvicted(context.Background(), logger)
 	}
 
 	serverConfig := server.Config{

@@ -11,7 +11,9 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
+	"time"
 
 	valkeygo "github.com/valkey-io/valkey-go"
 )
@@ -102,4 +104,51 @@ func (c *Client) Key(name string) string {
 func (c *Client) HashKey(kind, secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return c.prefix + kind + ":" + hex.EncodeToString(sum[:])
+}
+
+// WarnIfKeysCanBeEvicted says so when the server is allowed to drop dex's keys
+// on its own.
+//
+// Everything dex keeps here has an expiry, and that is the trap: under a
+// maxmemory limit, every policy except noeviction is free to remove keys early,
+// and the volatile-* ones target precisely the keys that have a TTL -- all of
+// dex's. What goes with them is the login rate limiter's counters, so an
+// attacker gets a fresh budget handed over whenever the server is under memory
+// pressure, and the administrator sessions of the dashboard.
+//
+// Only a warning: this may be somebody else's server, and dex is not the one to
+// decide how it is run. Being unable to ask is not reported at all -- CONFIG is
+// often disabled or renamed on a managed service, and a warning nobody can act
+// on is noise.
+func (c *Client) WarnIfKeysCanBeEvicted(ctx context.Context, logger *slog.Logger) {
+	// The client retries a read against a dead server for as long as it is
+	// allowed to, and this one runs while dex is still starting up. A server
+	// that stopped answering between the ping above and this call must not
+	// leave the process hanging before it ever serves a request.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	cfg, err := c.Do(ctx, c.B().ConfigGet().Parameter("maxmemory").Parameter("maxmemory-policy").Build()).AsStrMap()
+	if err != nil {
+		return
+	}
+	if policy, risky := evictionRisk(cfg); risky {
+		logger.Warn("valkey may evict keys under memory pressure, and everything dex keeps there has an expiry, so it is exactly what a volatile-* policy targets. What disappears with it is a login attempt budget or a signed-in session. Use maxmemory-policy noeviction, or give dex a server of its own",
+			"maxmemory_policy", policy, "maxmemory", cfg["maxmemory"])
+	}
+}
+
+// evictionRisk reports whether this server's memory settings let it discard keys
+// that dex expects to still be there. Split out from the call above so the rule
+// can be tested without a server that answers CONFIG.
+func evictionRisk(cfg map[string]string) (policy string, risky bool) {
+	policy = cfg["maxmemory-policy"]
+	// Without a memory ceiling nothing is ever evicted, whatever the policy says.
+	if limit := cfg["maxmemory"]; limit == "" || limit == "0" {
+		return policy, false
+	}
+	// noeviction refuses writes instead of dropping keys, which is the behavior
+	// dex needs: a login that cannot be counted is better than one that is
+	// counted against a budget somebody else's memory pressure just reset.
+	return policy, policy != "" && policy != "noeviction"
 }
