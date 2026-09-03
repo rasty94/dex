@@ -4,7 +4,7 @@
 > trabajo vivo. La numeración de secciones es la histórica del TODO original, así
 > que las referencias antiguas siguen resolviendo.
 >
-> Última actualización: 2026-09-02
+> Última actualización: 2026-09-03
 
 ---
 
@@ -365,7 +365,8 @@ Ejemplo listo para levantar: `Ejemplos/dashboard/`.
       endpoint, logins frenados por el rate limiter y contadores de Keystone, leídos del
       endpoint de telemetría desde el servidor.
 - [x] **Búsqueda de sesiones sin pegar el `sub`.** Acepta también usuario + conector y construye
-      el subject con `server.EncodeSubject`, exportado para eso.
+      el subject con `tokens.GenSubject`; el camino inverso, para un `sub` pegado, usa
+      `tokens.ParseSubject`, exportada porque `server/internal` no es importable desde `cmd/`.
 - [x] **Endurecimiento de sesión.** Caducidad por inactividad además de la absoluta,
       re-autenticación obligatoria para lo destructivo (`prompt=login`, con vuelta a donde
       ibas), prefijo `__Host-` en las cookies bajo HTTPS y límite de intentos en el login del
@@ -381,6 +382,126 @@ Ejemplo listo para levantar: `Ejemplos/dashboard/`.
       una lista filtrada.
 - [x] **Docker.** El binario viaja en la misma imagen que Dex y corre como contenedor aparte;
       su configuración se renderiza con gomplate como la de Dex.
+- [x] **Campos nuevos de `Client` y `Connector` en los formularios.** El cliente edita ya
+      `allowedConnectors`, `ssoSharedWith`, `backchannelLogoutURI`,
+      `postLogoutRedirectURIs` y `refreshTokenLifetime`; el conector, sus `grantTypes`.
+      Son justo los mandos del logout y del SSO que acabamos de encender.
+      **La asimetría importa**: los dos campos de valor único se vacían —upstream los
+      declaró `optional` para eso— pero las listas no, porque una lista repetida vacía no
+      viaja en protobuf y es indistinguible de «no toques este campo». El formulario lo
+      avisa. Los grant types del conector sí se vacían: ahí la lista va envuelta en un
+      mensaje. Comprobado sobre el despliegue, incluidos los dos casos de vaciar.
+
+---
+
+## 🎁 Heredado del re-port, ya encendido
+
+> Lo que upstream construyó desde la divergencia y el re-port trajo apagado tras
+> feature flags. Encenderlo era una decisión, no trabajo: aquí está tomada, medida y
+> expuesta en el panel. La numeración es la que tenían estas secciones en el TODO.
+
+### 0. 🔑 Sesiones de navegador (`sessions_enabled`)
+
+Medido antes de encenderlo. Lo que enciende el flag:
+
+- Cookie de sesión (`dex_session`, 24 h absolutas y 1 h de inactividad por defecto).
+- Se salta la **pantalla de selección de conector** cuando hay sesión válida y el cliente
+  no pide `prompt=select_account`. Sigue autenticando contra el conector: no es un
+  inicio de sesión silencioso.
+- Páginas nuevas, ya traducidas a los cinco idiomas durante el re-port y hasta entonces
+  inertes: la de sesión (`/`), la de logout y la casilla de *remember me*.
+- Claim `sid`, back-channel logout y revocación con alcance de sesión.
+- **Es requisito duro del MFA nativo**: dex se niega a arrancar con autenticadores
+  configurados y el flag apagado. No son dos decisiones, es una.
+
+Riesgo acotado: el **SSO entre clientes es opt-in**, `ssoSharedWithDefault` viene en
+`none`, así que encenderlo no empieza a compartir sesiones entre aplicaciones por su
+cuenta. El back-channel logout solo dispara para clientes con `backchannelLogoutURI`.
+
+- [x] **Probado en `Ejemplos/dashboard`**, que queda con el flag encendido. Verificado
+      sobre el despliegue: cookie `dex_session` con `HttpOnly`, casilla de *recordarme*
+      marcada por defecto, página de sesión en `/dex` mostrando conector, hora de inicio,
+      caducidad por inactividad, IP, grupos y navegador —toda en español, con las claves
+      que se tradujeron durante el re-port y que hasta ahora no se veían— y página de
+      logout que termina la sesión de verdad: después queda «Sin sesión iniciada» y la
+      siguiente petición de auth vuelve a la lista de conectores.
+- [x] **Medido el radio de impacto, y es pequeño.** Con una sesión viva, una petición de
+      otro cliente **se salta la pantalla de selección de conector** y va directa al
+      conector — pero **sigue pidiendo la contraseña**. No hay inicio de sesión silencioso
+      entre clientes mientras `ssoSharedWith` esté en `none`, que es el valor por defecto.
+      Es decir: encender el flag ahorra un clic y añade páginas nuevas, no cambia quién
+      puede entrar dónde.
+- [x] **Encendidas por defecto en la imagen.** `DEX_SESSIONS_ENABLED=true` va en el
+      `Dockerfile`, no en el binario: upstream sigue con su valor por defecto y quien
+      quiera el comportamiento de antes pone la variable a `false`. `config.docker.yaml`
+      renderiza el bloque `sessions:` con la misma variable y parseada igual —dex se
+      niega a arrancar con el bloque puesto y el flag apagado, así que no pueden ir por
+      separado—. Comprobado sobre la imagen en cinco configuraciones.
+      Un aviso: poner la variable a **cadena vacía** no es lo mismo que a `false`.
+      gomplate la trata como no definida y renderiza el bloque; el flag la trata como
+      apagada. Dex falla al arrancar diciendo exactamente qué poner, así que se queda así.
+- [x] **La clave de cifrado no se puede repartir, así que se avisa.** No hay clave que
+      pueda venir en una imagen pública, y generar una al arrancar cerraría la sesión de
+      todo el mundo en cada reinicio y no valdría con réplicas. Se cablea
+      `DEX_SESSIONS_COOKIE_ENCRYPTION_KEY` y dex **avisa al arrancar** cuando no hay
+      clave, diciendo qué se gana con ella y qué no.
+      De paso, corregido lo que dábamos por hecho: sin clave la cookie **no va firmada**,
+      va en base64 en claro. Y sellarla no impide reutilizar una cookie robada —cifrada o
+      no, la cookie *es* la credencial—: lo que evita es que quien la lea o la registre en
+      un log vea el id de sesión que lleva dentro.
+
+### 0.1 🗂️ API de sesiones e identidades (`api_sessions_identities_crud`)
+
+- [x] **Expuesta en el panel, lo principal.** La vista de Sesiones muestra ahora, en
+      secciones separadas: la identidad del usuario (correo, grupos, último acceso,
+      segundos factores y **si la cuenta está bloqueada**), sus consentimientos con la
+      acción de retirarlos por cliente, sus navegadores con sesión, y los refresh tokens
+      de siempre. Navegadores y tokens van aparte a propósito: cerrar una sesión revoca
+      los tokens que salieron de ella, revocar un token no cierra la sesión. Acciones:
+      cerrar un navegador, cerrarlos todos, y **cerrar todos los de un conector** desde la
+      página de Conectores, para retirar un proveedor de identidad.
+      Hizo falta exportar `tokens.ParseSubject`: las sesiones se buscan por el par
+      `(userID, connectorID)` y `server/internal` no es importable desde `cmd/`.
+- [x] **Purga RGPD de una identidad**, con inventario en la confirmación. Cuenta lo que
+      va a desaparecer y nombra aparte la consecuencia que el título de la acción no
+      sugiere: el almacén de contraseñas está indexado **por correo, sin conector**, así
+      que purgar una identidad borra también la cuenta local con ese mismo correo.
+- [x] **La purga ya no deja el trabajo a medias.** La cascada recorre varios almacenes sin
+      transacción entre ellos, así que `server/apiserver` comprueba primero el único paso
+      que falla por un motivo predecible —una contraseña del fichero de configuración, que
+      la API no puede borrar— y se niega sin destruir nada. Antes se enteraba al llegar a
+      ella, con las sesiones ya cerradas y los tokens revocados.
+      Hizo falta exponer `IsStaticPassword` en el envoltorio de almacenamiento estático:
+      la pregunta «¿esto se puede borrar?» no se podía hacer sin intentarlo. Es una
+      aserción de interfaz en el apiserver, no parte de `storage.Storage`: solo la purga
+      necesita preguntarlo, y solo para negarse.
+      **La trampa**: los tres envoltorios estáticos incrustan `Storage` como *interfaz*,
+      así que no se promocionan métodos entre ellos. La primera versión solo funcionaba si
+      el de contraseñas quedaba el más externo —en `serve.go` no lo es— y pasó el test
+      mientras no hacía nada en el despliegue. Lo destapó probarlo de verdad. Ahora la
+      pregunta se reenvía hacia dentro y el test apila los envoltorios como `serve.go`.
+      El test falla por lo que importa —la sesión sigue viva— antes que por el texto.
+- [x] **«He perdido el móvil»: quitar un segundo factor desde el panel.** Los factores
+      registrados tienen ahora su propia sección con una fila por autenticador y un botón
+      que llama a `DeleteMFASecret`; el siguiente login ofrece darse de alta otra vez con
+      un secreto nuevo. Exige login reciente, como el resto de lo destructivo, porque
+      quitar el último deja la cuenta con la contraseña sola.
+      Verificado de punta a punta contra el despliegue de ejemplo: alta de TOTP, retirada
+      desde el panel, secreto fuera del almacén y alta nueva con otro secreto en el
+      siguiente login.
+
+### 4. 🔐 Autenticación avanzada — el MFA nativo junto al de Keystone
+
+> WebAuthn y TOTP nativos llegaron hechos con el re-port. Lo que había que resolver
+> era cómo conviven con un conector que impone su propio segundo factor.
+
+- [x] **Convivencia del MFA nativo con el de Keystone: resuelta por configuración.**
+      No hacía falta mecanismo nuevo — `chainForClient` ya resuelve la cadena mirando el
+      conector y cada autenticador acepta `connectorTypes`. La trampa es que
+      **`connectorTypes` vacío significa *todos* los conectores**, así que el valor por
+      defecto es el peligroso. Dex avisa ahora al arrancar cuando un autenticador alcanza
+      un conector que ya impone su propio segundo factor, y solo si ese conector existe
+      en el despliegue.
 
 ---
 
@@ -426,3 +547,7 @@ Ejemplo listo para levantar: `Ejemplos/dashboard/`.
 | Panel y cadena Docker sobre upstream        |   ✅   | verificado construyendo la imagen          |
 | Panel de administración                     |   ✅   | `cmd/dex-dashboard`, 4 fases entregadas   |
 | Auditoría con nombre en la API gRPC         |   ✅   | cabecera `x-dex-actor` registrada por dex |
+| Sesiones de navegador                       |   ✅   | encendidas en la imagen, aviso sin clave  |
+| API de sesiones e identidades               |   ✅   | expuesta en el panel: identidad, factores |
+| Purga RGPD atómica                          |   ✅   | se niega antes de romper nada             |
+| MFA nativo junto al de Keystone             |   ✅   | por `connectorTypes`, con aviso al arrancar |

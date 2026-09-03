@@ -237,8 +237,9 @@ distintas que se confunden a diario:
   además los tokens emitidos desde ella.
 
 Los dos últimos bloques necesitan que Dex tenga encendidas las sesiones
-(`sessions_enabled`) y expuesta la API (`api_sessions_identities_crud`). Sin
-ellas la vista no se cae: explica qué flag falta.
+(`sessions_enabled`, que la imagen ya trae puesto) y expuesta la API
+(`api_sessions_identities_crud`, que no). Sin ellas la vista no se cae:
+explica qué flag falta.
 
 ### «He perdido el móvil»
 
