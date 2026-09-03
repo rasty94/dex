@@ -30,7 +30,7 @@ type conn struct {
 	client        *http.Client
 	Logger        *slog.Logger
 	UserIDKey     string
-	tokenCache    *timeCache
+	tokenCache    identityCache
 	groupMap      map[string]string
 	fetchRoles    bool
 }
@@ -177,12 +177,16 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
 		}
 	}
 
-	var tokenCache *timeCache
+	var tokenCache identityCache
 	if c.CacheTTL != "" {
 		importTime, err := time.ParseDuration(c.CacheTTL)
-		if err == nil && importTime > 0 {
-			tokenCache = newTimeCache(importTime)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cacheTTL %q: %v", c.CacheTTL, err)
 		}
+		if importTime <= 0 {
+			return nil, fmt.Errorf("cacheTTL must be positive, got %q", c.CacheTTL)
+		}
+		tokenCache = newTimeCache(importTime)
 	}
 
 	return &conn{
@@ -295,9 +299,9 @@ func (p *conn) Login(ctx context.Context, scopes connector.Scopes, username, pas
 
 func (p *conn) TokenIdentity(ctx context.Context, subjectTokenType, subjectToken string) (identity connector.Identity, err error) {
 	if p.tokenCache != nil {
-		if cached, ok := p.tokenCache.get(subjectToken); ok {
+		if cached, ok := p.tokenCache.get(ctx, subjectToken); ok {
 			tokenCacheLookups.WithLabelValues("hit").Inc()
-			return cached.(connector.Identity), nil
+			return cached, nil
 		}
 		tokenCacheLookups.WithLabelValues("miss").Inc()
 	}
@@ -375,7 +379,7 @@ func (p *conn) TokenIdentity(ctx context.Context, subjectTokenType, subjectToken
 	}
 
 	if p.tokenCache != nil {
-		p.tokenCache.set(subjectToken, identity)
+		p.tokenCache.set(ctx, subjectToken, identity)
 	}
 
 	return identity, nil
