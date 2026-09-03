@@ -21,9 +21,10 @@ services:
             # vista de conectores del panel sale vacia con un aviso. El flag
             # habilita CRUD de conectores en la API; el panel solo lista.
             - DEX_API_CONNECTORS_CRUD=true
-            # Sesiones de navegador. Enciende la cookie de sesion, la pagina
-            # de sesion en /, la de logout y la casilla de "recordarme". El SSO
-            # entre clientes NO se activa con esto: es opt-in por cliente
+            # Sesiones de navegador: cookie de sesion, pagina de sesion en /,
+            # de logout y casilla de "recordarme". La imagen ya las trae
+            # encendidas; aqui va explicito para que se vea de donde salen. El
+            # SSO entre clientes NO se activa con esto: es opt-in por cliente
             # (ssoSharedWith), y por defecto no se comparte con nadie.
             - DEX_SESSIONS_ENABLED=true
             # La API gRPC de sesiones e identidades, que es la que usa el panel

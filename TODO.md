@@ -50,12 +50,24 @@ cuenta. El back-channel logout solo dispara para clientes con `backchannelLogout
       entre clientes mientras `ssoSharedWith` esté en `none`, que es el valor por defecto.
       Es decir: encender el flag ahorra un clic y añade páginas nuevas, no cambia quién
       puede entrar dónde.
-- [ ] **Decidir la clave de cifrado de la cookie** (`sessions.cookieEncryptionKey`). Es
-      opcional; sin ella la cookie va firmada pero no sellada. Conviene ponerla por el
-      mismo motivo que en `mfaTrust`, aunque aquí lo que guarda es un id de sesión y no
-      una credencial de otro sistema.
-- [ ] **Decidir si se enciende por defecto** en `config.docker.yaml`. A la vista de lo
-      medido, el riesgo es bajo; lo que falta es querer las páginas nuevas.
+- [x] **Encendidas por defecto en la imagen.** `DEX_SESSIONS_ENABLED=true` va en el
+      `Dockerfile`, no en el binario: upstream sigue con su valor por defecto y quien
+      quiera el comportamiento de antes pone la variable a `false`. `config.docker.yaml`
+      renderiza el bloque `sessions:` con la misma variable y parseada igual —dex se
+      niega a arrancar con el bloque puesto y el flag apagado, así que no pueden ir por
+      separado—. Comprobado sobre la imagen en cinco configuraciones.
+      Un aviso: poner la variable a **cadena vacía** no es lo mismo que a `false`.
+      gomplate la trata como no definida y renderiza el bloque; el flag la trata como
+      apagada. Dex falla al arrancar diciendo exactamente qué poner, así que se queda así.
+- [x] **La clave de cifrado no se puede repartir, así que se avisa.** No hay clave que
+      pueda venir en una imagen pública, y generar una al arrancar cerraría la sesión de
+      todo el mundo en cada reinicio y no valdría con réplicas. Se cablea
+      `DEX_SESSIONS_COOKIE_ENCRYPTION_KEY` y dex **avisa al arrancar** cuando no hay
+      clave, diciendo qué se gana con ella y qué no.
+      De paso, corregido lo que decía esta lista: sin clave la cookie **no va firmada**,
+      va en base64 en claro. Y sellarla no impide reutilizar una cookie robada —cifrada o
+      no, la cookie *es* la credencial—: lo que evita es que quien la lea o la registre en
+      un log vea el id de sesión que lleva dentro.
 
 ### 0.1 🗂️ API de sesiones e identidades (`api_sessions_identities_crud`)
 

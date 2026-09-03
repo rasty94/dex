@@ -25,6 +25,29 @@ grpc:
   #   - name: ci
   #     token: another-long-random-string
 
+# Browser sessions (DEX_SESSIONS_ENABLED=true; on by default in the Docker
+# image). The whole block is optional -- these are the defaults -- but dex
+# refuses to start if it is present and the flag is off.
+#
+# cookieEncryptionKey seals the cookie with AES-GCM. Without it the cookie is
+# plain base64 and anything that reads or logs the value can read the session id
+# inside. It does not stop a stolen cookie from being replayed: encrypted or
+# not, the cookie is the credential. The key must be 16, 24 or 32 bytes and the
+# same on every replica -- changing it signs everyone out.
+#
+# ssoSharedWithDefault is what decides whether one session can sign the user into
+# a second application without asking. It stays at "none" unless a client opts in
+# with its own ssoSharedWith, which is why turning sessions on does not, by
+# itself, change who can get into what.
+#
+# sessions:
+#   cookieName: dex_session
+#   absoluteLifetime: 24h
+#   validIfNotUsedFor: 1h
+#   rememberMeCheckedByDefault: true
+#   cookieEncryptionKey: a-32-byte-key-for-aes-256-here!!
+#   ssoSharedWithDefault: none
+
 # dex's own second factor (TOTP and WebAuthn security keys). Requires
 # DEX_SESSIONS_ENABLED=true: it runs after the identity exists, on a dex user,
 # with the secret stored by dex.

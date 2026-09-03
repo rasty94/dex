@@ -63,6 +63,22 @@ oauth2:
   passwordConnector: {{ .Env.DEX_OAUTH2_PASSWORD_CONNECTOR }}
 {{- end }}
 
+{{- /* Browser sessions. On in this image (see the Dockerfile); dex refuses to
+       start with this block present and the feature flag off, so the two are
+       driven by the same variable, parsed the same way ("1" and "TRUE" count).
+       ssoSharedWithDefault is deliberately not exposed: it stays at "none",
+       which is what keeps a session from signing the user into a second
+       application on its own. */}}
+{{- if conv.ToBool (getenv "DEX_SESSIONS_ENABLED" "true") }}
+sessions:
+  cookieName: {{ getenv "DEX_SESSIONS_COOKIE_NAME" "dex_session" }}
+  absoluteLifetime: {{ getenv "DEX_SESSIONS_ABSOLUTE_LIFETIME" "24h" }}
+  validIfNotUsedFor: {{ getenv "DEX_SESSIONS_VALID_IF_NOT_USED_FOR" "1h" }}
+{{- if getenv "DEX_SESSIONS_COOKIE_ENCRYPTION_KEY" "" }}
+  cookieEncryptionKey: {{ .Env.DEX_SESSIONS_COOKIE_ENCRYPTION_KEY | quote }}
+{{- end }}
+{{- end }}
+
 enablePasswordDB: {{ getenv "DEX_ENABLE_PASSWORD_DB" "true" }}
 
 connectors:

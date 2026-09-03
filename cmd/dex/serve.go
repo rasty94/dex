@@ -510,7 +510,18 @@ func runServe(options serveOptions) error {
 			"cookie_name", sessionConfig.CookieName,
 			"absolute_lifetime", sessionConfig.AbsoluteLifetime,
 			"valid_if_not_used_for", sessionConfig.ValidIfNotUsedFor,
+			"cookie_sealed", len(sessionConfig.CookieEncryptionKey) > 0,
 		)
+		if len(sessionConfig.CookieEncryptionKey) == 0 {
+			// Without a key the cookie is plain base64: its session id and secret
+			// are readable by anything that sees the value, and by anything that
+			// logs it. Sealing does not stop a stolen cookie from being replayed
+			// -- it is a bearer credential either way -- so the warning says what
+			// the key does buy rather than implying it makes the cookie safe.
+			logger.Warn("sessions: no sessions.cookieEncryptionKey is set, so the session cookie is not encrypted " +
+				"and anything that reads or logs it can read the session id it carries. Set a 16, 24 or 32 byte key, " +
+				"the same one on every replica: changing it signs everyone out.")
+		}
 	}
 
 	serverConfig.RealIPHeader = c.Web.ClientRemoteIP.Header

@@ -90,6 +90,12 @@ COPY --from=builder /usr/local/src/dex/web /srv/dex/web
 
 COPY --from=gomplate /usr/local/bin/gomplate /usr/local/bin/gomplate
 
+# Browser sessions are on in this image. The fork ships the session, logout and
+# "remember me" pages, and dex's own MFA refuses to start without them. The
+# binary keeps upstream's default of off; set DEX_SESSIONS_ENABLED=false to get
+# that behavior back here.
+ENV DEX_SESSIONS_ENABLED=true
+
 USER dex:dex
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint"]
