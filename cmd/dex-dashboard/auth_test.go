@@ -563,3 +563,30 @@ func TestPermissionIsRecomputedPerRequest(t *testing.T) {
 		t.Error("the session of a revoked administrator should have been dropped, not left to expire")
 	}
 }
+
+// The throttle key must not be chosen by whoever is being throttled. Since the
+// counters moved to a shared Valkey, one unauthenticated request per made-up
+// forwarded address is one more key in a store that runs with noeviction: fill
+// it and no administrator session can be created at all.
+func TestClientAddrIgnoresTheForwardedHeaderByDefault(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "10.0.0.1:52020"
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+
+	if got := clientAddr(r, false); got != "10.0.0.1" {
+		t.Errorf("clientAddr = %q, want the address the connection came from, 10.0.0.1", got)
+	}
+}
+
+// Behind the load balancer this deployment is designed around, ignoring the
+// header would be the other failure: every administrator in one bucket. The
+// operator says which topology it is, and then the first hop is the client.
+func TestClientAddrHonorsTheForwardedHeaderWhenTrusted(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "10.0.0.1:52020"
+	r.Header.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.2")
+
+	if got := clientAddr(r, true); got != "203.0.113.9" {
+		t.Errorf("clientAddr = %q, want the first hop of the header, 203.0.113.9", got)
+	}
+}

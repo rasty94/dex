@@ -45,3 +45,12 @@ dex_dashboard_valkey_key_prefix: "dex-dashboard:"
 # group_vars puede ser correcto para los dos. Vaciarla ("") apaga el bloque
 # tls:, para quien apunte el panel a un Valkey ajeno sin cifrar.
 dex_dashboard_valkey_tls_ca_cert: /etc/dex-dashboard/internal-ca.pem
+
+# X-Forwarded-For del limitador de intentos de login. Apagado por defecto: con
+# el encendido y sin un proxy delante que ponga la cabecera en TODAS las
+# peticiones, quien golpea el panel elige su propia clave del limitador, y esas
+# claves van hoy a un Valkey compartido con noeviction -- llenarlo deja sin
+# poder crear sesiones a los administradores. Se enciende cuando el inventario
+# describe de verdad un despliegue con balanceador delante (el de ejemplo lo
+# hace), porque alli apagado mete a todos los administradores en un solo cubo.
+dex_dashboard_trust_forwarded_for: false

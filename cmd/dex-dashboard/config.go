@@ -21,6 +21,19 @@ type Config struct {
 	// redirect URI. Must match the redirect URI registered on the dex client.
 	BaseURL string `json:"baseURL"`
 
+	// TrustForwardedFor makes the login throttle read the client address from
+	// the X-Forwarded-For header instead of the connection it arrived on.
+	//
+	// Off by default, and it must stay off unless a proxy this panel trusts
+	// sets that header on every request: it is the caller who chooses what the
+	// header says, so with it on anyone can hand the throttle a fresh key per
+	// request -- and those keys are now written to a shared Valkey that runs
+	// with noeviction, so filling it stops administrator sessions from being
+	// created at all. Behind a load balancer the opposite is true: without
+	// this, every administrator arrives from the balancer's address and shares
+	// one bucket. The deployment declares which of the two it is.
+	TrustForwardedFor bool `json:"trustForwardedFor"`
+
 	Dex   DexConfig   `json:"dex"`
 	OIDC  OIDCConfig  `json:"oidc"`
 	Admin AdminConfig `json:"admin"`

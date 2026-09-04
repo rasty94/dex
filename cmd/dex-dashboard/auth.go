@@ -157,7 +157,10 @@ type authenticator struct {
 	secure       bool
 	reauthWindow time.Duration
 	loginLimiter *attemptLimiter
-	logger       *slog.Logger
+	// trustXFF mirrors Config.TrustForwardedFor: whether the throttle key may
+	// come from a header the caller controls.
+	trustXFF bool
+	logger   *slog.Logger
 }
 
 func newAuthenticator(ctx context.Context, c *Config, vk *dexvalkey.Client, logger *slog.Logger) (*authenticator, error) {
@@ -192,6 +195,7 @@ func newAuthenticator(ctx context.Context, c *Config, vk *dexvalkey.Client, logg
 		secure:       strings.HasPrefix(c.BaseURL, "https://"),
 		reauthWindow: c.Admin.ReauthWindow,
 		loginLimiter: newAttemptLimiter(10, time.Minute, vk),
+		trustXFF:     c.TrustForwardedFor,
 		logger:       logger,
 	}, nil
 }
@@ -257,8 +261,9 @@ func (a *authenticator) readCookie(r *http.Request, name string) (*http.Cookie, 
 // without it, a re-authentication check would be satisfied by a silent redirect
 // and prove nothing.
 func (a *authenticator) startLogin(w http.ResponseWriter, r *http.Request, next string, forceReauth bool) {
-	if !a.loginLimiter.allow(r.Context(), clientAddr(r)) {
-		a.logger.Warn("login rate limit exceeded", "addr", clientAddr(r))
+	addr := clientAddr(r, a.trustXFF)
+	if !a.loginLimiter.allow(r.Context(), addr) {
+		a.logger.Warn("login rate limit exceeded", "addr", addr)
 		http.Error(w, "Too many login attempts. Try again in a minute.", http.StatusTooManyRequests)
 		return
 	}
@@ -564,12 +569,16 @@ func (l *attemptLimiter) allowLocal(key string) bool {
 	return true
 }
 
-// clientAddr identifies the caller for rate limiting. The dashboard sits behind
-// a proxy in every real deployment, so a forwarded address is used when present
-// — it is a brake on accidents, and treating it as authoritative is not the
-// point.
-func clientAddr(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+// clientAddr identifies the caller for rate limiting.
+//
+// X-Forwarded-For is only read when the deployment says a proxy sets it
+// (Config.TrustForwardedFor). Reading it unconditionally hands the throttle key
+// to whoever is being throttled: one unauthenticated request per made-up
+// address, each one a new key in the shared store. dex draws the same line for
+// its own limiter, where ratelimit.Key takes the address from the real-IP
+// resolver rather than from the header.
+func clientAddr(r *http.Request, trustForwardedFor bool) string {
+	if xff := r.Header.Get("X-Forwarded-For"); trustForwardedFor && xff != "" {
 		if first, _, found := strings.Cut(xff, ","); found {
 			return strings.TrimSpace(first)
 		}

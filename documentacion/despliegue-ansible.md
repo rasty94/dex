@@ -152,6 +152,16 @@ Lo que tiene que hacer:
   grupo `dex_dashboard`.
 - **Comprobar `/healthz`** de cada servicio antes de mandarle tráfico (ver la
   advertencia de la siguiente sección: la del panel no dice todo lo que parece decir).
+- **Poner `X-Forwarded-For`** en cada petición hacia el panel, y ser el único camino
+  hasta él. Ese es el trato del ajuste `dex_dashboard_trust_forwarded_for`
+  (`trustForwardedFor` en el `config.yaml` del panel), que el inventario de ejemplo
+  enciende **porque describe un despliegue con balanceador**: con él, el limitador de
+  intentos de login cuenta por dirección real del administrador; sin él, todos comparten
+  el cubo de la dirección del balanceador. Encenderlo sin balanceador delante es el
+  error contrario y peor: la cabecera la elige quien llama, así que cada petición
+  anónima estrena clave en el Valkey compartido, que corre con `noeviction` — llenarlo
+  deja sin poder crear sesiones a los administradores. Por eso viene apagado de fábrica
+  y lo declara el inventario, no el rol.
 - **No hacer afinidad de sesión.** Es exactamente lo que el estado compartido en Valkey
   existe para hacer innecesario: las sesiones del panel y los contadores del limitador
   de login viven en Valkey, no en el proceso que atendió la petición anterior, así que

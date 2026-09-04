@@ -4,6 +4,10 @@ listen: 0.0.0.0:5560
 
 baseURL: {{ dex_dashboard_base_url }}
 
+# Ver el comentario de dex_dashboard_trust_forwarded_for en defaults/main.yml:
+# solo con un balanceador delante que ponga la cabecera siempre.
+trustForwardedFor: {{ dex_dashboard_trust_forwarded_for | to_json }}
+
 dex:
   grpcAddress: {{ dex_dashboard_grpc_address }}
   tokenFile: /etc/dex-dashboard/grpc-token
