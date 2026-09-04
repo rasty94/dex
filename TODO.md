@@ -16,7 +16,9 @@
 
 ## 📦 Pendiente de publicar
 
-- [ ] **Empujar la etiqueta `fork-v2.1.0`.** Está creada en local sobre `de3da40c`, y
+- [ ] **Empujar la etiqueta `fork-v2.1.0`.** Está creada en local sobre el merge del
+      TLS mutuo de Valkey —se movió ahí a propósito, para que la primera imagen
+      publicada no lleve el bus del cluster sin autenticar—, y
       hasta que suba, [ansible/inventories/ejemplo/group_vars/all.yml](ansible/inventories/ejemplo/group_vars/all.yml)
       fija `ghcr.io/rasty94/dex:fork-v2.1.0`, una imagen que todavía no existe. El push
       del tag dispara `release.yaml`, que la construye y la publica en GHCR: por eso se
