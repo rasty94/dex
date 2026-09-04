@@ -62,6 +62,20 @@
       los tests, no implementa la invalidación asistida por servidor que necesita.
       Activarla evitaría un viaje de red por cada lectura de caché compartida, a
       costa de esa dependencia con los tests.
+- [ ] **La conexión con Valkey no presenta certificado de cliente.** El bloque
+      `tls:` de `pkg/valkey` solo tiene `caCert` e `insecureSkipVerify`: cifra el
+      viaje y verifica al servidor, pero quien autentica al cliente es la
+      contraseña, no un certificado. Esta nota venía dentro de la entrada «Valkey
+      es hoy un punto único de fallo», que se cerró al entregar sentinel y
+      cluster; la mitad del certificado de cliente sigue abierta y por eso vuelve
+      aquí sola. **La otra mitad, que hay que cambiar a la vez**: el rol de
+      Ansible pone `tls-auth-clients no` en `managed.conf.j2` y en
+      `sentinel.conf.j2` justamente porque el cliente no sabe presentar
+      certificado —con el valor de fábrica (`yes`) el servidor lo exige y dex no
+      llega a conectar—. Quien añada certificados de cliente a `pkg/valkey`
+      tiene que quitar esas dos líneas y hacer que el rol copie también un
+      certificado a los nodos de dex y del panel; con una sola de las dos
+      mitades, el despliegue deja de arrancar.
 - [ ] `Client.Key` en `pkg/valkey/valkey.go` no tiene más uso que su propio
       test: cada componente que necesita una clave pasa por `HashKey`. Un
       ayudante de clave sin hashear y sin usuarios invita a que alguien meta un
