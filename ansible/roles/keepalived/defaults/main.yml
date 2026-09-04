@@ -1,0 +1,29 @@
+keepalived_config_dir: /etc/keepalived
+
+# Parametrizado por el mismo motivo que haproxy_container_name.
+keepalived_container_name: keepalived
+# No hay imagen oficial de keepalived. osixia/keepalived es la habitual, y
+# **solo publica amd64**: en un host arm64 Docker la arranca por emulacion y
+# avisa. Para servidores x86_64 no cambia nada; quien despliegue en arm tiene
+# que construirse la suya y cambiar esta variable.
+keepalived_image: osixia/keepalived:2.0.20
+
+# Sin valor por defecto: los asserts de tasks/main.yml los exigen.
+keepalived_vip: ""
+keepalived_interface: ""
+keepalived_auth_pass: ""
+
+# El virtual_router_id de VRRP. Dos despliegues distintos en la misma L2 con
+# el mismo id se pelean por la misma VIP, asi que se exige explicito en vez de
+# inventarse uno: un choque asi se manifiesta como una VIP que parpadea entre
+# maquinas de despliegues que no se conocen, y cuesta dias encontrarlo.
+keepalived_router_id: 0
+
+# El de mas prioridad es el MASTER. La diferencia entre los dos nodos tiene
+# que ser MENOR que keepalived_health_weight en valor absoluto, o la bajada
+# por sonda no llega a cambiar quien manda: ver el assert de tasks/main.yml.
+keepalived_priority: 100
+keepalived_health_weight: -20
+keepalived_health_interval: 2
+keepalived_health_fall: 2
+keepalived_health_rise: 2
