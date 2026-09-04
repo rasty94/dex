@@ -190,6 +190,36 @@ tirar (o tres VMs), Docker en las tres, y un inventario apuntando a sus IPs real
 Sustituye `<inv>` por la ruta al inventario real y `<host-N>` por el nombre de cada
 máquina tal como aparece en él.
 
+### 0. Consultar Valkey a mano sin dejar la contraseña por ahí
+
+Todos los `valkey-cli` de esta lista necesitan la contraseña, porque los nodos y el
+sentinel llevan `requirepass`. **No la escribas en la orden**, ni con `-a`, ni con un
+`-e REDISCLI_AUTH=…` con valor: `-a` la deja en el argv del propio `valkey-cli` (legible
+con `docker top` mientras dura), y un `-e VAR=valor` la deja en el argv del cliente
+`docker` del host —cualquier usuario local la ve con `ps`— y además en el historial del
+intérprete de órdenes. Es la misma puerta que se cerró sacando los secretos del compose
+y poniendo `no_log` en el rol; escribirla aquí volvía a abrirla.
+
+La forma correcta, una vez por sesión y **en la máquina donde corre Docker** (`ssh` no
+lleva la variable consigo):
+
+```bash
+ssh <host-N>
+read -rs REDISCLI_AUTH   # se teclea, no se hace eco, y no queda en el historial
+export REDISCLI_AUTH
+
+# A partir de aquí, en esa misma sesión: -e REDISCLI_AUTH SIN valor, que es
+# como se le dice a docker que la tome del entorno del cliente
+docker exec -e REDISCLI_AUTH valkey valkey-cli --tls \
+    --cacert /etc/valkey/tls/ca.crt -p 6379 ping
+
+unset REDISCLI_AUTH      # al terminar
+```
+
+Los bloques siguientes dan por hecho ese `read`/`export` en la máquina donde se lanza
+cada orden, y por eso escriben `ssh <host-N>` en su propia línea en vez de delante del
+`docker exec`.
+
 ### 1. Sentinel: failover, y que el rol no lo deshaga
 
 ```bash
@@ -200,7 +230,8 @@ máquina tal como aparece en él.
 # de control es TLS-only y lleva requirepass, así que hace falta --tls y la
 # contraseña, que va por entorno (`-e REDISCLI_AUTH` sin valor: docker la toma
 # del entorno del cliente) y nunca escrita en la orden.
-ssh <host-sentinel-1> docker exec -e REDISCLI_AUTH valkey-sentinel \
+ssh <host-sentinel-1>
+docker exec -e REDISCLI_AUTH valkey-sentinel \
     valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
     -p 26379 sentinel get-master-addr-by-name dex
 
@@ -210,14 +241,16 @@ ssh <host-del-master> docker stop valkey
 # Esperar mas que down-after-milliseconds + un margen (valores de fabrica:
 # 5000 ms de deteccion, hasta 60000 ms de plazo de failover) y volver a
 # preguntar: tiene que devolver una IP distinta a la de antes
-ssh <host-sentinel-1> docker exec -e REDISCLI_AUTH valkey-sentinel \
+ssh <host-sentinel-1>
+docker exec -e REDISCLI_AUTH valkey-sentinel \
     valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
     -p 26379 sentinel get-master-addr-by-name dex
 
 # El punto que importa: repetir el playbook y confirmar que el master sigue
 # siendo el promocionado, no el primer host del grupo valkey del inventario
 .venv/bin/ansible-playbook -i <inv>/hosts.yml ansible/playbooks/dex.yml
-ssh <host-sentinel-1> docker exec -e REDISCLI_AUTH valkey-sentinel \
+ssh <host-sentinel-1>
+docker exec -e REDISCLI_AUTH valkey-sentinel \
     valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
     -p 26379 sentinel get-master-addr-by-name dex
 # -> tiene que coincidir con la IP promocionada, no con la original
@@ -233,9 +266,10 @@ que lo delata: el failover se deshace en el siguiente despliegue.
 # Con valkey_topology: cluster en el grupo valkey del inventario
 .venv/bin/ansible-playbook -i <inv>/hosts.yml ansible/playbooks/dex.yml
 
-# Estado del cluster desde cualquier nodo (TLS + contrasena por REDISCLI_AUTH,
-# no por -a, para que no quede legible en "docker top")
-ssh <host-1> docker exec -e REDISCLI_AUTH=<dex_valkey_password> valkey \
+# Estado del cluster desde cualquier nodo (TLS + contraseña por REDISCLI_AUTH,
+# con el read/export del paso 0)
+ssh <host-1>
+docker exec -e REDISCLI_AUTH valkey \
     valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
     --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key \
     -p 6379 cluster info
@@ -245,7 +279,8 @@ ssh <host-1> docker exec -e REDISCLI_AUTH=<dex_valkey_password> valkey \
 ssh <host-1> docker stop valkey valkey-replica
 
 # El cluster tiene que seguir sirviendo desde otro nodo
-ssh <host-2> docker exec -e REDISCLI_AUTH=<dex_valkey_password> valkey \
+ssh <host-2>
+docker exec -e REDISCLI_AUTH valkey \
     valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
     --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key \
     -p 6379 cluster info
@@ -261,7 +296,8 @@ analizador sin probar guardando una propiedad de seguridad es peor que revisarlo
 mano.
 
 ```bash
-ssh <host-1> docker exec -e REDISCLI_AUTH=<dex_valkey_password> valkey \
+ssh <host-1>
+docker exec -e REDISCLI_AUTH valkey \
     valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
     --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key \
     --cluster check 127.0.0.1:6379
@@ -319,7 +355,8 @@ enlace sentinel → master y el acceso autenticado al puerto de control.
 ssh <host-sentinel-1> docker logs valkey-sentinel | grep -i tls
 
 # Y el estado que ve sentinel del master, que dice si la conexión funciona
-ssh <host-sentinel-1> docker exec -e REDISCLI_AUTH valkey-sentinel \
+ssh <host-sentinel-1>
+docker exec -e REDISCLI_AUTH valkey-sentinel \
     valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
     -p 26379 sentinel master dex
 # -> flags: master, sin s_down ni o_down, y num-slaves con las réplicas reales
