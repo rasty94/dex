@@ -365,11 +365,31 @@
       degradación silenciosa —la preocupación que dejó fuera a Galera en la fase 4—.
       Reproducido de primera mano en un contenedor `mariadb:10.11` aparte, mismo
       resultado.
+- [x] **El panel replicado sí comparte sesiones y presupuesto de login a través del
+      rol**, no solo en el código. `ansible/roles/dex_dashboard/templates/config.yaml.j2`
+      renderiza ahora el mismo bloque `valkey:` que ya renderizaba la plantilla de `dex`
+      —mismas variables `dex_valkey_*` del grupo `valkey`/`valkey_sentinel`, sin
+      inventar una segunda convención—, con `dex_dashboard_valkey_key_prefix:
+      "dex-dashboard:"` como única variable propia de este rol, para no mezclar sus
+      claves con las de dex.
+      **Lo que destapó escribir la documentación, por segunda vez en este plan** (la
+      primera fue el campo lápida de arriba): al describir «qué hace el balanceador» en
+      `despliegue-ansible.md` tocó comparar las dos plantillas línea a línea, y la de
+      `dex_dashboard` sencillamente no tenía bloque `valkey:` — el panel desplegado con
+      dos hosts, tal cual trae el propio inventario de ejemplo, se quedaba con sesiones y
+      presupuesto de login **por proceso**, exactamente el agujero que la Task 8 había
+      cerrado en el código y que ningún test de esa tarea podía ver, porque no toca
+      Ansible. Ningún brief anterior lo pedía.
+      **Probado de extremo a extremo**, no solo el renderizado: converge local dos veces
+      con `changed=0` en las dos plays (`dex` y `dex_dashboard`); con un Valkey de
+      verdad alcanzable en la dirección que la plantilla calcula, `dex-dashboard-converge`
+      arranca, se queda arriba y sirve (`302` en `/`, sin sesión, lo esperable); y la
+      prueba que de verdad importa, una clave real en Valkey tras esa petición:
+      `dex-dashboard:dl:<hash>` —el contador del `attemptLimiter`, con el prefijo
+      correcto y sin pisar el `dex:` de dex—.
 
-Dos límites que quedan, documentados y sin cerrar en falso: el panel replicado por este
-rol **no** comparte todavía sus sesiones ni su presupuesto de login —la plantilla del
-rol `dex_dashboard` no renderiza el bloque `valkey:` que la de `dex` sí renderiza—, y la
-sonda de disponibilidad del panel sigue sin decir la verdad. Las dos, en TODO.md y en
+Un límite que queda, documentado y sin cerrar en falso: la sonda de disponibilidad del
+panel sigue sin decir la verdad. En TODO.md y en
 [despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
 
 ---

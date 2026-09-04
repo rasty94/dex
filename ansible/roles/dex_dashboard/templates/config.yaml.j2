@@ -9,6 +9,48 @@ dex:
   tokenFile: /etc/dex-dashboard/grpc-token
   caCert: /etc/dex-dashboard/internal-ca.pem
 
+# Mismo bloque que arma ansible/roles/dex/templates/config.yaml.j2 a partir de
+# los grupos valkey/valkey_sentinel: mismas variables (dex_valkey_*, sin
+# prefijo dex_dashboard_, porque son del Valkey compartido, no de este rol) y
+# mismo Valkey. Sin esto el panel replicado (dos hosts en dex_dashboard, como
+# ya trae el inventario de ejemplo) no comparte sesiones ni el presupuesto de
+# login entre procesos, que es justo lo que la Task 8 anadio al codigo. Los
+# puertos llevan | default(...) porque los defaults del rol dex no cruzan a
+# esta jugada (mismo motivo que dex_dashboard_grpc_address, arriba en este
+# fichero). keyPrefix es la unica variable propia de este rol: tiene que ser
+# distinta de la de dex ("dex:") para que las claves no se mezclen.
+{% if groups.valkey is defined and groups.valkey | length > 0 %}
+{% set topology = hostvars[groups.valkey[0]].valkey_topology | default('standalone') %}
+valkey:
+{% if topology == 'sentinel' %}
+  mode: sentinel
+  addresses:
+{% for h in groups.valkey_sentinel | default([]) %}
+    - {{ hostvars[h].ansible_host }}:{{ dex_valkey_sentinel_port | default(26379) }}
+{% endfor %}
+  masterSet: {{ (hostvars[groups.valkey[0]].valkey_master_set | default('dex')) | to_json }}
+{% elif topology == 'cluster' %}
+  mode: cluster
+  addresses:
+{% for h in groups.valkey %}
+    - {{ hostvars[h].ansible_host }}:{{ dex_valkey_port | default(6379) }}
+{% endfor %}
+{% else %}
+  mode: standalone
+  addresses:
+    - {{ hostvars[groups.valkey[0]].ansible_host }}:{{ dex_valkey_port | default(6379) }}
+{% endif %}
+  keyPrefix: {{ dex_dashboard_valkey_key_prefix | to_json }}
+{% if dex_valkey_username is defined %}
+  username: {{ dex_valkey_username | to_json }}
+{% endif %}
+  password: {{ dex_valkey_password | to_json }}
+{% if dex_valkey_tls_ca_cert is defined %}
+  tls:
+    caCert: {{ dex_valkey_tls_ca_cert }}
+{% endif %}
+{% endif %}
+
 oidc:
   issuer: {{ dex_issuer }}
   clientID: {{ dex_dashboard_oidc_client_id }}

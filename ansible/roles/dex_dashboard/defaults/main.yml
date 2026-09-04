@@ -28,3 +28,10 @@ dex_dashboard_reauth_window: 15m
 # ejemplo), asi que le llega por localhost. default(5557) para no depender de
 # que el rol dex haya cargado sus propios defaults en este host.
 dex_dashboard_grpc_address: "127.0.0.1:{{ dex_grpc_port | default(5557) }}"
+
+# Prefijo de clave del panel en Valkey, distinto del de dex ("dex:", en
+# ansible/roles/dex/defaults/main.yml) para que un Valkey compartido no mezcle
+# las claves de los dos procesos. Mismo valor por defecto que trae
+# config.dashboard.docker.yaml (DEX_DASHBOARD_VALKEY_KEY_PREFIX) y que ya usa
+# Ejemplos/dashboard.
+dex_dashboard_valkey_key_prefix: "dex-dashboard:"

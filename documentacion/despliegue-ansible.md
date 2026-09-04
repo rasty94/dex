@@ -155,7 +155,10 @@ Lo que tiene que hacer:
 - **No hacer afinidad de sesión.** Es exactamente lo que el estado compartido en Valkey
   existe para hacer innecesario: las sesiones del panel y los contadores del limitador
   de login viven en Valkey, no en el proceso que atendió la petición anterior, así que
-  cualquier nodo puede atender cualquier petición.
+  cualquier nodo puede atender cualquier petición. Las dos plantillas —la de `dex` y la
+  de `dex_dashboard`— renderizan el mismo bloque `valkey:` a partir de los grupos
+  `valkey`/`valkey_sentinel` del inventario, con `keyPrefix` distinto para que no se
+  mezclen las claves de los dos procesos.
 
 ## Qué NO cubre este despliegue
 
@@ -166,14 +169,6 @@ Lo que tiene que hacer:
   balanceador que solo mire esta ruta puede seguir mandando tráfico a un panel cuyas
   páginas van a fallar todas. Sigue siendo una entrada abierta del TODO; este rol no la
   cierra, solo la hereda.
-- **El panel replicado no comparte estado a través de este rol todavía.** El código sí
-  sabe compartir las sesiones de administrador y el presupuesto de intentos de login en
-  Valkey (`valkey.addresses` en el `config.yaml` del panel), pero la plantilla
-  `ansible/roles/dex_dashboard/templates/config.yaml.j2` no renderiza ningún bloque
-  `valkey:` — a diferencia de la de dex, que sí lo hace a partir del grupo `valkey` del
-  inventario. Un panel desplegado con dos hosts en `dex_dashboard`, como trae el propio
-  inventario de ejemplo, sigue con sesiones y presupuesto de login **por proceso** hasta
-  que esa plantilla reciba el mismo bloque. Anotado en el TODO.
 - **`ent` con MariaDB no está soportado.** El feature flag `DEX_ENT_ENABLED` (apagado
   por defecto) usa `atlas`, que hace sondeo de versión del servidor; MariaDB devuelve
   una cadena compuesta del tipo `5.5.5-10.11.2-MariaDB` que atlas no interpreta como

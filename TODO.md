@@ -62,22 +62,6 @@
       los tests, no implementa la invalidación asistida por servidor que necesita.
       Activarla evitaría un viaje de red por cada lectura de caché compartida, a
       costa de esa dependencia con los tests.
-- [ ] **`attemptLimiter` del panel: la corrección, no el cierre.** El
-      razonamiento original —«con una sola réplica del panel por despliegue el
-      límite efectivo por proceso ya es el límite real»— era correcto cuando se
-      escribió y dejó de serlo por un cambio nuestro: el rol de Ansible
-      ([documentacion/despliegue-ansible.md](documentacion/despliegue-ansible.md))
-      puede desplegar el panel en varios hosts a la vez. Desde entonces
-      `cmd/dex-dashboard/auth.go` **sí** sabe compartir el presupuesto de
-      intentos en Valkey —reutiliza el `sharedCounter` de `server/ratelimit`,
-      con el mismo comportamiento ante una caída que el resto: cae al contador
-      local, nunca a «sin límite»—. Pero el propio rol no cierra el círculo
-      todavía: `ansible/roles/dex_dashboard/templates/config.yaml.j2` no
-      renderiza ningún bloque `valkey:`, a diferencia de la plantilla
-      equivalente del rol `dex`, así que un panel desplegado con dos hosts en
-      el grupo `dex_dashboard` —como trae el propio inventario de ejemplo—
-      sigue con sesiones y presupuesto de login **por proceso** hasta que esa
-      plantilla reciba el mismo bloque.
 - [ ] `Client.Key` en `pkg/valkey/valkey.go` no tiene más uso que su propio
       test: cada componente que necesita una clave pasa por `HashKey`. Un
       ayudante de clave sin hashear y sin usuarios invita a que alguien meta un
