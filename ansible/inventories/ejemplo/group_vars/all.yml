@@ -16,3 +16,18 @@ dex_session_cookie_key: treinta-y-dos-bytes-exactos-aqui
 # (dex.tokenFile), nunca por entorno. clientSecret es del cliente OIDC
 # "dex-dashboard" que hay que dar de alta en dex aparte, con este repo.
 dex_dashboard_oidc_client_secret: cambiame-tambien-sin-dolar
+
+# El certificado publico del sitio, para el TLS que HAProxy termina. Va aqui y
+# no en hosts.yml porque este fichero se cifra entero con ansible-vault y la
+# clave privada no puede vivir en uno que va en claro. No sale de la CA
+# interna: el issuer lo consumen clientes que no la conocen.
+haproxy_tls_cert: |
+  -----BEGIN CERTIFICATE-----
+  cambiame
+  -----END CERTIFICATE-----
+haproxy_tls_key: |
+  -----BEGIN PRIVATE KEY-----
+  cambiame
+  -----END PRIVATE KEY-----
+# VRRP la trunca a 8 caracteres: los demas no cuentan, y el rol lo avisa.
+keepalived_auth_pass: cambiam

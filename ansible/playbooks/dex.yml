@@ -1,14 +1,17 @@
 # El orden importa: dex se niega a arrancar sin Valkey, y con razon.
 - name: CA interna
-  # Antes que los demas: los tres roles (dex, el panel y valkey) consumen el
-  # hecho "internal_ca_cert" que publica este rol.
+  # Antes que los demas: dex, el panel y valkey consumen el hecho
+  # "internal_ca_cert" que publica este rol. loadbalancer entra aqui para que
+  # sus hosts tengan certificado propio si alguna vez lo necesitan --hoy
+  # HAProxy usa el publico del sitio, no este-- y NO entra en la tanda de
+  # Valkey.
   #
   # Sin become a proposito, al reves que las tres tandas siguientes: todo lo
   # que hace este rol es delegate_to: localhost y escribe en el directorio de
   # la CA del nodo de control. Escalar aqui dejaria ese directorio --y la
   # clave privada de la CA-- en manos de root en la maquina de quien lanza el
   # playbook, que es justo lo contrario de lo que se quiere.
-  hosts: dex:dex_dashboard:valkey
+  hosts: dex:dex_dashboard:valkey:loadbalancer
   roles: [internal_ca]
 
 - name: Valkey
@@ -40,3 +43,21 @@
   serial: 1
   become: true
   roles: [dex_dashboard]
+
+- name: Balanceador
+  # Al final a proposito: HAProxy sondea /healthz de los dos servicios, y con
+  # backends que todavia no existen arrancaria con todo en DOWN. Se recuperaria
+  # solo, pero un despliegue que empieza con todo caido no se distingue de uno
+  # roto.
+  #
+  # Que el issuer no resuelva mientras tanto no importa: el panel reintenta el
+  # discovery (newAuthenticatorWithRetry en cmd/dex-dashboard/main.go), que es
+  # justo el caso para el que se escribio.
+  #
+  # El orden de los roles importa: keepalived lee haproxy_https_port y
+  # haproxy_dex_health_path de los defaults del rol haproxy, que solo estan
+  # disponibles si ese rol ya corrio en esta misma tanda.
+  hosts: loadbalancer
+  serial: 1        # de uno en uno: la VIP se queda en el otro mientras tanto
+  become: true
+  roles: [haproxy, keepalived]
