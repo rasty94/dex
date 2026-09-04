@@ -19,3 +19,17 @@
       - sentinel-compose.yml
     state: present
     recreate: always
+
+# El segundo proceso de una maquina en topologia cluster (cluster.yml):
+# directorio propio ("-replica"), calculado aqui a partir de valkey_config_dir
+# en vez de depender de una variable propia. cluster.yml restaura
+# valkey_config_dir al valor del master en cuanto termina de reutilizar
+# standalone.yml para el segundo proceso (los "vars:" de un include dinamico
+# no se deshacen solos al salir del include, se probo en vivo), asi que para
+# cuando este handler corre --al final de la tanda-- vuelve a ser el del
+# master, y "-replica" da otra vez el directorio correcto.
+- name: Reiniciar valkey replica
+  community.docker.docker_compose_v2:
+    project_src: "{{ valkey_config_dir }}-replica"
+    state: present
+    recreate: always
