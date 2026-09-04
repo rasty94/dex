@@ -1,0 +1,9 @@
+# Igual que en los roles dex y valkey: docker compose solo recrea un contenedor
+# cuando cambia la definicion del propio servicio, no el contenido de un fichero
+# montado por bind mount (aqui, haproxy.cfg y el .pem). recreate: always fuerza
+# el reinicio cuando este handler salta.
+- name: Reiniciar haproxy
+  community.docker.docker_compose_v2:
+    project_src: "{{ haproxy_config_dir }}"
+    state: present
+    recreate: always

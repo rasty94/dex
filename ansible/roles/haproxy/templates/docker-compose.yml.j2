@@ -1,0 +1,16 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/haproxy/templates/.
+services:
+    haproxy:
+        image: {{ haproxy_image }}
+        container_name: {{ haproxy_container_name }}
+        restart: unless-stopped
+        # Red de host, y no es cosmetico: el balanceador tiene que ver la
+        # direccion real de quien llama para ponerla en X-Forwarded-For. Con
+        # la red por defecto de Docker todas llegarian como la de la puerta
+        # de enlace, y el limitador de intentos del panel contaria a todo el
+        # mundo en el mismo cubo.
+        network_mode: host
+        volumes:
+            - {{ haproxy_config_dir }}/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+            - {{ haproxy_config_dir }}/tls/site.pem:/usr/local/etc/haproxy/tls/site.pem:ro

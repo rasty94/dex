@@ -1,0 +1,86 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/haproxy/templates/.
+global
+    log stdout format raw local0
+    maxconn 4096
+
+defaults
+    log     global
+    mode    http
+    # "option httplog" NO va aqui: fe_grpc es mode tcp y HAProxy avisa en cada
+    # arranque de que no le sirve y cae a tcplog. Funciona igual, pero un aviso
+    # constante es donde se esconde el aviso que si importa. Cada frontend
+    # declara el suyo.
+    timeout connect 5s
+    timeout client  60s
+    timeout server  60s
+
+frontend fe_https
+    bind :{{ haproxy_https_port }} ssl crt /usr/local/etc/haproxy/tls/site.pem alpn h2,http/1.1
+    mode http
+    option httplog
+
+    # set, no add. Con "add" queda delante la cabecera que trajera el cliente
+    # y el panel lee la primera: la elegiria quien llama, y entonces cada
+    # peticion anonima estrena clave en un Valkey que corre con noeviction.
+    # Esta es la mitad del trato de trustForwardedFor; la otra es que los
+    # puertos de los nodos no sean alcanzables por otro camino (dex_http_bind
+    # y dex_dashboard_bind).
+    http-request set-header X-Forwarded-For %[src]
+    http-request set-header X-Forwarded-Proto https
+
+    # Una sola regla y el resto por defecto. La tentacion es escribir tambien
+    # "use_backend be_dex if { path_beg <ruta del issuer> }", y con un issuer
+    # sin ruta eso renderiza "path_beg " sin argumento: HAProxy no arranca.
+    # Con default_backend no hace falta.
+    #
+    # El orden importaria si hubiera dos reglas: /dex-dashboard empieza por
+    # /dex, asi que al reves el panel no recibiria nunca nada. Queda escrito
+    # porque es el fallo que aparece en cuanto alguien anada la segunda.
+    use_backend be_dashboard if { path_beg /dex-dashboard }
+    default_backend be_dex
+
+frontend fe_grpc
+    # mode tcp y sin "ssl": el 5557 de dex ya sirve TLS con el certificado de
+    # la CA interna y el panel lo verifica. Terminarlo aqui y volver a emitir
+    # en claro cambiaria una credencial que hoy no sale de la maquina --el
+    # token gRPC-- por una que viaja por la red sin cifrar.
+    bind :{{ haproxy_grpc_port }}
+    mode tcp
+    option tcplog
+    default_backend be_grpc
+
+# balance roundrobin y NI cookie NI stick-table en ningun backend HTTP. La
+# afinidad de sesion es justo lo que el estado compartido en Valkey existe
+# para hacer innecesaria, y ponerla "por si acaso" esconderia el fallo que
+# delataria que el estado compartido no funciona.
+backend be_dex
+    mode http
+    balance roundrobin
+    option httpchk
+    http-check send meth GET uri {{ haproxy_dex_health_path }}
+{% for h in groups['dex'] %}
+    server {{ h }} {{ hostvars[h].ansible_host }}:{{ dex_http_port | default(5556) }} check
+{% endfor %}
+
+backend be_dashboard
+    mode http
+    balance roundrobin
+    # Aviso, y no es un descuido: el /healthz del panel devuelve 200 SIEMPRE,
+    # sin mirar si su conexion gRPC con dex o Valkey responden
+    # (cmd/dex-dashboard/main.go). Saca de rotacion un proceso muerto, no uno
+    # ciego. Es una sonda de vida, no de disponibilidad, y no puede ser otra
+    # cosa mientras la entrada del TODO siga abierta.
+    option httpchk
+    http-check send meth GET uri {{ haproxy_dashboard_health_path }}
+{% for h in groups['dex_dashboard'] %}
+    server {{ h }} {{ hostvars[h].ansible_host }}:{{ dex_dashboard_listen_port | default(5560) }} check
+{% endfor %}
+
+backend be_grpc
+    mode tcp
+    balance roundrobin
+    option tcp-check
+{% for h in groups['dex'] %}
+    server {{ h }} {{ hostvars[h].ansible_host }}:{{ dex_grpc_port | default(5557) }} check
+{% endfor %}

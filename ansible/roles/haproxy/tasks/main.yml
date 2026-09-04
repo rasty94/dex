@@ -1,0 +1,51 @@
+# Este servicio es nuestro (lo instala y lo arranca este rol), asi que sin
+# certificado se falla en vez de avisar: mismo criterio que el
+# dex_valkey_password del rol valkey.
+- name: El certificado y la clave del sitio son obligatorios
+  ansible.builtin.assert:
+    that:
+      - haproxy_tls_cert | length > 0
+      - haproxy_tls_key | length > 0
+    fail_msg: >-
+      haproxy_tls_cert y haproxy_tls_key son obligatorias: HAProxy termina aqui
+      el TLS del issuer y sin certificado no hay nada que desplegar. Van
+      cifradas con ansible-vault. La CA interna no vale: el issuer lo consumen
+      clientes que no la conocen.
+    success_msg: El certificado del sitio esta presente.
+
+- name: Directorio de TLS
+  ansible.builtin.file:
+    path: "{{ haproxy_config_dir }}/tls"
+    state: directory
+    mode: "0750"
+
+- name: Certificado y clave, en el fichero unico que HAProxy espera
+  # HAProxy quiere los dos concatenados en un solo .pem. no_log: la clave
+  # privada entera se imprimiria con un -v o un --diff.
+  ansible.builtin.copy:
+    content: |
+      {{ haproxy_tls_cert }}
+      {{ haproxy_tls_key }}
+    dest: "{{ haproxy_config_dir }}/tls/site.pem"
+    mode: "0600"
+  notify: Reiniciar haproxy
+  no_log: true
+
+- name: Configuracion
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: "{{ haproxy_config_dir }}/haproxy.cfg"
+    mode: "0644"
+  notify: Reiniciar haproxy
+
+- name: Compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ haproxy_config_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Reiniciar haproxy
+
+- name: Levantar haproxy
+  community.docker.docker_compose_v2:
+    project_src: "{{ haproxy_config_dir }}"
+    state: present
