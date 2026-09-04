@@ -31,6 +31,19 @@ dex_valkey_sentinel_port: 26379
 # ajeno sin cifrar.
 dex_valkey_tls_ca_cert: /etc/dex/internal-ca.pem
 
+# Interfaz por la que se publican los puertos del contenedor. El valor de
+# fabrica no cambia nada de lo de hoy.
+#
+# Con el balanceador delante (fase 3) esto pasa a ser un REQUISITO y no un
+# ajuste: HAProxy termina el TLS y habla en claro con estos puertos, y el trato
+# de trustForwardedFor es que el balanceador sea el unico camino hasta el
+# panel. Quien alcance el 5560 de un nodo directamente elige su propia
+# X-Forwarded-For, y entonces cada peticion anonima estrena clave en un Valkey
+# que corre con noeviction: llenarlo deja a los administradores sin poder crear
+# sesiones. Un cortafuegos delante sirve igual; este rol no lo gestiona.
+dex_http_bind: "0.0.0.0"
+dex_grpc_bind: "0.0.0.0"
+
 # El certificado que dex PRESENTA a Valkey, no el que verifica. Los nodos
 # corren con tls-auth-clients yes y sin esto rechazan la conexion: el cliente
 # solo ve "Server closed the connection", el motivo esta en el log del

@@ -13,8 +13,13 @@ services:
             - {{ dex_config_dir }}/dex-cert.pem:/etc/dex/dex-cert.pem:ro
             - {{ dex_config_dir }}/dex-key.pem:/etc/dex/dex-key.pem:ro
         ports:
-            - "{{ dex_http_port }}:5556"
-            - "{{ dex_grpc_port }}:5557"
+            # El default('0.0.0.0', true) del segundo argumento cubre tambien
+            # la cadena vacia: sin el, un dex_http_bind: "" renderiza
+            # ":5556:5556" y Docker publica en todas las interfaces sin que
+            # nadie lo haya pedido, que es justo lo contrario de lo que
+            # queria quien vacio la variable.
+            - "{{ dex_http_bind | default('0.0.0.0', true) }}:{{ dex_http_port }}:5556"
+            - "{{ dex_grpc_bind | default('0.0.0.0', true) }}:{{ dex_grpc_port }}:5557"
             - "127.0.0.1:{{ dex_telemetry_port }}:5558"
         healthcheck:
             test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5558/healthz"]

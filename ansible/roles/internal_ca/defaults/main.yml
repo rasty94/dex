@@ -9,3 +9,16 @@ internal_ca_cert_path: "{{ internal_ca_dir }}/ca-cert.pem"
 internal_ca_common_name: "Dex Internal CA"
 internal_ca_validity_days: 3650
 internal_ca_host_cert_validity_days: 825
+
+# SAN adicionales para el certificado de cada host, sobre las dos que ya lleva
+# (su propio hostname y su ansible_host). Existen por el passthrough del gRPC
+# del balanceador: con HAProxy en mode tcp, el panel marca el nombre del
+# balanceador pero la sesion TLS se negocia contra el nodo de dex que toque, y
+# Go verifica el certificado contra el nombre que marco. Sin el nombre del
+# balanceador aqui, el panel no conecta.
+#
+# Formato de community.crypto: "DNS:nombre" o "IP:1.2.3.4".
+#
+# Cambiarlas reemite el certificado del host, y eso reinicia dex. Es lo que se
+# quiere, pero conviene saberlo antes de aplicarlo.
+internal_ca_extra_sans: []

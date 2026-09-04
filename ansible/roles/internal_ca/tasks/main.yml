@@ -63,9 +63,10 @@
     path: "{{ internal_ca_dir }}/{{ inventory_hostname }}.csr"
     privatekey_path: "{{ internal_ca_dir }}/{{ inventory_hostname }}-key.pem"
     common_name: "{{ inventory_hostname }}"
-    subject_alt_name:
-      - "DNS:{{ inventory_hostname }}"
-      - "IP:{{ ansible_host | default('127.0.0.1') }}"
+    subject_alt_name: >-
+      {{ ['DNS:' ~ inventory_hostname,
+          'IP:' ~ (ansible_host | default('127.0.0.1'))]
+         + internal_ca_extra_sans }}
   delegate_to: localhost
 
 - name: Certificado del host, firmado por la CA interna
