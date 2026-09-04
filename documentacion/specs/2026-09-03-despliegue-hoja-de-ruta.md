@@ -19,7 +19,7 @@ El orden no es arbitrario: cada fase necesita que la anterior exista.
 | 1 | `pkg/valkey` con standalone, sentinel y cluster | Especificada |
 | 2 | Roles `valkey`, `dex` y `dex_dashboard`, con el panel replicado | Especificada |
 | 3 | El balanceador: HAProxy y keepalived | Entregada |
-| 4 | MariaDB: despliegue y alta disponibilidad | Pendiente de spec |
+| 4 | MariaDB: despliegue y alta disponibilidad | En spec |
 | 5 | La colección de Ansible publicable | Pendiente de spec |
 
 Las fases 1 y 2 están en
@@ -54,8 +54,35 @@ La topología elegida para la fase 4:
 - **Primario y réplica con replicación semisíncrona.** Semisíncrona y no asíncrona
   porque en un failover asíncrono se pierden las escrituras más recientes, y aquí eso
   son refresh tokens recién emitidos.
-- **ProxySQL** (GPLv3) como punto de entrada: dex apunta ahí y no al primario.
-- **orchestrator** (Apache 2.0) para detectar la caída y promover.
+- **HAProxy** como punto de entrada: dex apunta ahí y no al primario.
+- **orchestrator** (Apache 2.0) para detectar la caída y promover, en modo raft a tres
+  para que la decisión tenga quorum con solo dos nodos de datos. El tercer voto vive en
+  una máquina que no es de base de datos, igual que el tercer sentinel vive en un nodo
+  de dex.
+
+### Corregido: HAProxy en vez de ProxySQL
+
+Esta decisión decía **ProxySQL**, y se toma al revés. Se escribió antes de que existiera
+la fase 3, cuando no había ningún balanceador en el despliegue; ahora hay uno desplegado,
+entendido y probado.
+
+Lo único que ProxySQL aporta de verdad —enrutado por consulta y reparto de lecturas— está
+descartado: todo va al primario, porque con replicación por debajo una lectura enviada a
+una réplica puede no ver un código de autorización recién escrito. Lo que quedaba era el
+multiplexado de conexiones, y aquí eso no es una ventaja sino un riesgo: dex manda
+`SET transaction_isolation='SERIALIZABLE'` en cada conexión
+([storage/sql/config.go:236](../../storage/sql/config.go#L236)), y un proxy que multiplexa
+tiene que rastrear esa variable o dex acaba corriendo en el `REPEATABLE-READ` por defecto
+de MariaDB sin decir nada — la misma pérdida silenciosa de corrección por la que se
+descartó Galera, entrando por otra puerta. **Con HAProxy en `mode tcp` el problema no
+existe**: es un tubo de bytes y la sesión es de punta a punta con el backend. Dex además
+ya hace su propio pool, así que el de ProxySQL no resuelve nada que tengamos.
+
+Lo que ProxySQL sí daba y hay que sustituir: sabía cuál era el primario solo, vigilando el
+`read_only` de cada nodo. HAProxy no habla SQL, así que cada nodo corre un **agente de
+sonda** que responde 200 solo si es primario escribible, y HAProxy manda al único backend
+que pasa la sonda. La sonda es la fuente de verdad: si orchestrator se equivoca o se cae,
+HAProxy sigue mandando al nodo que se declara escribible.
 
 ### El panel se replica, y eso abre un agujero conocido
 
@@ -79,6 +106,21 @@ más: su razonamiento era correcto y dejó de serlo por un cambio nuestro.
   tipo `5.5.5-10.11.2-MariaDB`. Se documenta como no soportado.
 - **Alta disponibilidad del balanceador más allá de keepalived**: dos nodos con VRRP,
   no un balanceador de balanceadores.
+
+### MariaDB espera el ack DESPUÉS de confirmar, y eso deshace media decisión
+
+Comprobado contra un `mariadb:11.4` de verdad, no leído: la semisíncrona viene integrada
+(no hace falta instalar plugin) y
+**`rpl_semi_sync_master_wait_point` vale `AFTER_COMMIT` por defecto**. MySQL trae
+`AFTER_SYNC`; MariaDB no.
+
+Importa porque deshace justo el motivo por el que se eligió semisíncrona. Con
+`AFTER_COMMIT` el primario **confirma y después** espera el ack de la réplica: si muere
+en ese hueco, la transacción está confirmada localmente y en ninguna réplica. Un cliente
+pudo ver el commit, y la promoción se la lleva por delante. Con `AFTER_SYNC` el primario
+espera el ack **antes** de confirmar, que es lo que se creía estar comprando.
+
+`AFTER_SYNC` está disponible y se puede poner en caliente (probado). La fase 4 lo fija.
 
 ## Qué hay que verificar y nadie ha verificado
 
