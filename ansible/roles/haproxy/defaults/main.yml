@@ -38,3 +38,16 @@ haproxy_dex_health_path: "{{ (haproxy_dex_issuer | urlsplit('path')) | regex_rep
 
 # El /healthz del panel cuelga de la raiz de su propio puerto, no del baseURL.
 haproxy_dashboard_health_path: /healthz
+
+# El nombre por el que se publica el panel. El reparto es por cabecera Host y
+# no por ruta: ver el comentario largo de haproxy.cfg.j2. Sale del baseURL, con
+# lo que el nombre esta declarado en un solo sitio; se lee por hostvars porque
+# dex_dashboard_base_url lo define el inventario en las vars de su grupo y un
+# host de loadbalancer no lo tiene.
+#
+# Tiene que ser DISTINTO del nombre del issuer, y el certificado del sitio
+# (haproxy_tls_cert) tiene que cubrir los dos: o con las dos SAN, o con un
+# comodin. El rol no lo comprueba --no abre el certificado-- asi que si no lo
+# cubre, el fallo se ve como un aviso de certificado en el navegador.
+haproxy_dashboard_base_url: "{{ hostvars[groups['dex_dashboard'][0]].dex_dashboard_base_url }}"
+haproxy_dashboard_host: "{{ haproxy_dashboard_base_url | urlsplit('hostname') }}"

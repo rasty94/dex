@@ -29,15 +29,20 @@ frontend fe_https
     http-request set-header X-Forwarded-For %[src]
     http-request set-header X-Forwarded-Proto https
 
-    # Una sola regla y el resto por defecto. La tentacion es escribir tambien
-    # "use_backend be_dex if { path_beg <ruta del issuer> }", y con un issuer
-    # sin ruta eso renderiza "path_beg " sin argumento: HAProxy no arranca.
-    # Con default_backend no hace falta.
+    # Se reparte por NOMBRE, no por ruta, y no es una preferencia estetica.
+    # El panel registra todas sus rutas en la raiz (/callback, /clients... en
+    # cmd/dex-dashboard/main.go) y su baseURL solo se usa para construir el
+    # redirect_uri de OIDC: no sabe nada del prefijo por el que se le publica.
+    # Servido bajo /dex-dashboard recibia "/dex-dashboard/callback", eso caia
+    # en su catch-all "/", no habia sesion, arrancaba un login, dex devolvia al
+    # callback y vuelta a empezar. Bucle infinito, 11 intentos por login,
+    # comprobado en vivo. Quitarle el prefijo en el balanceador arregla la
+    # entrada y no la salida: cada enlace de cada plantilla sigue saliendo sin
+    # el. Con un nombre propio el problema no existe.
     #
-    # El orden importaria si hubiera dos reglas: /dex-dashboard empieza por
-    # /dex, asi que al reves el panel no recibiria nunca nada. Queda escrito
-    # porque es el fallo que aparece en cuanto alguien anada la segunda.
-    use_backend be_dashboard if { path_beg /dex-dashboard }
+    # Dex si sirve bajo la ruta de su issuer, asi que se queda de backend por
+    # defecto y no necesita regla.
+    use_backend be_dashboard if { req.hdr(host) -i {{ haproxy_dashboard_host }} }
     default_backend be_dex
 
 frontend fe_grpc
