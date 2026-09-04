@@ -10,7 +10,14 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 
 ---
 
-## [Unreleased]
+## [2.1.0] — 2026-09-04
+
+Estado compartido en Valkey y despliegue en alta disponibilidad con Ansible. Un
+proceso suelto sigue funcionando exactamente igual que antes: todo lo de aquí se
+enciende configurando `valkey.addresses`, y sin esa clave cada réplica guarda lo
+suyo en memoria. Es un menor y no un mayor porque nada de lo publicado en la
+`fork-v2.0.0` cambia de forma; lo que cambia es lo que se puede compartir entre
+réplicas cuando hay más de una.
 
 ### Añadido
 
