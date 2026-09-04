@@ -285,9 +285,10 @@
       elección de cada componente cuando el almacén se cae y las dos métricas que lo
       dicen.
       **Lo que destapó leer el log en vivo**: el aviso, tal y como lo escribí, le contaba
-      al panel que sus contadores del limitador estaban en peligro. El panel no guarda
-      ninguno —su `attemptLimiter` es local—. Un mensaje compartido por dos procesos no
-      puede nombrar lo que solo tiene uno.
+      al panel que sus contadores del limitador estaban en peligro. El panel no guardaba
+      ninguno —su `attemptLimiter` era local; hoy solo lo es cuando el panel no tiene
+      `valkey` configurado, ver la entrada del despliegue con Ansible más abajo—. Un
+      mensaje compartido por dos procesos no puede nombrar lo que solo tiene uno.
 
 ### 21. 🛠️ API de Gestión gRPC (con Autenticación)
 
