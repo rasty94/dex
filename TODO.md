@@ -107,7 +107,10 @@
       está: dex se niega a arrancar, que es lo correcto, pero hay que reintentar en vez de
       darlo por muerto. Sigue abierta con el rol de Ansible desplegado: ver
       [despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
-- [ ] **Fases 3, 4 y 5 del despliegue en alta disponibilidad**, con sus decisiones ya
+- [ ] **Fases 3, 4 y 5 del despliegue en alta disponibilidad.** La **fase 3 ya tiene
+      spec**:
+      [2026-09-04-balanceador-haproxy-keepalived.md](documentacion/specs/2026-09-04-balanceador-haproxy-keepalived.md).
+      Las otras dos, con sus decisiones ya
       tomadas pero sin spec propia todavía —el rol de Ansible de la fase 2 ya está en
       [DONE.md](DONE.md)—, ver la
       [hoja de ruta](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md):

@@ -18,12 +18,14 @@ El orden no es arbitrario: cada fase necesita que la anterior exista.
 | --- | --- | --- |
 | 1 | `pkg/valkey` con standalone, sentinel y cluster | Especificada |
 | 2 | Roles `valkey`, `dex` y `dex_dashboard`, con el panel replicado | Especificada |
-| 3 | El balanceador: HAProxy y keepalived | Pendiente de spec |
+| 3 | El balanceador: HAProxy y keepalived | Especificada |
 | 4 | MariaDB: despliegue y alta disponibilidad | Pendiente de spec |
 | 5 | La colección de Ansible publicable | Pendiente de spec |
 
 Las fases 1 y 2 están en
-[2026-09-03-despliegue-ansible-valkey-ha.md](2026-09-03-despliegue-ansible-valkey-ha.md).
+[2026-09-03-despliegue-ansible-valkey-ha.md](2026-09-03-despliegue-ansible-valkey-ha.md)
+y la 3 en
+[2026-09-04-balanceador-haproxy-keepalived.md](2026-09-04-balanceador-haproxy-keepalived.md).
 
 ## Decisiones ya tomadas
 
