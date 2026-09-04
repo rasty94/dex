@@ -21,6 +21,11 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
   equivocada para dex diciendo cual es el fichero. Uno sin el otro es un error de
   arranque.
 
+  En la imagen Docker son `DEX_VALKEY_TLS_CERT` y `DEX_VALKEY_TLS_KEY`, y
+  `DEX_DASHBOARD_VALKEY_TLS_CERT` / `_KEY` para el panel. Sin ellas, el camino de
+  configuracion por entorno no podia hablar con un servidor que exigiera
+  certificado: solo el rol de Ansible, que escribe el fichero directamente.
+
 ### Seguridad
 
 - **El bus del cluster de Valkey ya va autenticado.** El rol de Ansible ponia
