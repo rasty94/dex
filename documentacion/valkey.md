@@ -30,7 +30,22 @@ valkey:
   tls:
     caCert: /etc/dex/valkey-ca.pem
     insecureSkipVerify: false
+    cert: /etc/dex/dex-cert.pem   # solo si el servidor exige certificado de cliente
+    key: /etc/dex/dex-key.pem     # va con cert: uno sin el otro es un error de arranque
 ```
+
+`cert` y `key` son el certificado que dex **presenta**, no el que verifica —eso es
+`caCert`—. Hacen falta cuando el servidor corre con `tls-auth-clients yes`, que es el
+valor de fábrica y el que deja el rol de Ansible. Sin ellos la conexión muere en el
+handshake con `remote error: tls: certificate required`, y el motivo real solo aparece
+en el log del servidor. El par se lee al arrancar: una ruta equivocada para dex ahí
+mismo diciendo cuál es, en vez de fallar en cada conexión.
+
+Esa directiva no es solo cosa de los clientes: es global, así que también gobierna las
+conexiones que los nodos se hacen entre sí. Dejarla en `no` para ahorrarles el
+certificado a los clientes deja el **bus del cluster** cifrado pero sin autenticar —el
+bus no tiene un `requirepass` equivalente—, y entonces cualquiera que tenga la CA puede
+unirse al cluster.
 
 `mode` es explícito a propósito: deducirlo del número de direcciones falla en
 silencio. Dadas varias direcciones que resultan no formar un cluster, el cliente no

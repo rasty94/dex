@@ -395,6 +395,57 @@ panel sigue sin decir la verdad. En TODO.md y en
 
 ---
 
+### 24. 🔐 Certificado de cliente en Valkey, y el bus del cluster autenticado
+
+> Cierra las dos entradas del TODO «La conexión con Valkey no presenta certificado de
+> cliente» y «En topología cluster, el bus queda sin autenticar». Iban por separado
+> porque parecían arreglos distintos; resultaron ser el mismo cambio.
+
+- [x] **`tls.cert` y `tls.key` en el bloque `valkey` de dex y del panel.**
+      `pkg/valkey` presenta ahora su propio certificado, no solo la CA. El par se lee
+      al arrancar y no en cada handshake: una ruta equivocada para dex diciendo cuál es
+      el fichero, en vez de fallar cada conexión con un error que solo ve el servidor.
+      `Validate` rechaza medio par —`cert` sin `key` o al revés— antes de mirar
+      `addresses`, porque es un error con o sin almacén compartido.
+- [x] **`tls-auth-clients` vuelve al `yes` de fábrica** en `managed.conf.j2` y en
+      `sentinel.conf.j2`. Dex reaprovecha el par que ya tenía para el TLS del gRPC; al
+      panel, que no sirve TLS propio, el rol le copia el suyo y lo monta.
+- [x] **El bus del cluster queda autenticado.** No hacía falta nada más: era
+      consecuencia directa de lo anterior.
+
+**Lo que destapó probarlo**, y es lo que convirtió dos entradas en una: `tls-auth-clients`
+**no es una directiva de clientes**. Es global, y gobierna también las conexiones que los
+nodos se hacen entre sí. La entrada del TODO la trataba como una concesión a `pkg/valkey`
+—«el cliente no sabe presentar certificado, así que se lo quitamos»— y en realidad era la
+única autenticación que el bus del cluster puede tener: el bus no tiene un `requirepass`
+equivalente. Con `no` puesto, bastaba con tener la CA para unirse al cluster. Por eso la
+segunda entrada decía «se cierra con la mitad de arriba» y por eso no había una mitad:
+había un solo cambio.
+
+Lo segundo: los cuatro `valkey-cli` del rol **ya pasaban `--cert` y `--key`** desde que se
+escribieron. Estaban mandando un certificado a un servidor configurado para no pedirlo ni
+aceptarlo. No era un fallo —no rompía nada— pero es la clase de línea que se lee como
+prueba de que algo está autenticado cuando no lo está.
+
+Lo tercero, del lado del test: ninguno de los dos binarios rechaza campos desconocidos,
+así que un tag `json` mal puesto en `TLSConfig` no habría fallado. Habría dejado el
+certificado sin cargar y el servidor rechazando todo, con el motivo solo en su log. De ahí
+el test que desmonta el bloque YAML **tal cual lo escribe el rol**, en vez de construir la
+struct en Go. Saboteado cambiando `cert` por `clientCert`: cae. Efecto lateral que no se
+buscaba: la validación del par a medias también lo caza.
+
+Verificado contra un `valkey/valkey:8-alpine` con `tls-auth-clients yes` y una CA de usar
+y tirar: con el par, `pkg/valkey.New` conecta y el `PING` responde; sin el par,
+`connect to valkey: remote error: tls: certificate required`. Las dos plantillas de
+configuración renderizadas con Jinja2 en las tres topologías más el caso sin certificado
+de cliente —ocho renders—, todas YAML válido y con el bloque `tls:` correcto.
+
+Queda documentado en despliegue-ansible.md un límite de migración que este cambio crea:
+**un sentinel ya desplegado no recibe el `yes`**, porque su fichero no se reescribe nunca.
+Sigue aceptando clientes sin certificado hasta que alguien lo migre a mano.
+
+---
+
 ## 🔄 Sincronización con upstream — bloques cerrados
 
 > Divergencia de partida: **313 commits de upstream / 52 nuestros** desde `99c4233`

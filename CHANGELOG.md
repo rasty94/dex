@@ -10,6 +10,37 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 
 ---
 
+## [Unreleased]
+
+### Añadido
+
+- `valkey.tls.cert` y `valkey.tls.key` en el bloque `valkey` de dex y del panel:
+  el certificado que el proceso **presenta** al servidor, no el que verifica. Hacen
+  falta cuando el servidor corre con `tls-auth-clients yes`, que es el valor de
+  fabrica. El par se lee al arrancar y no en cada handshake, asi que una ruta
+  equivocada para dex diciendo cual es el fichero. Uno sin el otro es un error de
+  arranque.
+
+### Seguridad
+
+- **El bus del cluster de Valkey ya va autenticado.** El rol de Ansible ponia
+  `tls-auth-clients no` en los nodos y en el sentinel porque el cliente no sabia
+  presentar certificado, y esa directiva no es solo de clientes: es global, asi que
+  tambien gobernaba las conexiones que los nodos se hacen entre si. El bus iba
+  cifrado pero sin autenticar --no tiene un `requirepass` equivalente-- y bastaba
+  tener la CA interna para unirse al cluster. Con el par en el cliente, las dos
+  plantillas vuelven al `yes` de fabrica.
+  - **Impacto en una migracion:** los nodos de datos reciben el cambio solos, pero
+    **un sentinel ya desplegado no**, porque su fichero no se reescribe nunca; sigue
+    aceptando clientes sin certificado hasta que se migre a mano. Y como la tanda de
+    Valkey va antes que la de dex, hay una ventana en la que los nodos exigen
+    certificado y dex todavia corre sin el: el proceso que ya esta arriba aguanta y
+    cae a sus contadores locales, pero uno que reinicie dentro de esa ventana no
+    levanta. Las dos cosas, con su receta, en
+    `documentacion/despliegue-ansible.md`.
+
+---
+
 ## [2.1.0] — 2026-09-04
 
 Estado compartido en Valkey y despliegue en alta disponibilidad con Ansible. Un
