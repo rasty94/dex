@@ -76,6 +76,18 @@
       tiene que quitar esas dos líneas y hacer que el rol copie también un
       certificado a los nodos de dex y del panel; con una sola de las dos
       mitades, el despliegue deja de arrancar.
+- [ ] **En topología cluster, el bus queda sin autenticar.** Es la consecuencia
+      con filo del `tls-auth-clients no` de la entrada de arriba, y merece
+      seguirse aparte porque no se arregla igual: los nodos se autentican entre
+      sí con `requirepass`, pero el **bus del cluster** —el puerto del nodo más
+      10000, por donde viaja el gossip y la migración de slots— no tiene
+      equivalente de `requirepass`. Su única autenticación posible es el
+      certificado de cliente que `tls-cluster yes` exigiría, y que acabamos de
+      desactivar para que dex pudiera conectar. Cifrado sigue estando; autenticado
+      no. Sale a la luz solo en `valkey_topology: cluster`: standalone y sentinel
+      no tienen bus. La rebaja no empeora nada de lo que ya funcionaba —ese camino
+      no arrancaba antes— pero antes de poner un cluster en una red donde no confíes
+      del todo, esto es lo que hay que cerrar, y se cierra con la mitad de arriba.
 - [ ] `Client.Key` en `pkg/valkey/valkey.go` no tiene más uso que su propio
       test: cada componente que necesita una clave pasa por `HashKey`. Un
       ayudante de clave sin hashear y sin usuarios invita a que alguien meta un
