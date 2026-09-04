@@ -1,0 +1,99 @@
+- name: Las variables sin valor por defecto son obligatorias
+  ansible.builtin.assert:
+    that:
+      - keepalived_vip | length > 0
+      - keepalived_interface | length > 0
+      - keepalived_router_id | int > 0
+      - keepalived_auth_pass | length > 0
+    fail_msg: >-
+      keepalived_vip, keepalived_interface, keepalived_router_id y
+      keepalived_auth_pass son obligatorias. El router_id tiene que ser
+      explicito: dos despliegues en la misma L2 con el mismo id se pelean por
+      la misma VIP.
+    success_msg: Las variables obligatorias de keepalived estan puestas.
+
+- name: La contrasena de VRRP se trunca a 8 caracteres
+  # Aviso y no fallo: VRRP funciona igual, y esto no es una credencial de
+  # acceso a datos sino la que evita que un vecino se meta en el grupo. Lo que
+  # no puede pasar es que el operador crea que tiene 20 caracteres de entropia
+  # cuando tiene 8.
+  ansible.builtin.debug:
+    msg: >-
+      keepalived_auth_pass tiene {{ keepalived_auth_pass | length }} caracteres
+      y VRRP solo usa los 8 primeros. Los demas no cuentan.
+  when: keepalived_auth_pass | length > 8
+
+- name: Cada nodo del grupo loadbalancer declara su prioridad en el inventario
+  # keepalived_priority NO se puede leer por hostvars si el host se apoya en el
+  # default del rol: hostvars trae las variables del inventario desde el
+  # principio, pero los defaults de un rol solo aparecen para los hosts que ya
+  # entraron en la tanda. Con serial: 1 eso es "todos menos el primero", y el
+  # calculo de abajo daria un falso verde. Se exige explicito, que ademas es lo
+  # correcto: quien es el MASTER es una decision del inventario, no un default.
+  ansible.builtin.assert:
+    that:
+      - (keepalived_declaradas | length) == (groups['loadbalancer'] | length)
+    fail_msg: >-
+      Algun host del grupo loadbalancer no declara keepalived_priority en el
+      inventario. Es lo que decide quien es el MASTER y no puede quedarse en el
+      default del rol, que seria el mismo para todos.
+    success_msg: Todos los nodos declaran su prioridad.
+  vars:
+    # selectattr(..., 'defined') y no map('extract', hostvars, 'clave'): el
+    # segundo NO devuelve un Undefined cuando la clave falta, revienta con
+    # "object of type 'HostVarsVars' has no attribute". El assert fallaba
+    # igual, pero con ese error en vez de con su propio fail_msg, que es justo
+    # el que dice como arreglarlo. map(attribute=..., default=none) tampoco
+    # sirve, por el mismo motivo. Comprobado con un host sin prioridad.
+    keepalived_declaradas: >-
+      {{ groups['loadbalancer'] | map('extract', hostvars)
+         | selectattr('keepalived_priority', 'defined') | list }}
+  run_once: true
+
+- name: La bajada por sonda tiene que poder cambiar quien manda
+  # Si la diferencia de prioridades entre los nodos es mayor que la bajada, el
+  # MASTER con HAProxy caido sigue siendo el de mas prioridad y la VIP no se
+  # mueve: keepalived queda configurado, arrancado, y sin hacer lo unico para
+  # lo que esta.
+  ansible.builtin.assert:
+    that:
+      - (keepalived_health_weight | int | abs) > ((keepalived_priorities | max) - (keepalived_priorities | min))
+    fail_msg: >-
+      keepalived_health_weight ({{ keepalived_health_weight }}) no supera la
+      diferencia de prioridades entre los nodos del grupo loadbalancer
+      ({{ (keepalived_priorities | max) - (keepalived_priorities | min) }}).
+      Con esto, HAProxy puede morir en el MASTER y la VIP no se movera nunca.
+    success_msg: La bajada por sonda supera la diferencia de prioridades.
+  vars:
+    keepalived_priorities: >-
+      {{ groups['loadbalancer'] | map('extract', hostvars)
+         | selectattr('keepalived_priority', 'defined')
+         | map(attribute='keepalived_priority') | map('int') | list }}
+  run_once: true
+
+- name: Directorio de configuracion
+  ansible.builtin.file:
+    path: "{{ keepalived_config_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Configuracion
+  # no_log: lleva auth_pass en claro.
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: "{{ keepalived_config_dir }}/keepalived.conf"
+    mode: "0600"
+  notify: Reiniciar keepalived
+  no_log: true
+
+- name: Compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ keepalived_config_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Reiniciar keepalived
+
+- name: Levantar keepalived
+  community.docker.docker_compose_v2:
+    project_src: "{{ keepalived_config_dir }}"
+    state: present

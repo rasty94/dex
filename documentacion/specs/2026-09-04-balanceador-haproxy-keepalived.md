@@ -98,7 +98,37 @@ del balanceador para los hosts del grupo `dex`.
 Se hace así y no con un certificado propio del balanceador porque en `mode tcp` el
 balanceador no presenta ninguno: el certificado que ve el cliente es el del backend.
 
-### 3.5 Ninguna afinidad de sesión, y se comprueba
+### 3.5 El panel va en su propio nombre, no en una ruta
+
+**Corregido después de probarlo, y no es un detalle de esta fase.** El inventario de la
+fase 2 ya traía `dex_dashboard_base_url: https://sso.interno/dex-dashboard`, y con eso
+no se puede entrar al panel.
+
+El panel registra **todas** sus rutas en la raíz
+([cmd/dex-dashboard/main.go:74](../../cmd/dex-dashboard/main.go#L74) y siguientes) y su
+`baseURL` se usa solo para construir el `redirect_uri` de OIDC
+([auth.go:190](../../cmd/dex-dashboard/auth.go#L190)). No sabe nada del prefijo por el
+que se le publica. Servido bajo `/dex-dashboard` recibe `/dex-dashboard/callback`, eso
+cae en su catch-all `"/"`, no hay sesión, arranca un login, dex devuelve al callback, y
+vuelta: **bucle infinito de redirecciones**, del que solo lo saca el limitador de
+intentos.
+
+Quitarle el prefijo en el balanceador (`replace-path`) arregla la entrada y **no la
+salida**: el callback completa y el panel redirige a `https://sso.interno/`, sin
+prefijo. Cada enlace de cada plantilla tiene el mismo problema.
+
+Así que el panel va en un nombre propio —`https://panel.interno/`— y el reparto es por
+cabecera `Host`. Dex no lo necesita: sirve bajo la ruta de su issuer, por eso se queda
+como backend por defecto.
+
+Lo que cuesta: **un nombre DNS más, y que el certificado del sitio cubra los dos** (dos
+SAN, o un comodín). El rol no lo comprueba porque no abre el certificado; queda dicho en
+sus defaults y en la documentación.
+
+Hacer el panel consciente del prefijo sigue siendo posible y sería trabajo de otra fase:
+tocaría cada ruta, cada redirección y cada plantilla.
+
+### 3.6 Ninguna afinidad de sesión, y se comprueba
 
 `balance roundrobin` y **ni `cookie` ni `stick-table` en ninguno de los dos backends
 HTTP**. Es lo que el estado compartido en Valkey existe para hacer innecesario, y una
@@ -146,10 +176,8 @@ se avisa — el mismo criterio que el `dex_valkey_password` del rol `valkey`.
   la elige quien llama. Con `set` se descarta lo que venga de fuera. Esto es la mitad
   del trato de `trustForwardedFor`; la otra mitad es §6.2.
 - `http-request set-header X-Forwarded-Proto https`
-- Reparto por ruta: `path_beg /dex-dashboard` → `be_dashboard`; `path_beg /dex` →
-  `be_dex`. En ese orden: `/dex-dashboard` empieza por `/dex` y con el orden inverso el
-  panel no recibiría nunca nada.
-- `default_backend be_dex`.
+- Reparto **por nombre**: `req.hdr(host) -i <nombre del panel>` → `be_dashboard`;
+  todo lo demás, `default_backend be_dex`. El porqué está en §3.5, y no es estético.
 
 **`fe_grpc`, puerto 5557, `mode tcp`:** sin `bind ssl`, sin cabeceras, `default_backend
 be_grpc`. No hay nada que mirar.

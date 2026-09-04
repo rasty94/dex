@@ -1,0 +1,18 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/keepalived/templates/.
+services:
+    keepalived:
+        image: {{ keepalived_image }}
+        container_name: {{ keepalived_container_name }}
+        restart: unless-stopped
+        # VRRP manda paquetes crudos y mueve direcciones en la interfaz del
+        # host. Sin red de host y sin estas capacidades el contenedor arranca
+        # y no hace nada, que es peor que fallar.
+        network_mode: host
+        cap_add:
+            - NET_ADMIN
+            - NET_BROADCAST
+            - NET_RAW
+        command: ["--copy-service", "--vrrp", "--log-detail", "--dont-fork"]
+        volumes:
+            - {{ keepalived_config_dir }}/keepalived.conf:/container/service/keepalived/assets/keepalived.conf:ro

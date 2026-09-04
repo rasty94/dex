@@ -57,6 +57,11 @@ dex_dashboard_valkey_tls_ca_cert: /etc/dex-dashboard/internal-ca.pem
 dex_dashboard_valkey_tls_cert: /etc/dex-dashboard/dashboard-cert.pem
 dex_dashboard_valkey_tls_key: /etc/dex-dashboard/dashboard-key.pem
 
+# Interfaz por la que se publica el puerto del panel. Ver el comentario de
+# dex_http_bind en los defaults del rol dex: con el balanceador delante y el
+# TLS terminado alli, esto es un requisito y no un ajuste.
+dex_dashboard_bind: "0.0.0.0"
+
 # X-Forwarded-For del limitador de intentos de login. Apagado por defecto: con
 # el encendido y sin un proxy delante que ponga la cabecera en TODAS las
 # peticiones, quien golpea el panel elige su propia clave del limitador, y esas

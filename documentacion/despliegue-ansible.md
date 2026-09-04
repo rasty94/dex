@@ -115,6 +115,15 @@ reescribe su propia configuración (`CONFIG REWRITE` en cada failover, `nodes.co
 cluster) y un rol que sobrescriba esos ficheros le devuelve al nodo un `replicaof`
 caducado, deshaciendo la promoción que acababa de pasar.
 
+### Aplicar las SAN del balanceador reinicia todos los dex
+
+`internal_ca_extra_sans` cambia el certificado de cada nodo de dex, y
+`community.crypto` lo reemite: cambia la huella y el handler reinicia el contenedor. Es
+lo que se quiere —sin ese certificado el panel no conecta por el balanceador— pero
+conviene saberlo antes: **la primera pasada con esa variable reinicia dex en todos los
+nodos**, de uno en uno por el `serial: 1`. Comprobado que con la misma lista otra vez
+sale `changed=0`, así que no reinicia en cada despliegue.
+
 ### Lo que un nodo ya desplegado no recibe
 
 La otra cara de esa regla, y conviene saberla **antes** de que muerda: como `valkey.conf`
@@ -208,17 +217,34 @@ La imagen se fija por variable (`dex_image`) a una etiqueta `fork-vX.Y.Z`, **nun
 `latest`**: con `serial: 1` sobre varios hosts, una etiqueta móvil puede cambiar de
 versión a mitad de la tanda entre el primer host actualizado y el último.
 
-## Qué tiene que hacer el balanceador
+## El balanceador
 
-El rol no lo instala ni lo configura — es la fase 3 de la hoja de ruta, con su propia
-spec pendiente (HAProxy + keepalived) — pero el despliegue ya cuenta con que exista
-desde el primer día: `dex_issuer` y `dex_dashboard_base_url` apuntan a su URL, nunca a
-la de un nodo, para que enchufarlo no obligue a reconfigurar nada.
+Ya no es algo pendiente: lo despliegan los roles `haproxy` y `keepalived` (fase 3), en
+la última tanda del playbook. `dex_issuer` y `dex_dashboard_base_url` apuntan a él, nunca
+a la de un nodo.
 
-Lo que tiene que hacer:
+**El panel va en un nombre propio, no en una ruta bajo el del issuer.** Esto se corrigió
+al probar el login de verdad: el panel registra todas sus rutas en la raíz y su `baseURL`
+solo construye el `redirect_uri` de OIDC, así que servido bajo `/dex-dashboard` recibe
+`/dex-dashboard/callback`, cae en su catch-all, arranca un login, dex devuelve al
+callback y vuelta — bucle infinito del que solo lo saca el limitador de intentos. El
+reparto es por cabecera `Host`: `panel.interno` al panel, todo lo demás a dex, que sí
+sirve bajo la ruta de su issuer.
+
+Consecuencia práctica: **hacen falta dos nombres DNS y un certificado que cubra los dos**
+(dos SAN o un comodín). El rol no lo comprueba —no abre el certificado—, así que si no
+los cubre el fallo se ve como un aviso de certificado en el navegador.
+
+Lo que hace:
 
 - **Repartir tráfico** entre los nodos del grupo `dex` y, por separado, entre los del
-  grupo `dex_dashboard`.
+  grupo `dex_dashboard`, con `balance roundrobin`.
+- **Pasar el gRPC en `mode tcp`, sin terminarlo.** El 5557 de dex ya sirve TLS con la CA
+  interna y el panel lo verifica; terminarlo en el balanceador cambiaría una credencial
+  que hoy no sale de la máquina —el token gRPC— por una que viaja sin cifrar. Eso obliga
+  a que el certificado de cada nodo de dex lleve el nombre del balanceador entre sus
+  SAN (`internal_ca_extra_sans`): el cliente marca ese nombre y la sesión TLS se negocia
+  contra el nodo que toque.
 - **Comprobar `/healthz`** de cada servicio antes de mandarle tráfico (ver la
   advertencia de la siguiente sección: la del panel no dice todo lo que parece decir).
 - **Poner `X-Forwarded-For`** en cada petición hacia el panel, y ser el único camino
@@ -231,6 +257,16 @@ Lo que tiene que hacer:
   anónima estrena clave en el Valkey compartido, que corre con `noeviction` — llenarlo
   deja sin poder crear sesiones a los administradores. Por eso viene apagado de fábrica
   y lo declara el inventario, no el rol.
+- **Ser el único camino hasta los nodos.** Es un requisito, no un consejo: HAProxy
+  termina el TLS y habla en claro con `:5556` y `:5560`, así que quien alcance esos
+  puertos directamente elige su propia `X-Forwarded-For`. Para eso están `dex_http_bind`,
+  `dex_grpc_bind` y `dex_dashboard_bind`, que atan los puertos a la interfaz privada; el
+  inventario de ejemplo los pone. Un cortafuegos delante sirve igual. Y la regla en
+  HAProxy es `set-header`, no `add-header`: con `add` queda delante la cabecera que
+  trajera el cliente y el panel lee esa.
+- **Que la red entre el balanceador y los nodos sea de confianza.** Por dentro va en
+  claro: cookies de sesión incluidas. Vale en una VLAN privada o entre máquinas del mismo
+  hipervisor; no vale si esa red no lo es.
 - **No hacer afinidad de sesión.** Es exactamente lo que el estado compartido en Valkey
   existe para hacer innecesario: las sesiones del panel y los contadores del limitador
   de login viven en Valkey, no en el proceso que atendió la petición anterior, así que
@@ -443,4 +479,48 @@ docker exec -e REDISCLI_AUTH valkey-sentinel \
     valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
     -p 26379 sentinel master dex
 # -> flags: master, sin s_down ni o_down, y num-slaves con las réplicas reales
+```
+
+### 5. VRRP: la IP flotante se mueve, y una sesión abierta sobrevive
+
+Lo único de la fase 3 que no se puede probar en una sola máquina. Dos contenedores con
+`NET_ADMIN` en el mismo host comparten pila de red y el resultado no dice nada del caso
+real, así que aquí no hay un test verde que no prueba nada: hay estos cuatro pasos.
+
+Todo lo demás del balanceador **sí** está probado contra contenedores de verdad: el
+reparto, las sondas, el `X-Forwarded-For`, el passthrough del gRPC con sus SAN, y una
+sesión de administrador atendida alternativamente por los dos paneles.
+
+```bash
+# 1. La VIP está en el MASTER y responde.
+ssh <lb-1>
+ip addr show <interfaz> | grep <vip>        # -> la VIP aparece aquí y no en lb-2
+curl -sk https://<vip>/dex/healthz          # -> 200
+
+# 2. Parar HAProxy en el MASTER mueve la VIP.
+docker stop haproxy
+# esperar mas de (keepalived_health_interval x keepalived_health_fall) segundos
+ssh <lb-2> "ip addr show <interfaz> | grep <vip>"   # -> ahora esta aqui
+curl -sk https://<vip>/dex/healthz                  # -> sigue 200
+```
+
+3. **Una sesión abierta en el panel sobrevive al salto.** Con sesión iniciada en el
+   panel *antes* del paso 2, recargar cualquier página después: tiene que seguir dentro,
+   sin volver a pedir credenciales. Es lo que demuestra que el balanceador y el estado
+   compartido se entienden; si pide login otra vez, el problema está en Valkey, no en
+   keepalived.
+
+4. **Levantar el primero.** `docker start haproxy` en `lb-1`. Con la configuración de
+   este rol la VIP vuelve, porque la prioridad se recupera al recuperarse la sonda.
+   Anotar lo que salga tal cual: si se ha añadido `nopreempt`, no vuelve, y eso también
+   es correcto.
+
+Y una comprobación que **no** es de VRRP pero pertenece a esta lista, porque tampoco se
+puede hacer en una máquina: que el certificado del sitio cubra **los dos nombres**, el
+del issuer y el del panel.
+
+```bash
+openssl s_client -connect <vip>:443 -servername <nombre-del-panel> </dev/null 2>/dev/null \
+    | openssl x509 -noout -ext subjectAltName
+# -> tienen que aparecer los dos nombres, o un comodin que los cubra
 ```

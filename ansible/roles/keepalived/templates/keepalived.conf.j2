@@ -1,0 +1,64 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/keepalived/templates/.
+
+global_defs {
+    # Sin esto, keepalived arranca y suelta "SECURITY VIOLATION - scripts are
+    # being executed but script_security not enabled" (visto con
+    # "keepalived -t" sobre este mismo fichero). Con la politica explicita, se
+    # niega a ejecutar un script que este en una ruta que pueda escribir un
+    # usuario que no sea root, en vez de ejecutarlo y avisar. Aqui el script
+    # es una cadena, no un fichero, asi que no cambia nada operativo: lo que
+    # cambia es que el aviso desaparece, y un arranque limpio es donde se ve
+    # el aviso que si importa.
+    enable_script_security
+    script_user root
+}
+
+# Una peticion de verdad, no un pidof. Un HAProxy vivo pero que no responde
+# --sin backends sanos, o con el fichero de configuracion roto tras un
+# despliegue a medias-- sigue estando en la tabla de procesos, asi que pidof
+# diria que todo va bien y la VIP se quedaria en un nodo que no sirve.
+#
+# haproxy_https_port y haproxy_dex_health_path salen de los defaults del rol
+# haproxy, que corre antes en la misma tanda (roles: [haproxy, keepalived]).
+# No se les pone un valor por defecto aqui a proposito: correr este rol solo
+# tiene que fallar con "undefined variable" y no sondear una ruta inventada
+# que devolveria 404 y dejaria la VIP saltando sin motivo.
+#
+# --no-check-certificate a proposito: se pregunta por 127.0.0.1 y el
+# certificado del sitio esta emitido para el nombre publico. Lo que se
+# comprueba aqui es que HAProxy responde, no que su certificado sea correcto.
+vrrp_script chk_haproxy {
+    script "/bin/sh -c 'wget -q -O /dev/null --no-check-certificate https://127.0.0.1:{{ haproxy_https_port | default(443) }}{{ haproxy_dex_health_path }}'"
+    interval {{ keepalived_health_interval }}
+    fall {{ keepalived_health_fall }}
+    rise {{ keepalived_health_rise }}
+    # weight negativo y no "fall a BACKUP": bajar la prioridad deja que el
+    # nodo se recupere solo cuando HAProxy vuelva, sin intervencion.
+    weight {{ keepalived_health_weight }}
+}
+
+vrrp_instance dex {
+    interface {{ keepalived_interface }}
+    virtual_router_id {{ keepalived_router_id }}
+    priority {{ keepalived_priority }}
+    advert_int 1
+
+    authentication {
+        auth_type PASS
+        # VRRP trunca esto a 8 caracteres. El rol avisa si llega uno mas
+        # largo: un secreto que el operador cree de 20 y en realidad es de 8
+        # es peor que uno corto a sabiendas.
+        auth_pass {{ keepalived_auth_pass }}
+    }
+
+    virtual_ipaddress {
+        {{ keepalived_vip }}
+    }
+
+    # Sin esto, keepalived arranca, la sonda corre y no sirve para nada: el
+    # resultado no toca la prioridad y la VIP no se mueve nunca.
+    track_script {
+        chk_haproxy
+    }
+}

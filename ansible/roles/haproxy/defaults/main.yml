@@ -1,0 +1,53 @@
+# La configuracion es entera de Ansible, al reves que en el rol valkey: HAProxy
+# no reescribe su propio fichero, asi que aqui no hace falta la separacion
+# managed.conf / valkey.conf.
+haproxy_config_dir: /etc/haproxy
+
+# Parametrizado por el mismo motivo que dex_container_name y
+# valkey_container_name: poder correr un converge de prueba en una maquina que
+# ya tenga otro haproxy suelto sin chocar con el.
+haproxy_container_name: haproxy
+haproxy_image: haproxy:3.0-alpine
+
+haproxy_https_port: 443
+haproxy_grpc_port: 5557
+
+# El certificado publico del sitio. Lo aporta el operador cifrado con
+# ansible-vault: no se emite aqui. La CA interna no vale para esto --el issuer
+# lo consumen clientes que no la conocen-- y Let's Encrypt exigiria que el
+# nombre resolviera desde internet, que es justo lo que un "sso.interno" no
+# hace. Sin valor por defecto a proposito: el assert de tasks/main.yml se
+# niega a desplegar sin ellos.
+haproxy_tls_cert: ""
+haproxy_tls_key: ""
+
+# La ruta de la sonda de dex sale del issuer y NO se escribe a mano: dex sirve
+# todo bajo la ruta de su issuer, asi que con https://sso.interno/dex la sonda
+# es /dex/healthz y con un issuer sin ruta seria /healthz. Fijarla funcionaria
+# en el inventario de ejemplo y dejaria todos los backends en DOWN en cualquier
+# otro.
+#
+# Ojo con leerlo como "dex_issuer" a secas: esa variable la define el
+# inventario en las vars del grupo dex, asi que un host del grupo loadbalancer
+# NO la tiene. Se lee del primer host de dex por hostvars, igual que las
+# plantillas de dex y del panel leen las direcciones de Valkey. A secas
+# funcionaria en cualquier converge donde el mismo host este en los dos grupos
+# y rompiria en el primer despliegue de verdad, que es la peor combinacion.
+haproxy_dex_issuer: "{{ hostvars[groups['dex'][0]].dex_issuer }}"
+haproxy_dex_health_path: "{{ (haproxy_dex_issuer | urlsplit('path')) | regex_replace('/$', '') }}/healthz"
+
+# El /healthz del panel cuelga de la raiz de su propio puerto, no del baseURL.
+haproxy_dashboard_health_path: /healthz
+
+# El nombre por el que se publica el panel. El reparto es por cabecera Host y
+# no por ruta: ver el comentario largo de haproxy.cfg.j2. Sale del baseURL, con
+# lo que el nombre esta declarado en un solo sitio; se lee por hostvars porque
+# dex_dashboard_base_url lo define el inventario en las vars de su grupo y un
+# host de loadbalancer no lo tiene.
+#
+# Tiene que ser DISTINTO del nombre del issuer, y el certificado del sitio
+# (haproxy_tls_cert) tiene que cubrir los dos: o con las dos SAN, o con un
+# comodin. El rol no lo comprueba --no abre el certificado-- asi que si no lo
+# cubre, el fallo se ve como un aviso de certificado en el navegador.
+haproxy_dashboard_base_url: "{{ hostvars[groups['dex_dashboard'][0]].dex_dashboard_base_url }}"
+haproxy_dashboard_host: "{{ haproxy_dashboard_base_url | urlsplit('hostname') }}"

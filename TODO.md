@@ -96,6 +96,19 @@
 
 - [ ] Provider para HashiCorp Vault: Leer el `adminPassword` y los app-credentials nativamente de Vault sin exponerlos en el `config.yaml`.
 - [ ] Helm Chart u Operator Kubernetes Mejorado: Adaptar configuraciones del Fork directamente en los values nativos del chart oficial de la comunidad.
+- [ ] **El panel no sabe servirse bajo un prefijo.** Registra todas sus rutas en la
+      raíz ([main.go:74](cmd/dex-dashboard/main.go#L74) y siguientes) y `baseURL` solo
+      construye el `redirect_uri` de OIDC
+      ([auth.go:190](cmd/dex-dashboard/auth.go#L190)). Publicado bajo
+      `https://sso.interno/dex-dashboard` recibe `/dex-dashboard/callback`, cae en su
+      catch-all `"/"`, arranca un login, dex devuelve al callback y vuelta: **bucle
+      infinito de redirecciones**, del que solo lo saca el limitador de intentos —11
+      por login, medido—. La fase 3 lo esquivó dándole un nombre propio y repartiendo
+      por `Host`, que funciona y cuesta un nombre DNS más y un certificado que cubra
+      los dos. Cerrarlo de verdad es registrar las rutas bajo la ruta del `baseURL` y
+      que cada redirección y cada enlace de plantilla la lleven. Lo que destapó
+      probarlo: quitar el prefijo en el balanceador arregla la **entrada** y no la
+      salida — el callback completa y el panel redirige a `/`, sin prefijo.
 - [ ] **Sondas que digan la verdad.** El orden de arranque está resuelto por dentro
       —`newAuthenticatorWithRetry` en [main.go:62](cmd/dex-dashboard/main.go#L62) reintenta
       el discovery, así que el panel puede levantarse antes que dex— pero las sondas no
@@ -107,15 +120,10 @@
       está: dex se niega a arrancar, que es lo correcto, pero hay que reintentar en vez de
       darlo por muerto. Sigue abierta con el rol de Ansible desplegado: ver
       [despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
-- [ ] **Fases 3, 4 y 5 del despliegue en alta disponibilidad.** La **fase 3 ya tiene
-      spec**:
-      [2026-09-04-balanceador-haproxy-keepalived.md](documentacion/specs/2026-09-04-balanceador-haproxy-keepalived.md).
-      Las otras dos, con sus decisiones ya
-      tomadas pero sin spec propia todavía —el rol de Ansible de la fase 2 ya está en
+- [ ] **Fases 4 y 5 del despliegue en alta disponibilidad**, con sus decisiones ya
+      tomadas pero sin spec propia todavía —las fases 1, 2 y 3 están en
       [DONE.md](DONE.md)—, ver la
       [hoja de ruta](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md):
-      - **Fase 3 — el balanceador**: HAProxy más keepalived (VRRP entre dos nodos, no
-        un balanceador de balanceadores).
       - **Fase 4 — MariaDB en alta disponibilidad**: primario y réplica con
         replicación semisíncrona, ProxySQL como punto de entrada, orchestrator para
         detectar la caída y promover. **Galera descartado, y no por gusto**: dex fija

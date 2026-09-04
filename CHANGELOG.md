@@ -10,6 +10,42 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 
 ---
 
+## [Unreleased]
+
+### Añadido
+
+- Roles de Ansible `haproxy` y `keepalived`: la entrada del despliegue. HAProxy
+  termina el TLS publico y reparte entre las replicas de dex y del panel;
+  keepalived mantiene una IP flotante entre dos balanceadores con VRRP, con una
+  sonda que hace una peticion de verdad a HAProxy en vez de mirar si el proceso
+  existe. El gRPC pasa en `mode tcp` sin terminarse: el 5557 de dex ya sirve TLS
+  y terminarlo aqui cambiaria una credencial que hoy no sale de la maquina por
+  una que viaja sin cifrar.
+- `internal_ca_extra_sans`: SAN adicionales en el certificado de cada host, que
+  es lo que hace posible el passthrough del gRPC. Aplicarla reemite el
+  certificado de todos los nodos de dex y los reinicia, de uno en uno.
+- `dex_http_bind`, `dex_grpc_bind` y `dex_dashboard_bind`: la interfaz por la que
+  se publican los puertos. Con el TLS terminado en el balanceador dejan de ser un
+  ajuste y pasan a ser un requisito, porque el trato de `trustForwardedFor` es
+  que el balanceador sea el unico camino.
+
+### Cambiado
+
+- **El panel se publica en un nombre propio, no en una ruta bajo el del issuer.**
+  El inventario de ejemplo pasa de `https://sso.interno/dex-dashboard` a
+  `https://panel.interno/`, y el balanceador reparte por cabecera `Host`.
+  - **Motivo:** el panel registra todas sus rutas en la raiz y su `baseURL` solo
+    construye el `redirect_uri` de OIDC, asi que bajo un prefijo recibe
+    `/dex-dashboard/callback`, cae en su catch-all, arranca un login, dex
+    devuelve al callback y vuelta: bucle infinito de redirecciones del que solo
+    lo saca el limitador de intentos. Quitarle el prefijo en el balanceador
+    arregla la entrada y no la salida.
+  - **Impacto:** hacen falta dos nombres DNS y un certificado que cubra los dos.
+    Quien tuviera el panel bajo una ruta no podia entrar en el, asi que no hay
+    despliegue que romper.
+
+---
+
 ## [2.1.0] — 2026-09-04
 
 Estado compartido en Valkey y despliegue en alta disponibilidad con Ansible. Un

@@ -15,4 +15,7 @@ services:
             - {{ dex_dashboard_config_dir }}/dashboard-cert.pem:/etc/dex-dashboard/dashboard-cert.pem:ro
             - {{ dex_dashboard_config_dir }}/dashboard-key.pem:/etc/dex-dashboard/dashboard-key.pem:ro
         ports:
-            - "{{ dex_dashboard_listen_port }}:5560"
+            # Mismo default('0.0.0.0', true) que en el rol dex, y por lo mismo:
+            # una cadena vacia renderizaria ":5560:5560" y publicaria en todas
+            # las interfaces.
+            - "{{ dex_dashboard_bind | default('0.0.0.0', true) }}:{{ dex_dashboard_listen_port }}:5560"
