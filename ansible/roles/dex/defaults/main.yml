@@ -17,6 +17,20 @@ dex_valkey_key_prefix: "dex:"
 dex_valkey_port: 6379
 dex_valkey_sentinel_port: 26379
 
+# El rol valkey deja sus nodos escuchando SOLO en TLS (port 0 mas tls-port en
+# managed.conf.j2), asi que sin este certificado dex habla RESP en claro
+# contra un listener TLS, el Ping de pkg/valkey.New falla y dex no arranca.
+#
+# Es la ruta DENTRO del contenedor, no la del host: la CA se copia a
+# {{ dex_config_dir }}/internal-ca.pem y docker-compose.yml.j2 la monta en
+# /etc/dex/internal-ca.pem. Por eso vive en los defaults de cada rol y no en
+# group_vars: el panel monta la suya en /etc/dex-dashboard/ y un solo valor
+# compartido no puede ser correcto para los dos contenedores.
+#
+# Vaciarla ("") apaga el bloque tls:, para quien apunte el rol a un Valkey
+# ajeno sin cifrar.
+dex_valkey_tls_ca_cert: /etc/dex/internal-ca.pem
+
 # Sin conectores externos, dex sirve con su base de contrasenas propia (el
 # mismo por defecto que trae config.yaml.dist). Rellenar dex_connectors con
 # los bloques de conector de verdad, tal cual van en config.yaml.

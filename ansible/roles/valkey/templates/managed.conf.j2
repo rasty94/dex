@@ -6,6 +6,15 @@ tls-cert-file /etc/valkey/tls/node.crt
 tls-key-file /etc/valkey/tls/node.key
 tls-ca-cert-file /etc/valkey/tls/ca.crt
 tls-replication yes
+# Los clientes se autentican con requirepass, no con un certificado propio:
+# tls-auth-clients viene en "yes" de fabrica y entonces el servidor exige
+# certificado de cliente, que es justo lo que pkg/valkey no sabe presentar
+# (su bloque tls: solo tiene caCert e insecureSkipVerify). Comprobado en vivo
+# contra un nodo TLS-only: con el valor de fabrica, un cliente que solo trae
+# la CA recibe "Server closed the connection"; con esto, PONG. El cifrado y
+# la verificacion del servidor siguen; lo que se deja de exigir es el
+# certificado del lado del cliente.
+tls-auth-clients no
 {% if valkey_topology == 'cluster' %}
 tls-cluster yes
 cluster-enabled yes

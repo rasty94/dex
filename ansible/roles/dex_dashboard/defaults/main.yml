@@ -35,3 +35,13 @@ dex_dashboard_grpc_address: "127.0.0.1:{{ dex_grpc_port | default(5557) }}"
 # config.dashboard.docker.yaml (DEX_DASHBOARD_VALKEY_KEY_PREFIX) y que ya usa
 # Ejemplos/dashboard.
 dex_dashboard_valkey_key_prefix: "dex-dashboard:"
+
+# La CA interna con la que el panel verifica el TLS de Valkey (el rol valkey
+# deja sus nodos escuchando solo en TLS: sin esto el panel habla RESP en claro
+# contra un listener TLS y no arranca). Variable propia de este rol, como
+# dex_dashboard_valkey_key_prefix de arriba y por el mismo motivo: es la ruta
+# de DENTRO de este contenedor, y docker-compose.yml.j2 monta la CA en
+# /etc/dex-dashboard/, no en /etc/dex/ como el rol dex. Ningun valor unico en
+# group_vars puede ser correcto para los dos. Vaciarla ("") apaga el bloque
+# tls:, para quien apunte el panel a un Valkey ajeno sin cifrar.
+dex_dashboard_valkey_tls_ca_cert: /etc/dex-dashboard/internal-ca.pem

@@ -61,7 +61,7 @@ valkey:
   username: {{ dex_valkey_username | to_json }}
 {% endif %}
   password: {{ dex_valkey_password | to_json }}
-{% if dex_valkey_tls_ca_cert is defined %}
+{% if dex_valkey_tls_ca_cert | default('') %}
   tls:
     caCert: {{ dex_valkey_tls_ca_cert }}
 {% endif %}
