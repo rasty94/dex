@@ -12,6 +12,14 @@ completa está en
 
 ### En los nodos de destino
 
+- **Un usuario con `sudo`.** Las tandas de `valkey`, `dex` y el panel llevan
+  `become: true`: escriben en `/etc/valkey`, `/etc/dex` y `/etc/dex-dashboard`, con
+  propietarios que son los usuarios de dentro de los contenedores (999, 1001), y hablan
+  con el demonio de Docker. La tanda de la CA interna **no** escala, a propósito: solo
+  escribe en el nodo de control, y la clave privada de la CA no tiene por qué acabar
+  siendo de root allí. Un inventario que no necesite escalar —el converge local, que
+  escribe dentro del propio árbol de trabajo— lo apaga con `ansible_become: false` en
+  sus hosts, que es variable de conexión y gana a la directiva de la tanda.
 - **Docker**, con el plugin `compose`. El rol usa
   `community.docker.docker_compose_v2` y `community.docker.docker_container_exec`; no
   instala Docker por sí mismo.
