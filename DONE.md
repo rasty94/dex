@@ -4,7 +4,7 @@
 > trabajo vivo. La numeración de secciones es la histórica del TODO original, así
 > que las referencias antiguas siguen resolviendo.
 >
-> Última actualización: 2026-09-03
+> Última actualización: 2026-09-04
 
 ---
 
@@ -285,9 +285,10 @@
       elección de cada componente cuando el almacén se cae y las dos métricas que lo
       dicen.
       **Lo que destapó leer el log en vivo**: el aviso, tal y como lo escribí, le contaba
-      al panel que sus contadores del limitador estaban en peligro. El panel no guarda
-      ninguno —su `attemptLimiter` es local—. Un mensaje compartido por dos procesos no
-      puede nombrar lo que solo tiene uno.
+      al panel que sus contadores del limitador estaban en peligro. El panel no guardaba
+      ninguno —su `attemptLimiter` era local; hoy solo lo es cuando el panel no tiene
+      `valkey` configurado, ver la entrada del despliegue con Ansible más abajo—. Un
+      mensaje compartido por dos procesos no puede nombrar lo que solo tiene uno.
 
 ### 21. 🛠️ API de Gestión gRPC (con Autenticación)
 
@@ -301,6 +302,96 @@
 - [x] `TestHandlePassword`: el `// NOSONAR` de `dc6ebdcf` quedó dentro de un literal JSON, invalidando la config del conector mock. El conector no abría y el grant `password` respondía 400 en vez de 401 ante credenciales inválidas.
 - [x] `TestVerifyUnsignedMessageAndSignedAssertionWithRootXmlNs`: `testdata/oam-ca.pem` caducó en junio de 2026 y no tenemos la clave privada para refirmar los fixtures. El reloj de validación se fija a 2020 para seguir verificando la firma.
     - ⏰ `testdata/idp-cert.pem` caduca en enero de 2027, pero ya queda cubierto por el mismo reloj fijo.
+
+### 23. 🚀 Despliegue con Ansible — Valkey en alta disponibilidad y el compose de producción
+
+> Fases 1 y 2 de la
+> [hoja de ruta del despliegue](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md).
+> Cierra las tres entradas del TODO «Valkey es hoy un punto único de fallo», «Rol de
+> Ansible para desplegar el fork» y «Un `docker compose` de producción, separado de los
+> ejemplos». Documentación completa en
+> [despliegue-ansible.md](documentacion/despliegue-ansible.md); spec en
+> [2026-09-03-despliegue-ansible-valkey-ha.md](documentacion/specs/2026-09-03-despliegue-ansible-valkey-ha.md).
+
+- [x] **`pkg/valkey` ya no admite una sola dirección.** `Config.Mode` explícito
+      (`standalone`/`sentinel`/`cluster` — deducirlo del número de direcciones falla en
+      silencio: con varias direcciones que no forman un cluster, `valkey-go` cae a
+      hablar con una sola sin decirlo) y `Config.Addresses` como lista, con
+      `Config.MasterSet` para sentinel. `valkey-go` sigue el failover de sentinel y las
+      redirecciones del cluster sin que dex tenga que hacer nada; verificado en vivo
+      contra las dos topologías, incluido matar el master de sentinel y comprobar que
+      el limitador de login sigue contando el mismo presupuesto tras la promoción.
+      **Lo que destapó probarlo**: el campo lápida `Config.Address string` —cuyo único
+      papel es que `Validate` falle con un mensaje claro ante la forma vieja del
+      config, no un alias silencioso— se pagó solo a los pocos minutos de escribirlo:
+      al reconstruir `Ejemplos/dashboard`, `config.dashboard.docker.yaml` —que ningún
+      brief de esta tanda de tareas nombraba— seguía renderizando `address:` singular,
+      y el panel se cayó con el error nuevo en vez de arrancar callado y sin almacén
+      compartido, que es exactamente el fallo silencioso que la lápida existe para
+      convertir en ruidoso.
+- [x] **Rol de Ansible que despliega dex, el panel y Valkey** (`ansible/`): cuatro
+      roles (`internal_ca`, `valkey`, `dex`, `dex_dashboard`) y un playbook que los
+      ordena, las tres topologías de Valkey, secretos en `ansible-vault` con el fichero
+      de configuración como el secreto (modo `0600`), y TLS de punta a punta con una CA
+      interna propia. Idempotente de verdad, no solo de palabra: converge dos veces sin
+      cambios, y lo comprobado en vivo va más allá —disparar `CONFIG REWRITE` en un
+      Valkey vivo y volver a converger deja el fichero reescrito con el mismo md5;
+      formar un cluster real de dos nodos y repetir da `changed=0`.
+      **Lo que destaparon las dos rondas de arreglos, las dos invisibles bajo
+      `--check`** (el propio `docker_container_exec` se salta bajo `--check`, así que
+      la verificación de estos dos solo se pudo hacer contra infraestructura real):
+      - Un `split('\n')` dentro de un escalar de bloque YAML (`>-`) no partía nada
+        —los bloques no interpretan escapes de barra invertida, solo los escalares
+        entre comillas dobles lo hacen—, así que comparaba el resultado de un sentinel
+        contra el texto literal de dos caracteres `\n` en vez de partirlo. Habría
+        escrito una línea `sentinel monitor` rota **la primera vez que un sentinel
+        contestara de verdad**, es decir en el segundo despliegue de una instalación
+        real: justo el escenario que la tarea existe para proteger.
+      - La contraseña del cluster viajaba en el argv de `docker_container_exec` y se
+        leía con `docker top` desde el host durante la ventana del exec, pese al
+        `no_log` de Ansible —que solo tapa la salida del propio Ansible—. Era la
+        tercera puerta a la misma habitación, tras cerrar `docker inspect` (secretos
+        fuera del compose) y el `-v`/`--diff` de Ansible (`no_log` en las tareas que
+        tocan secretos): cerrada pasando la contraseña por `REDISCLI_AUTH` en el
+        entorno del exec en vez de por `-a`.
+- [x] **Un `docker compose` de producción, renderizado por máquina, separado de los
+      ejemplos.** Secretos fuera del compose, TLS con la CA interna, actualización con
+      `serial: 1` y la imagen fijada a una etiqueta `fork-vX.Y.Z`, nunca `latest`.
+      **Lo que destapó probarlo**: MariaDB verificado contra este fork por primera vez
+      —hasta ahora la inferencia era que el dialecto conservador de `storage/sql`
+      funcionaría, nunca comprobado—. 11.4 pasa entero (20 subtests) sin la ruta de
+      compatibilidad, lo esperado porque ya trae `transaction_isolation`; 10.11 pasa
+      entero y la línea «reconnecting with MySQL pre-5.7.20 compatibility mode» sale
+      **18 veces, una por conexión**, con `SERIALIZABLE` aceptado sin rechazo ni
+      degradación silenciosa —la preocupación que dejó fuera a Galera en la fase 4—.
+      Reproducido de primera mano en un contenedor `mariadb:10.11` aparte, mismo
+      resultado.
+- [x] **El panel replicado sí comparte sesiones y presupuesto de login a través del
+      rol**, no solo en el código. `ansible/roles/dex_dashboard/templates/config.yaml.j2`
+      renderiza ahora el mismo bloque `valkey:` que ya renderizaba la plantilla de `dex`
+      —mismas variables `dex_valkey_*` del grupo `valkey`/`valkey_sentinel`, sin
+      inventar una segunda convención—, con `dex_dashboard_valkey_key_prefix:
+      "dex-dashboard:"` como única variable propia de este rol, para no mezclar sus
+      claves con las de dex.
+      **Lo que destapó escribir la documentación, por segunda vez en este plan** (la
+      primera fue el campo lápida de arriba): al describir «qué hace el balanceador» en
+      `despliegue-ansible.md` tocó comparar las dos plantillas línea a línea, y la de
+      `dex_dashboard` sencillamente no tenía bloque `valkey:` — el panel desplegado con
+      dos hosts, tal cual trae el propio inventario de ejemplo, se quedaba con sesiones y
+      presupuesto de login **por proceso**, exactamente el agujero que la Task 8 había
+      cerrado en el código y que ningún test de esa tarea podía ver, porque no toca
+      Ansible. Ningún brief anterior lo pedía.
+      **Probado de extremo a extremo**, no solo el renderizado: converge local dos veces
+      con `changed=0` en las dos plays (`dex` y `dex_dashboard`); con un Valkey de
+      verdad alcanzable en la dirección que la plantilla calcula, `dex-dashboard-converge`
+      arranca, se queda arriba y sirve (`302` en `/`, sin sesión, lo esperable); y la
+      prueba que de verdad importa, una clave real en Valkey tras esa petición:
+      `dex-dashboard:dl:<hash>` —el contador del `attemptLimiter`, con el prefijo
+      correcto y sin pisar el `dex:` de dex—.
+
+Un límite que queda, documentado y sin cerrar en falso: la sonda de disponibilidad del
+panel sigue sin decir la verdad. En TODO.md y en
+[despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
 
 ---
 

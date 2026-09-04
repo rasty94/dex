@@ -23,7 +23,7 @@ func TestNoAddressMeansNoClient(t *testing.T) {
 
 func TestNewPingsAndPrefixes(t *testing.T) {
 	m := miniredis.RunT(t)
-	c, err := New(t.Context(), Config{Address: m.Addr(), KeyPrefix: "dex:"})
+	c, err := New(t.Context(), Config{Addresses: []string{m.Addr()}, KeyPrefix: "dex:"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestNewPingsAndPrefixes(t *testing.T) {
 // services would otherwise list live tokens and usernames as key names.
 func TestHashKeyHidesTheSecret(t *testing.T) {
 	m := miniredis.RunT(t)
-	c, err := New(t.Context(), Config{Address: m.Addr(), KeyPrefix: "dex:"})
+	c, err := New(t.Context(), Config{Addresses: []string{m.Addr()}, KeyPrefix: "dex:"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestUnreachableAddressFailsToStart(t *testing.T) {
 	addr := m.Addr()
 	m.Close()
 
-	if _, err := New(context.Background(), Config{Address: addr}); err == nil {
+	if _, err := New(context.Background(), Config{Addresses: []string{addr}}); err == nil {
 		t.Fatal("an unreachable address must fail to start")
 	}
 }
@@ -92,5 +92,36 @@ func TestEvictionRisk(t *testing.T) {
 				t.Errorf("evictionRisk(%v) = %v, want %v", tc.cfg, got, tc.want)
 			}
 		})
+	}
+}
+
+// New refuses a configuration that Validate rejects, rather than connecting and
+// misbehaving later. miniredis is a real server, so this proves the check runs
+// before the dial and not after it.
+func TestNewValidatesBeforeConnecting(t *testing.T) {
+	m := miniredis.RunT(t)
+
+	_, err := New(t.Context(), Config{Mode: ModeCluster, Addresses: []string{m.Addr()}, DB: 1})
+	if err == nil {
+		t.Fatal("New accepted a cluster on db 1")
+	}
+	if !strings.Contains(err.Error(), "database but 0") {
+		t.Errorf("New() = %v, want the error to explain the database restriction", err)
+	}
+}
+
+// A single address with no mode is what every existing deployment has, and it
+// has to keep working exactly as before.
+func TestStandaloneIsStillTheDefault(t *testing.T) {
+	m := miniredis.RunT(t)
+
+	c, err := New(t.Context(), Config{Addresses: []string{m.Addr()}, KeyPrefix: "dex:"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer c.Close()
+
+	if err := c.Do(t.Context(), c.B().Set().Key(c.Key("k")).Value("v").Build()).Error(); err != nil {
+		t.Errorf("set against a standalone server: %v", err)
 	}
 }

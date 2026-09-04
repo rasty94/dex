@@ -8,6 +8,16 @@ listen: 127.0.0.1:5556
 # must match the one registered on the dex client below.
 baseURL: http://127.0.0.1:5556
 
+# Whether to read the client address of the login throttle from the
+# X-Forwarded-For header instead of the connection.
+#
+# Turn it on only when a proxy in front of this panel sets that header on every
+# request. With it on and no such proxy, the caller picks their own throttle
+# key: one request per made-up address, each one a new key in the shared store.
+# With it off behind a balancer, every administrator shares the balancer's
+# bucket.
+trustForwardedFor: false
+
 dex:
     # dex's gRPC API.
     grpcAddress: 127.0.0.1:5557

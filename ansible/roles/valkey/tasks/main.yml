@@ -1,0 +1,42 @@
+# Este nodo es nuestro: lo instala, escribe su configuracion y lo arranca
+# este mismo rol (a diferencia de dex_storage, que avisa en vez de negarse
+# porque la base de datos no es nuestra). Sin contrasena, requirepass/
+# masterauth quedan en "" (ver managed.conf.j2) y cualquier cliente que
+# alcance el puerto TLS entra sin credenciales.
+- name: La variable dex_valkey_password no puede quedar vacia sin querer
+  ansible.builtin.assert:
+    that:
+      - (dex_valkey_password | length > 0) or (valkey_allow_no_password | bool)
+    fail_msg: >-
+      dex_valkey_password esta vacia: este nodo aceptaria cualquier cliente
+      sin contrasena, con solo el TLS de por medio. Ponle un valor a
+      dex_valkey_password, o si esto es un converge de prueba desechable,
+      valkey_allow_no_password: true.
+    success_msg: dex_valkey_password no esta vacia (o el escape hatch esta activo).
+
+# standalone.yml solo en las maquinas de datos (grupo valkey): un voto de
+# sentinel que vive en un nodo de dex (en valkey_sentinel sin estar en
+# valkey) no corre un valkey-server propio, solo el proceso sentinel.
+- name: Valkey en topologia standalone
+  ansible.builtin.include_tasks: standalone.yml
+  when: inventory_hostname in (groups['valkey'] | default([]))
+
+# sentinel.yml en las maquinas de datos con valkey_topology: sentinel, y en
+# cualquier host que el inventario meta en valkey_sentinel este o no en el
+# grupo valkey: precisamente asi vive un voto en un nodo de dex (§7 del
+# despliegue). El primer "or" cubre el caso normal; el segundo, el voto que
+# no tiene valkey_topology porque no pertenece al grupo valkey.
+- name: Valkey en topologia sentinel
+  ansible.builtin.include_tasks: sentinel.yml
+  when: >-
+    (valkey_topology | default('') == 'sentinel')
+    or inventory_hostname in (groups['valkey_sentinel'] | default([]))
+
+# cluster.yml (Task 12) solo en las maquinas de datos: los tres masters y
+# las tres replicas del cluster son todas del grupo valkey, sin un grupo
+# aparte como el de sentinel.
+- name: Valkey en topologia cluster
+  ansible.builtin.include_tasks: cluster.yml
+  when: >-
+    (valkey_topology | default('') == 'cluster')
+    and inventory_hostname in (groups['valkey'] | default([]))

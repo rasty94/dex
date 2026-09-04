@@ -704,7 +704,7 @@ storage:
   config:
     file: /var/dex/dex.db
 valkey:
-  address: valkey:6379
+  addresses: ["valkey:6379"]
   username: dex
   password: secret
   keyPrefix: "dex:"
@@ -716,8 +716,8 @@ valkey:
 	if err := yaml.Unmarshal(rawConfig, &c); err != nil {
 		t.Fatalf("failed to decode config: %v", err)
 	}
-	if c.Valkey.Address != "valkey:6379" {
-		t.Errorf("address = %q", c.Valkey.Address)
+	if len(c.Valkey.Addresses) != 1 || c.Valkey.Addresses[0] != "valkey:6379" {
+		t.Errorf("addresses = %v", c.Valkey.Addresses)
 	}
 	if c.Valkey.KeyPrefix != "dex:" {
 		t.Errorf("keyPrefix = %q", c.Valkey.KeyPrefix)

@@ -21,3 +21,30 @@ repos:
       hooks:
           - id: go-fmt
           - id: go-mod-tidy
+
+    - repo: https://github.com/ansible/ansible-lint
+      rev: v25.9.2
+      hooks:
+          - id: ansible-lint
+            files: ^ansible/
+            # Sin esto, pre-commit le pasa la lista de ficheros cambiados uno
+            # a uno; ansible-lint entonces autodescubre "proyecto" desde la
+            # raiz del repo y se pone a lintear YAML de todas partes (.github,
+            # examples, scripts/manifests...). Con la ruta fija se comporta
+            # igual que la comprobacion manual del Step 5.
+            pass_filenames: false
+            args: [ansible/]
+            # El hook corre en su propio virtualenv, que solo trae
+            # ansible-core: sin esto no resuelve community.crypto ni
+            # community.docker y falla SIEMPRE con "couldn't resolve
+            # module/action", pase lo que pase en el arbol. Un hook que falla
+            # siempre ensena a saltarselo, y entonces no comprueba nada.
+            # El paquete "ansible" es el bundle de la comunidad e incluye las
+            # dos colecciones de ansible/requirements.yml; queda dentro del
+            # entorno del hook, que ya esta en su ANSIBLE_COLLECTIONS_PATH.
+            # Es la solucion que documenta el propio ansible-lint para este
+            # sintoma. La alternativa --que ansible-lint las instale desde
+            # requirements.yml-- solo funciona con el fichero en la raiz del
+            # repositorio, porque lo busca en el directorio de trabajo y no en
+            # el proyecto que el mismo detecta.
+            additional_dependencies: [ansible]

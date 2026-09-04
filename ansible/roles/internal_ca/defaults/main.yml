@@ -1,0 +1,11 @@
+# La clave privada de la CA no sale de esta maquina. Por defecto vive junto al
+# propio playbook, fuera de ansible/ para que un "git add ansible/" no la
+# arrastre nunca (ver el .gitignore de la raiz).
+internal_ca_dir: "{{ playbook_dir }}/../../.internal-ca"
+internal_ca_key_path: "{{ internal_ca_dir }}/ca-key.pem"
+internal_ca_csr_path: "{{ internal_ca_dir }}/ca.csr"
+internal_ca_cert_path: "{{ internal_ca_dir }}/ca-cert.pem"
+
+internal_ca_common_name: "Dex Internal CA"
+internal_ca_validity_days: 3650
+internal_ca_host_cert_validity_days: 825

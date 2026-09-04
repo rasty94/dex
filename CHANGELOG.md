@@ -14,9 +14,13 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 
 ### Añadido
 
-- `valkey.address` en `dex.yaml` y en el config del panel: un almacén compartido
-  opcional entre réplicas. Sin configurarlo, cada proceso sigue guardando lo suyo
-  en memoria, que es el comportamiento de siempre.
+- `valkey.addresses` y `valkey.mode` en `dex.yaml` y en el config del panel: un
+  almacén compartido opcional entre réplicas. Sin configurarlo, cada proceso sigue
+  guardando lo suyo en memoria, que es el comportamiento de siempre.
+- Valkey en alta disponibilidad: `mode: sentinel` con `masterSet`, o `mode: cluster`
+  con varias direcciones. `valkey-go` sigue el failover de sentinel y las
+  redirecciones del cluster sin que dex tenga que hacer nada. El modo es explícito
+  porque deducirlo del número de direcciones falla en silencio.
 - Métrica `dex_login_rate_limit_backend_errors_total`: cuenta las veces que el
   almacén compartido no respondió y el limitador cayó de vuelta a sus cubos
   locales.
@@ -28,16 +32,24 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 - `documentacion/valkey.md`: lo que el servidor compartido tiene que cumplir,
   qué se pierde en un reinicio, qué hace cada componente cuando el almacén se cae
   y las métricas que lo delatan.
+- El `attemptLimiter` del panel (`cmd/dex-dashboard/auth.go`) puede contar en
+  Valkey cuando el panel tiene `valkey.addresses` configurado, reutilizando el
+  mismo `sharedCounter` que el limitador de dex. Sin Valkey configurado, nada
+  cambia: sigue siendo el contador local de siempre.
+- Colección de Ansible (`ansible/`) que despliega dex, el panel y Valkey en
+  Docker sobre las tres topologías (`standalone`, `sentinel`, `cluster`), con
+  una CA interna propia para el TLS entre los tres y los secretos cifrados con
+  `ansible-vault`. Documentado en `documentacion/despliegue-ansible.md`.
 
 ### Cambiado
 
-- El limitador de login puede contar en Valkey (`valkey.address`), de modo que
+- El limitador de login puede contar en Valkey (`valkey.addresses`), de modo que
   varias replicas comparten un solo presupuesto. Sin configurarlo, nada cambia.
   Con Valkey, el algoritmo pasa de cubo de fichas a **ventana fija**, que permite
   hasta `2 x attempts` a caballo entre dos ventanas; a cambio el limite es
   correcto entre replicas, que sin esto valia `attempts x replicas`.
 - Las sesiones de administrador del panel (`cmd/dex-dashboard`) pueden vivir en
-  Valkey en vez de en memoria del proceso, con `valkey.address` en el config del
+  Valkey en vez de en memoria del proceso, con `valkey.addresses` en el config del
   panel. Quien pueda escribir ahi se hace administrador con permiso de
   escritura sobre el panel: esa conexion necesita autenticacion y TLS igual que
   cualquier otro credencial de administracion.
@@ -50,7 +62,7 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
   de cuando esa persona entró: una baja hecha en el proveedor de identidad no se
   ve hasta que vuelva a autenticarse.
 - El conector Keystone puede compartir su cache de tokens entre replicas con
-  `cacheShared: true`, cuando `dex.yaml` tiene `valkey.address` configurado.
+  `cacheShared: true`, cuando `dex.yaml` tiene `valkey.addresses` configurado.
   `cacheShared` decide donde vive la cache, no si existe: eso lo sigue decidiendo
   `cacheTTL` como antes.
 
@@ -70,7 +82,7 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 - Un `cacheTTL` mal escrito en el conector Keystone desactivaba la cache en
   silencio. Ahora dex no arranca y dice cual es el valor que no entiende. Lo
   mismo si `cacheTTL` no es positivo.
-- `cacheShared: true` sin `valkey.address` configurado tambien es ahora un error
+- `cacheShared: true` sin `valkey.addresses` configurado tambien es ahora un error
   de arranque, en vez de una cache local silenciosa donde se esperaba una
   compartida.
 

@@ -52,15 +52,28 @@ admin:
   idleTTL: {{ getenv "DEX_DASHBOARD_IDLE_TTL" "1h" }}
   reauthWindow: {{ getenv "DEX_DASHBOARD_REAUTH_WINDOW" "15m" }}
 
-{{- /* Shares administrator sessions between replicas of this panel. Empty
+{{- /* Shares administrator sessions between replicas of this panel. No
        address keeps them in this process, which is the default. Whoever can
        write here can grant itself write permission on the panel -- the stored
        session carries CanWrite -- so this store needs the same authentication
        and TLS as any other credential store. The default key prefix keeps a
-       Valkey shared with dex itself from mixing the two processes' keys. */}}
-{{- if getenv "DEX_DASHBOARD_VALKEY_ADDRESS" "" }}
+       Valkey shared with dex itself from mixing the two processes' keys.
+       DEX_DASHBOARD_VALKEY_ADDRESS stays for the single-node case;
+       DEX_DASHBOARD_VALKEY_ADDRESSES takes a comma-separated list for
+       sentinel and cluster. If both are set, ADDRESSES wins -- getenv only
+       falls back to its default argument (here, the ADDRESS lookup) when the
+       first name is unset, checked by rendering both set at once. */}}
+{{- $dashboardValkeyAddrs := getenv "DEX_DASHBOARD_VALKEY_ADDRESSES" (getenv "DEX_DASHBOARD_VALKEY_ADDRESS" "") }}
+{{- if $dashboardValkeyAddrs }}
 valkey:
-  address: {{ .Env.DEX_DASHBOARD_VALKEY_ADDRESS }}
+  mode: {{ getenv "DEX_DASHBOARD_VALKEY_MODE" "standalone" }}
+  addresses:
+{{- range (strings.Split "," $dashboardValkeyAddrs) }}
+  - {{ . | strings.TrimSpace }}
+{{- end }}
+{{- if getenv "DEX_DASHBOARD_VALKEY_MASTER_SET" "" }}
+  masterSet: {{ .Env.DEX_DASHBOARD_VALKEY_MASTER_SET | quote }}
+{{- end }}
   keyPrefix: {{ getenv "DEX_DASHBOARD_VALKEY_KEY_PREFIX" "dex-dashboard:" | quote }}
 {{- if getenv "DEX_DASHBOARD_VALKEY_USERNAME" "" }}
   username: {{ .Env.DEX_DASHBOARD_VALKEY_USERNAME | quote }}

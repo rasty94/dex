@@ -1,0 +1,146 @@
+# Formar un cluster es la unica operacion realmente destructiva de todo el
+# rol: --cluster create contra un cluster ya vivo destruye su asignacion de
+# slots. Por eso se detecta antes de tocar nada, y hay tres salidas, no dos:
+# ok (no se hace nada), nadie conoce a nadie (se crea, una sola vez) y medio
+# formado (se para y se avisa; repararlo solo es como se pierden datos).
+#
+# Antes de nada, esta maquina necesita su segundo proceso: en cluster cada
+# maquina corre dos valkey-server, un master y la replica de otra maquina, en
+# puertos distintos (spec S5.4). standalone.yml ya sabe montar UN nodo entero
+# --directorio, TLS, managed.conf, compose, arranque--; para el segundo se le
+# llama otra vez con el puerto, el directorio, el nombre de contenedor y los
+# handlers que le tocan, igual que sentinel.yml reutiliza tls.yml con un
+# handler distinto. Directorio y volumen propios a proposito: dos procesos
+# compartiendo el mismo nodes.conf se corromperian entre si.
+#
+# Los "vars:" de un include_tasks/include_role dinamico NO quedan
+# encapsulados en el include: sobreviven en el host para el resto de la
+# tanda, hasta que algo los vuelve a fijar. Probado en vivo: sin el
+# set_fact de "restaurar" de mas abajo, el handler "Reiniciar valkey" (el
+# del master, definido con valkey_config_dir a secas) terminaba leyendo
+# el directorio de la REPLICA, porque era el ultimo valor que el host
+# recordaba. Por eso el master se guarda en variables propias antes de
+# tocar nada y se restaura explicitamente en cuanto el segundo include
+# termina: todo lo que venga despues en este fichero (deteccion, creacion,
+# comprobacion de reparto) tiene que ver el master, no la replica.
+- name: Valores del proceso master de esta maquina, guardados antes de reutilizar el include
+  ansible.builtin.set_fact:
+    valkey_cluster_master_port: "{{ valkey_port }}"
+    valkey_cluster_master_dir: "{{ valkey_config_dir }}"
+    valkey_cluster_master_container: "{{ valkey_container_name }}"
+    valkey_cluster_replica_dir: "{{ valkey_config_dir }}-replica"
+    valkey_cluster_replica_container: "{{ valkey_container_name }}-replica"
+
+- name: El segundo proceso de esta maquina, la replica de otra, en su propio puerto
+  ansible.builtin.include_tasks: standalone.yml
+  vars:
+    valkey_port: "{{ valkey_replica_port | default(6380) }}"
+    valkey_config_dir: "{{ valkey_cluster_replica_dir }}"
+    valkey_container_name: "{{ valkey_cluster_replica_container }}"
+    valkey_notify_handler: Reiniciar valkey replica
+    valkey_tls_notify_handler: Reiniciar valkey replica
+
+- name: Restaurar las variables del master, que el include de arriba deja pisadas
+  ansible.builtin.set_fact:
+    valkey_port: "{{ valkey_cluster_master_port }}"
+    valkey_config_dir: "{{ valkey_cluster_master_dir }}"
+    valkey_container_name: "{{ valkey_cluster_master_container }}"
+    valkey_notify_handler: Reiniciar valkey
+    valkey_tls_notify_handler: Reiniciar valkey
+
+# valkey-cli no esta instalado en el host (mismo motivo que en sentinel.yml):
+# corre dentro de la imagen, de ahi docker_container_exec en vez de command.
+# El nodo solo escucha en su puerto TLS (port 0 en managed.conf.j2) y con
+# requirepass puesto, asi que hacen falta certificado y contrasena hasta para
+# preguntarle a si mismo. La contrasena va por la variable de entorno
+# REDISCLI_AUTH (que valkey-cli lee solo), no por -a: -a la deja en el argv
+# del propio proceso, legible con "docker top" mientras dura el exec, aunque
+# Ansible nunca la imprima. no_log sigue haciendo falta para el lado de
+# Ansible (el propio dict env no se escaparia de un -v).
+- name: Esta el cluster formado
+  community.docker.docker_container_exec:
+    container: "{{ valkey_container_name }}"
+    command: >-
+      valkey-cli --tls --cacert /etc/valkey/tls/ca.crt
+      --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key
+      -p {{ valkey_port }} cluster info
+    env:
+      REDISCLI_AUTH: "{{ dex_valkey_password | string }}"
+  register: valkey_cluster_info
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: El nodo respondio, esto no es un contenedor que todavia arranca
+  # Un rc distinto de 0 (contenedor recien creado, TLS que todavia no
+  # escucha) no es un cluster a medias: es un nodo que no ha contestado
+  # todavia. Separarlo del mensaje de "medio formado" evita que un despliegue
+  # que solo llego tarde se lea como un cluster danado.
+  ansible.builtin.assert:
+    that: valkey_cluster_info.rc == 0
+    fail_msg: >-
+      {{ inventory_hostname }} no respondio a 'cluster info' (rc={{ valkey_cluster_info.rc }}).
+      Puede que el contenedor siga arrancando o el TLS todavia no escuche:
+      esto no es un cluster a medio formar. Repite el despliegue cuando el
+      nodo este arriba.
+
+- name: Un cluster a medias se para y se avisa, no se repara
+  # Reparar automaticamente un cluster medio formado es como se pierden datos.
+  ansible.builtin.assert:
+    that: >-
+      ('cluster_state:ok' in valkey_cluster_info.stdout)
+      or ('cluster_known_nodes:1' in valkey_cluster_info.stdout)
+    fail_msg: >-
+      {{ inventory_hostname }} conoce a otros nodos pero el cluster no esta en
+      estado ok. No se toca nada: revisa 'valkey-cli --cluster check' a mano.
+
+- name: Formar el cluster
+  # Solo cuando ningun nodo conoce a nadie. Repetir --cluster create sobre un
+  # cluster vivo destruye la asignacion de slots.
+  community.docker.docker_container_exec:
+    container: "{{ valkey_container_name }}"
+    command: >-
+      valkey-cli --tls --cacert /etc/valkey/tls/ca.crt
+      --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key
+      --cluster create
+      {% for h in groups['valkey'] %}{{ hostvars[h].ansible_host }}:{{ valkey_port }} {% endfor %}
+      {% for h in groups['valkey'] %}{{ hostvars[h].ansible_host }}:{{ valkey_replica_port | default(6380) }} {% endfor %}
+      --cluster-replicas 1 --cluster-yes
+    env:
+      REDISCLI_AUTH: "{{ dex_valkey_password | string }}"
+  when: "'cluster_known_nodes:1' in valkey_cluster_info.stdout"
+  run_once: true
+  delegate_to: "{{ groups['valkey'] | first }}"
+  no_log: true
+
+- name: Ninguna replica puede caer en la maquina de su master
+  # --cluster create reparte replicas evitando la colocalizacion cuando
+  # puede, pero con tres maquinas y seis nodos conviene comprobarlo en vez de
+  # asumirlo. No se escribe aqui un analizador propio de topologia (no hay
+  # forma de probarlo contra un cluster real en esta maquina, y un analizador
+  # sin probar guardando una propiedad de seguridad es peor que revisarlo a
+  # mano): se falla sobre el propio veredicto de --cluster check, que ya dice
+  # "[ERR]" o "Not all ... slots are covered" con sus propias palabras. La
+  # colocalizacion en si queda para el operador, ver el informe.
+  community.docker.docker_container_exec:
+    container: "{{ valkey_container_name }}"
+    command: >-
+      valkey-cli --tls --cacert /etc/valkey/tls/ca.crt
+      --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key
+      --cluster check 127.0.0.1:{{ valkey_port }}
+    env:
+      REDISCLI_AUTH: "{{ dex_valkey_password | string }}"
+  register: valkey_cluster_check
+  changed_when: false
+  run_once: true
+  no_log: true
+
+- name: El propio --cluster check no puede reportar errores
+  ansible.builtin.assert:
+    that: "'[ERR]' not in valkey_cluster_check.stdout"
+    fail_msg: >-
+      valkey-cli --cluster check informa de un problema (revisalo a mano,
+      con --diff o contra el nodo): no se continua. La comprobacion de que
+      ninguna replica caiga en la maquina de su master sigue siendo manual,
+      ver el informe de esta tarea.
+  run_once: true

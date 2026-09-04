@@ -30,7 +30,9 @@ grpc:
 # "valkey" resuelve desde ambos como el nombre del contenedor; "127.0.0.1" no
 # llegaría a él.
 valkey:
-    address: valkey:6379
+    mode: standalone
+    addresses:
+        - valkey:6379
     keyPrefix: "dex:"
 
 # Protección contra fuerza bruta en el login. attempts y window bajos a

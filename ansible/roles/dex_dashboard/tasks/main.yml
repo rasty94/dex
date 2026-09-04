@@ -1,0 +1,54 @@
+- name: Directorio de configuracion del panel
+  ansible.builtin.file:
+    path: "{{ dex_dashboard_config_dir }}"
+    state: directory
+    owner: "{{ dex_dashboard_config_owner }}"
+    group: "{{ dex_dashboard_config_group }}"
+    mode: "0750"
+
+- name: Token gRPC del panel
+  # A diferencia de dex, el panel si sabe leer el token de fichero aparte
+  # (dex.tokenFile), asi que no hace falta meterlo en config.yaml. no_log:
+  # es un secreto; --diff lo imprimiria entero al crear o cambiar el fichero.
+  ansible.builtin.copy:
+    content: "{{ dex_grpc_token }}"
+    dest: "{{ dex_dashboard_config_dir }}/grpc-token"
+    owner: "{{ dex_dashboard_config_owner }}"
+    group: "{{ dex_dashboard_config_group }}"
+    mode: "0600"
+  notify: Reiniciar el panel
+  no_log: true
+
+- name: Certificado de la CA interna
+  # Para verificar el TLS del gRPC de dex, firmado por esta misma CA.
+  ansible.builtin.copy:
+    content: "{{ internal_ca_cert }}"
+    dest: "{{ dex_dashboard_config_dir }}/internal-ca.pem"
+    owner: "{{ dex_dashboard_config_owner }}"
+    group: "{{ dex_dashboard_config_group }}"
+    mode: "0644"
+  notify: Reiniciar el panel
+
+- name: Configuracion del panel
+  # no_log: la plantilla renderizada lleva clientSecret en claro; sin esto,
+  # un -v o --diff lo imprime en la consola.
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ dex_dashboard_config_dir }}/config.yaml"
+    owner: "{{ dex_dashboard_config_owner }}"
+    group: "{{ dex_dashboard_config_group }}"
+    mode: "0600"
+  notify: Reiniciar el panel
+  no_log: true
+
+- name: Compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ dex_dashboard_config_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Reiniciar el panel
+
+- name: Levantar el panel
+  community.docker.docker_compose_v2:
+    project_src: "{{ dex_dashboard_config_dir }}"
+    state: present

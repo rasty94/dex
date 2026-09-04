@@ -1,0 +1,19 @@
+---
+# Colecciones que necesita esta capa de Ansible, en un fichero en vez de en
+# prosa: se instalan de una vez con
+#
+#   ansible-galaxy collection install -r ansible/requirements.yml
+#
+# community.docker: docker_compose_v2 y docker_container_exec, en los tres
+# roles. community.crypto: la CA interna del rol internal_ca.
+#
+# Ojo con una expectativa razonable que NO se cumple: ansible-lint sabe
+# instalar solo un requirements.yml, pero lo busca en el directorio de trabajo
+# --la raiz del repositorio-- y no en el proyecto que el mismo detecta
+# (ansible/). Por eso el hook de pre-commit no se apoya en este fichero, sino
+# en additional_dependencies; ver el comentario alli.
+collections:
+    - name: community.docker
+      version: ">=5.2.1"
+    - name: community.crypto
+      version: ">=3.3.0"

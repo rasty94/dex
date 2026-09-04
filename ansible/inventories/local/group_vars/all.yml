@@ -1,0 +1,14 @@
+# Solo para el converge local. Imagen construida en este worktree, nunca
+# "latest": se pincha por tag como en el resto de despliegues.
+dex_image: dex-converge:local
+
+dex_storage_password: convergesinsimbolo
+dex_grpc_token: converge-grpc-token
+dex_valkey_password: ""
+# El rol valkey se niega a arrancar sin contrasena porque ese nodo es
+# nuestro (lo instala y lo arranca el, a diferencia de la base de datos).
+# Esta bandera es el escape hatch para que el converge de prueba no tenga
+# que inventarse un secreto: nunca debe aparecer en un inventario de verdad.
+valkey_allow_no_password: true
+dex_session_cookie_key: treinta-y-dos-bytes-de-prueba-aa
+dex_dashboard_oidc_client_secret: converge-client-secret

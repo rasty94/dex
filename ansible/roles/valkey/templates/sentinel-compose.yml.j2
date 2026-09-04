@@ -1,0 +1,18 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/valkey/templates/.
+# Proyecto de compose separado del de valkey (ver project_name en
+# handlers/main.yml): un voto de sentinel puede vivir en una maquina que no
+# corre ningun valkey-server propio.
+services:
+    valkey-sentinel:
+        image: {{ valkey_image }}
+        container_name: {{ valkey_sentinel_container_name }}
+        restart: unless-stopped
+        # Red de host por el mismo motivo que el servicio valkey: el gossip
+        # entre sentinels se anuncia por IP real.
+        network_mode: host
+        command: ["valkey-server", "/etc/valkey/sentinel.conf", "--sentinel"]
+        volumes:
+            # Sin ":ro": sentinel reescribe sentinel.conf el mismo (CONFIG
+            # REWRITE, SENTINEL SET), igual que valkey con valkey.conf.
+            - {{ valkey_config_dir }}:/etc/valkey

@@ -14,7 +14,7 @@ import (
 
 func sharedLimiter(t *testing.T, addr string, attempts int) *Limiter {
 	t.Helper()
-	c, err := dexvalkey.New(t.Context(), dexvalkey.Config{Address: addr, KeyPrefix: "dex:"})
+	c, err := dexvalkey.New(t.Context(), dexvalkey.Config{Addresses: []string{addr}, KeyPrefix: "dex:"})
 	if err != nil {
 		t.Fatalf("valkey client: %v", err)
 	}

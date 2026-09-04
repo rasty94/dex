@@ -1,0 +1,101 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/dex_dashboard/templates/.
+listen: 0.0.0.0:5560
+
+baseURL: {{ dex_dashboard_base_url }}
+
+# Ver el comentario de dex_dashboard_trust_forwarded_for en defaults/main.yml:
+# solo con un balanceador delante que ponga la cabecera siempre.
+trustForwardedFor: {{ dex_dashboard_trust_forwarded_for | to_json }}
+
+dex:
+  grpcAddress: {{ dex_dashboard_grpc_address }}
+  tokenFile: /etc/dex-dashboard/grpc-token
+  caCert: /etc/dex-dashboard/internal-ca.pem
+
+# Mismo bloque que arma ansible/roles/dex/templates/config.yaml.j2 a partir de
+# los grupos valkey/valkey_sentinel: mismas variables (dex_valkey_*, sin
+# prefijo dex_dashboard_, porque son del Valkey compartido, no de este rol) y
+# mismo Valkey. Sin esto el panel replicado (dos hosts en dex_dashboard, como
+# ya trae el inventario de ejemplo) no comparte sesiones ni el presupuesto de
+# login entre procesos, que es justo lo que la Task 8 anadio al codigo. Los
+# puertos llevan | default(...) porque los defaults del rol dex no cruzan a
+# esta jugada (mismo motivo que dex_dashboard_grpc_address, arriba en este
+# fichero). keyPrefix y la CA del TLS son las dos variables propias de este
+# rol: la primera tiene que ser distinta de la de dex ("dex:") para que las
+# claves no se mezclen, y la segunda es una ruta dentro de ESTE contenedor,
+# que monta en /etc/dex-dashboard/ y no en /etc/dex/.
+{% if groups.valkey is defined and groups.valkey | length > 0 %}
+{% set topology = hostvars[groups.valkey[0]].valkey_topology | default('standalone') %}
+valkey:
+{% if topology == 'sentinel' %}
+  mode: sentinel
+  addresses:
+{% for h in groups.valkey_sentinel | default([]) %}
+    - {{ hostvars[h].ansible_host }}:{{ dex_valkey_sentinel_port | default(26379) }}
+{% endfor %}
+  masterSet: {{ (hostvars[groups.valkey[0]].valkey_master_set | default('dex')) | to_json }}
+  # El puerto de control de sentinel tiene su propio requirepass
+  # (sentinel.conf.j2), asi que preguntarle quien es el master exige
+  # autenticarse. Sin esto, el cliente recibe "NOAUTH Authentication
+  # required" y no llega a conocer al master. Misma contrasena a proposito:
+  # es el mismo secreto operativo y no hay nada que gane un segundo.
+{% if dex_valkey_sentinel_username is defined %}
+  sentinelUsername: {{ dex_valkey_sentinel_username | to_json }}
+{% endif %}
+  sentinelPassword: {{ dex_valkey_password | to_json }}
+{% elif topology == 'cluster' %}
+  mode: cluster
+  addresses:
+{% for h in groups.valkey %}
+    - {{ hostvars[h].ansible_host }}:{{ dex_valkey_port | default(6379) }}
+{% endfor %}
+{% else %}
+  mode: standalone
+  addresses:
+    - {{ hostvars[groups.valkey[0]].ansible_host }}:{{ dex_valkey_port | default(6379) }}
+{% endif %}
+  keyPrefix: {{ dex_dashboard_valkey_key_prefix | to_json }}
+{% if dex_valkey_username is defined %}
+  username: {{ dex_valkey_username | to_json }}
+{% endif %}
+  password: {{ dex_valkey_password | to_json }}
+{% if dex_dashboard_valkey_tls_ca_cert | default('') %}
+  tls:
+    caCert: {{ dex_dashboard_valkey_tls_ca_cert }}
+{% endif %}
+{% endif %}
+
+oidc:
+  issuer: {{ dex_issuer }}
+  clientID: {{ dex_dashboard_oidc_client_id }}
+  clientSecret: {{ dex_dashboard_oidc_client_secret | to_json }}
+
+admin:
+{% if dex_dashboard_admin_groups | length > 0 %}
+  groups:
+{% for g in dex_dashboard_admin_groups %}
+    - {{ g | to_json }}
+{% endfor %}
+{% endif %}
+{% if dex_dashboard_admin_emails | length > 0 %}
+  emails:
+{% for e in dex_dashboard_admin_emails %}
+    - {{ e | to_json }}
+{% endfor %}
+{% endif %}
+{% if dex_dashboard_admin_write_groups | length > 0 %}
+  writeGroups:
+{% for g in dex_dashboard_admin_write_groups %}
+    - {{ g | to_json }}
+{% endfor %}
+{% endif %}
+{% if dex_dashboard_admin_write_emails | length > 0 %}
+  writeEmails:
+{% for e in dex_dashboard_admin_write_emails %}
+    - {{ e | to_json }}
+{% endfor %}
+{% endif %}
+  sessionTTL: {{ dex_dashboard_session_ttl }}
+  idleTTL: {{ dex_dashboard_idle_ttl }}
+  reauthWindow: {{ dex_dashboard_reauth_window }}

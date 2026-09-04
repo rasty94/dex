@@ -1,0 +1,56 @@
+# Renderizado por Ansible una sola vez (force: false en la tarea que copia
+# este fichero). A partir de aqui es de sentinel: hace CONFIG REWRITE y
+# SENTINEL SET sobre este mismo fichero en cuanto detecta un cambio de
+# estado. Machacarlo en cada despliegue le devuelve un monitor caducado y
+# deshace el ultimo failover.
+
+# Misma forma que los nodos de datos (managed.conf.j2): nada en claro. El
+# puerto de control estaba antes en texto plano, y eso no tenia arreglo por
+# ninguno de los dos lados: pkg/valkey copia la configuracion TLS del cliente
+# al SentinelOption en cuanto hay TLS, asi que o el cliente no tenia TLS y no
+# alcanzaba al master TLS-only, o lo tenia y hablaba TLS contra un 26379 en
+# claro. Un solo mando y todo cifrado, en vez de dos mandos y un puerto de
+# control abierto.
+port 0
+tls-port {{ valkey_sentinel_port | default(26379) }}
+tls-cert-file /etc/valkey/tls/node.crt
+tls-key-file /etc/valkey/tls/node.key
+tls-ca-cert-file /etc/valkey/tls/ca.crt
+
+# Esto es lo que cifra la conexion SALIENTE de sentinel hacia el master y las
+# replicas, no el tls-port de arriba. Comprobado en vivo contra un master
+# TLS-only: sin esta linea, y con todo lo demas puesto, sentinel ve el master
+# como "s_down,o_down,disconnected" y ni siquiera aprende su runid. Con ella,
+# enlace correcto. Responde la pregunta que quedaba abierta en
+# documentacion/despliegue-ansible.md.
+tls-replication yes
+
+# Igual que en los nodos de datos: con el valor de fabrica ("yes") el
+# servidor exige certificado de cliente, y pkg/valkey solo sabe presentar la
+# CA. Quien pregunta por el master es dex y el panel, asi que sin esto el
+# puerto de control no le sirve a nadie. La autenticacion la pone el
+# requirepass de abajo.
+tls-auth-clients no
+
+# El puerto de control va en red de host: sin esto, cualquiera que lo alcance
+# puede repuntar el master set a una direccion suya, y entonces dex le
+# pregunta a sentinel quien es el master y le manda AUTH con la contrasena de
+# Valkey a la maquina del atacante. Con requirepass, un cliente sin
+# credenciales recibe "NOAUTH Authentication required" (comprobado en vivo).
+# sentinel-pass es la misma credencial para el otro lado: con la que este
+# sentinel se autentica ante los DEMAS sentinels, que tienen su propio
+# requirepass identico a este.
+requirepass "{{ dex_valkey_password }}"
+sentinel sentinel-pass "{{ dex_valkey_password }}"
+
+# El master puede llegar como el hostname del primer host del inventario
+# (arranque inicial, sin ningun sentinel corriendo todavia) o como la IP que
+# devuelva otro sentinel ya en marcha: sin esto, lo primero fallaria al
+# resolver.
+sentinel resolve-hostnames yes
+sentinel announce-hostnames yes
+
+sentinel monitor {{ valkey_master_set_effective }} {{ valkey_master_host }} {{ valkey_port }} {{ (groups['valkey_sentinel'] | length // 2) + 1 }}
+sentinel auth-pass {{ valkey_master_set_effective }} "{{ dex_valkey_password }}"
+sentinel down-after-milliseconds {{ valkey_master_set_effective }} {{ valkey_sentinel_down_after_ms | default(5000) }}
+sentinel failover-timeout {{ valkey_master_set_effective }} {{ valkey_sentinel_failover_timeout_ms | default(60000) }}

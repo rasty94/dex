@@ -1,0 +1,21 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/valkey/templates/.
+services:
+    valkey:
+        image: {{ valkey_image }}
+        container_name: {{ valkey_container_name }}
+        restart: unless-stopped
+        # Cluster y sentinel se anuncian por IP real. Dentro de una red
+        # bridge anunciarian la IP del contenedor, que desde otra maquina no
+        # existe.
+        network_mode: host
+        command: ["valkey-server", "/etc/valkey/valkey.conf"]
+        volumes:
+            # Sin ":ro": Valkey reescribe valkey.conf el mismo (CONFIG
+            # REWRITE de sentinel, nodes.conf de cluster). Montarlo de solo
+            # lectura le devolveria un fichero que nunca puede actualizar, y
+            # deshace justo la regla que hace idempotente este rol.
+            - {{ valkey_config_dir }}:/etc/valkey
+            - valkey-data:/data
+volumes:
+    valkey-data:

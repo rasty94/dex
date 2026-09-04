@@ -1,0 +1,90 @@
+- name: La base de datos tiene que responder antes de arrancar dex
+  # Un mensaje de Ansible es mejor que un contenedor en bucle de reinicio.
+  # wait_for ya falla solo por timeout, no hace falta registrar y repetir el
+  # fallo a mano.
+  ansible.builtin.wait_for:
+    host: "{{ dex_storage.host }}"
+    port: "{{ dex_storage.port | default(3306) }}"
+    timeout: 10
+  changed_when: false
+
+- name: Aviso si la base de datos no lleva TLS
+  # No es un fail: la base de datos no es nuestra, igual que
+  # WarnIfKeysCanBeEvicted en pkg/valkey/valkey.go avisa en vez de negarse a
+  # arrancar. dex_storage.ssl_mode "false" (el valor de fabrica) hace pasar
+  # la contrasena y cada sesion en claro por la red; con un host que no es
+  # esta misma maquina, eso es toda la red intermedia.
+  ansible.builtin.debug:
+    msg: >-
+      dex_storage.ssl_mode esta en "false" (o sin poner) y dex_storage.host
+      ("{{ dex_storage.host }}") no parece esta maquina: la contrasena de la
+      base de datos y cada sesion cruzan la red sin cifrar. Ver el
+      comentario junto a dex_storage en el inventario de ejemplo para
+      "skip-verify" o "true" con ssl_ca_file.
+  when:
+    - (dex_storage.ssl_mode | default('false')) == 'false'
+    - dex_storage.host not in ['127.0.0.1', 'localhost', '::1']
+
+- name: Directorio de configuracion
+  ansible.builtin.file:
+    path: "{{ dex_config_dir }}"
+    state: directory
+    owner: "{{ dex_config_owner }}"
+    group: "{{ dex_config_group }}"
+    mode: "0750"
+
+- name: Configuracion de dex
+  # El fichero ES el secreto: dex no sabe leer la contrasena de la base, la de
+  # Valkey ni cookieEncryptionKey desde fichero aparte, y por entorno las
+  # ensena docker inspect. no_log: la plantilla renderizada lleva esos tres
+  # secretos en claro; sin esto, un -v o --diff los imprime en la consola.
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ dex_config_dir }}/config.yaml"
+    owner: "{{ dex_config_owner }}"
+    group: "{{ dex_config_group }}"
+    mode: "0600"
+  notify: Reiniciar dex
+  no_log: true
+
+- name: Certificado de la CA interna
+  ansible.builtin.copy:
+    content: "{{ internal_ca_cert }}"
+    dest: "{{ dex_config_dir }}/internal-ca.pem"
+    owner: "{{ dex_config_owner }}"
+    group: "{{ dex_config_group }}"
+    mode: "0644"
+  notify: Reiniciar dex
+
+- name: Certificado propio del nodo, para el TLS del gRPC
+  ansible.builtin.copy:
+    content: "{{ internal_ca_host_cert }}"
+    dest: "{{ dex_config_dir }}/dex-cert.pem"
+    owner: "{{ dex_config_owner }}"
+    group: "{{ dex_config_group }}"
+    mode: "0644"
+  notify: Reiniciar dex
+
+- name: Clave propia del nodo, para el TLS del gRPC
+  # no_log: es la clave privada del nodo; copy con --diff imprimiria el
+  # fichero entero al crearlo o al cambiar.
+  ansible.builtin.copy:
+    content: "{{ internal_ca_host_key }}"
+    dest: "{{ dex_config_dir }}/dex-key.pem"
+    owner: "{{ dex_config_owner }}"
+    group: "{{ dex_config_group }}"
+    mode: "0600"
+  notify: Reiniciar dex
+  no_log: true
+
+- name: Compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ dex_config_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Reiniciar dex
+
+- name: Levantar dex
+  community.docker.docker_compose_v2:
+    project_src: "{{ dex_config_dir }}"
+    state: present

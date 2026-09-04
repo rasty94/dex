@@ -1,0 +1,62 @@
+# La regla que hace idempotente este rol vive en tasks/standalone.yml:
+# managed.conf es de Ansible (se reescribe en cada despliegue), valkey.conf
+# es de Valkey (se crea una sola vez y no se vuelve a tocar).
+valkey_config_dir: /etc/valkey
+
+# Nombre del contenedor y de la imagen. Parametrizado por el mismo motivo que
+# dex_container_name en el rol dex: poder correr un converge de prueba en una
+# maquina que ya tenga otro "valkey" suelto sin chocar con el.
+valkey_container_name: valkey
+valkey_image: valkey/valkey:8-alpine
+
+valkey_port: 6379
+
+# Este nodo es nuestro (lo instala y lo arranca este rol), asi que una
+# dex_valkey_password vacia hace fallar el despliegue en vez de avisar: ver
+# el assert en tasks/main.yml. Solo un converge de prueba desechable tiene
+# motivo para poner esto a true, y nunca en un inventario de verdad.
+valkey_allow_no_password: false
+
+# Con noeviction (ver el comentario junto a maxmemory-policy en
+# managed.conf.j2) esto es un tope duro: llegar aqui rechaza escrituras en
+# vez de tirar claves.
+valkey_maxmemory: 512mb
+
+# UID/GID fijos del usuario "valkey" en la imagen oficial valkey/valkey (no
+# parametrizables desde fuera: vienen en su /etc/passwd). Su entrypoint hace
+# setpriv a este usuario para todo lo que no sea su propio directorio de
+# trabajo (/data, cubierto por el volumen con nombre), asi que /etc/valkey
+# tiene que ser legible por el.
+valkey_config_owner: "999"
+valkey_config_group: "1000"
+
+# A que handler avisan las copias de tls.yml. standalone.yml lo deja en su
+# valor de fabrica; sentinel.yml lo cambia a "Reiniciar sentinel" al incluir
+# tls.yml, porque un voto puede no tener ningun valkey-server propio.
+valkey_tls_notify_handler: Reiniciar valkey
+
+# A que handler avisan managed.conf, valkey.conf y el compose de
+# standalone.yml (no tls.yml, ese es el de arriba). cluster.yml lo cambia a
+# "Reiniciar valkey replica" al reutilizar standalone.yml para el segundo
+# proceso de la maquina, el que vive en valkey_replica_port.
+valkey_notify_handler: Reiniciar valkey
+
+# Puerto del segundo proceso en topologia cluster: cada maquina corre un
+# master (valkey_port) y la replica de otra maquina (este), en dos puertos
+# distintos (spec S5.4). Sin uso en standalone ni sentinel.
+valkey_replica_port: 6380
+
+# Sentinel. Nombre del contenedor parametrizado por el mismo motivo que
+# valkey_container_name. El puerto de control (26379) es TLS-only, igual que
+# el de los nodos de datos: "port 0" mas "tls-port" en sentinel.conf.j2, y
+# con su propio requirepass. Cualquier valkey-cli contra el necesita --tls y
+# REDISCLI_AUTH.
+valkey_sentinel_container_name: valkey-sentinel
+valkey_sentinel_port: 26379
+
+# Cuanto tarda sentinel en declarar caido al master y cuanto le da a un
+# failover antes de darlo por atascado. Valores de fabrica de Redis/Valkey;
+# variables por si una red mas lenta o mas rapida que la de referencia pide
+# otro numero.
+valkey_sentinel_down_after_ms: 5000
+valkey_sentinel_failover_timeout_ms: 60000

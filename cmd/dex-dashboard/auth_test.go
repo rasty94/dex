@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"golang.org/x/oauth2"
+
+	dexvalkey "github.com/dexidp/dex/pkg/valkey"
 )
 
 func TestAccess(t *testing.T) {
@@ -337,7 +340,7 @@ func TestRequireFreshAuth(t *testing.T) {
 		reauthWindow: 15 * time.Minute,
 		logger:       testLogger(),
 		oauth2:       oauth2.Config{ClientID: "dashboard", Endpoint: oauth2.Endpoint{AuthURL: "https://dex.example.com/auth"}},
-		loginLimiter: newAttemptLimiter(10, time.Minute),
+		loginLimiter: newAttemptLimiter(10, time.Minute, nil),
 	}
 
 	run := func(method string, authAt time.Time) (*httptest.ResponseRecorder, bool) {
@@ -402,24 +405,89 @@ func TestSanitizeNext(t *testing.T) {
 }
 
 func TestAttemptLimiter(t *testing.T) {
-	l := newAttemptLimiter(3, time.Minute)
+	l := newAttemptLimiter(3, time.Minute, nil)
+	ctx := t.Context()
 
 	for i := 0; i < 3; i++ {
-		if !l.allow("10.0.0.1") {
+		if !l.allow(ctx, "10.0.0.1") {
 			t.Fatalf("attempt %d should be allowed", i)
 		}
 	}
-	if l.allow("10.0.0.1") {
+	if l.allow(ctx, "10.0.0.1") {
 		t.Error("the fourth attempt in the window should be refused")
 	}
 	// Another address has its own budget.
-	if !l.allow("10.0.0.2") {
+	if !l.allow(ctx, "10.0.0.2") {
 		t.Error("a different address should not be affected")
 	}
 
 	var nilLimiter *attemptLimiter
-	if !nilLimiter.allow("10.0.0.1") {
+	if !nilLimiter.allow(ctx, "10.0.0.1") {
 		t.Error("a nil limiter must allow everything rather than panic")
+	}
+}
+
+// Two dashboard replicas must share one login budget. Without this, replicating
+// the panel multiplies its throttle by the number of instances -- the same hole
+// the shared state closed in dex.
+func TestTwoDashboardsShareOneLoginBudget(t *testing.T) {
+	m := miniredis.RunT(t)
+
+	newLimiter := func() *attemptLimiter {
+		c, err := dexvalkey.New(t.Context(), dexvalkey.Config{
+			Addresses: []string{m.Addr()}, KeyPrefix: "dex-dashboard:",
+		})
+		if err != nil {
+			t.Fatalf("valkey client: %v", err)
+		}
+		t.Cleanup(c.Close)
+		return newAttemptLimiter(2, time.Minute, c)
+	}
+
+	a, b := newLimiter(), newLimiter()
+
+	if !a.allow(t.Context(), "10.0.0.1") || !b.allow(t.Context(), "10.0.0.1") {
+		t.Fatal("the shared budget refused attempts inside the limit")
+	}
+	if a.allow(t.Context(), "10.0.0.1") {
+		t.Error("the third attempt got through: each replica is counting on its own")
+	}
+}
+
+// Without a shared store nothing changes: one process, its own map.
+func TestTheLocalLimiterStillWorks(t *testing.T) {
+	l := newAttemptLimiter(2, time.Minute, nil)
+	ctx := t.Context()
+
+	if !l.allow(ctx, "10.0.0.1") || !l.allow(ctx, "10.0.0.1") {
+		t.Fatal("the local limiter refused attempts inside the limit")
+	}
+	if l.allow(ctx, "10.0.0.1") {
+		t.Error("the local limiter stopped limiting")
+	}
+}
+
+// A Valkey that stopped answering must not turn the throttle off. It degrades to
+// one replica's worth of limit, never to none.
+func TestTheDashboardLimiterFallsBackWhenValkeyIsDown(t *testing.T) {
+	m := miniredis.RunT(t)
+	c, err := dexvalkey.New(t.Context(), dexvalkey.Config{
+		Addresses: []string{m.Addr()}, KeyPrefix: "dex-dashboard:",
+	})
+	if err != nil {
+		t.Fatalf("valkey client: %v", err)
+	}
+	t.Cleanup(c.Close)
+
+	l := newAttemptLimiter(2, time.Minute, c)
+	m.Close()
+
+	ctx := t.Context()
+	if !l.allow(ctx, "10.0.0.1") || !l.allow(ctx, "10.0.0.1") {
+		t.Fatal("the fallback refused attempts inside the limit")
+	}
+	if l.allow(ctx, "10.0.0.1") {
+		t.Error("with Valkey down the dashboard stopped limiting logins")
 	}
 }
 
@@ -493,5 +561,32 @@ func TestPermissionIsRecomputedPerRequest(t *testing.T) {
 	}
 	if _, ok := a.sessions.get(t.Context(), id); ok {
 		t.Error("the session of a revoked administrator should have been dropped, not left to expire")
+	}
+}
+
+// The throttle key must not be chosen by whoever is being throttled. Since the
+// counters moved to a shared Valkey, one unauthenticated request per made-up
+// forwarded address is one more key in a store that runs with noeviction: fill
+// it and no administrator session can be created at all.
+func TestClientAddrIgnoresTheForwardedHeaderByDefault(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "10.0.0.1:52020"
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+
+	if got := clientAddr(r, false); got != "10.0.0.1" {
+		t.Errorf("clientAddr = %q, want the address the connection came from, 10.0.0.1", got)
+	}
+}
+
+// Behind the load balancer this deployment is designed around, ignoring the
+// header would be the other failure: every administrator in one bucket. The
+// operator says which topology it is, and then the first hop is the client.
+func TestClientAddrHonorsTheForwardedHeaderWhenTrusted(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "10.0.0.1:52020"
+	r.Header.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.2")
+
+	if got := clientAddr(r, true); got != "203.0.113.9" {
+		t.Errorf("clientAddr = %q, want the first hop of the header, 203.0.113.9", got)
 	}
 }

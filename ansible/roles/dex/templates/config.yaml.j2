@@ -1,0 +1,110 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/dex/templates/.
+issuer: {{ dex_issuer }}
+
+storage:
+  type: {{ dex_storage.type }}
+  config:
+    host: {{ dex_storage.host }}
+    port: {{ dex_storage.port | default(3306) }}
+    database: {{ dex_storage.database }}
+    user: {{ dex_storage.user }}
+    password: {{ dex_storage_password | to_json }}
+    # Sin este bloque, el driver de MySQL de dex asume TLS con verificacion
+    # estricta (mysqlSSLTrue) en cuanto storage.config.ssl falta entero, y
+    # MariaDB moderno ofrece TLS con un certificado autofirmado por defecto:
+    # la conexion falla siempre por "doesn't contain any IP SANs". mode:
+    # "false" es lo que trae de ejemplo el propio config.yaml.dist de dex.
+    # Para TLS de verdad, dex_storage.ssl_mode mas dex_storage.ssl_ca_file
+    # (por ejemplo, el mismo internal-ca.pem que ya lleva este host).
+    ssl:
+      mode: {{ dex_storage.ssl_mode | default('false') | to_json }}
+{% if dex_storage.ssl_ca_file is defined %}
+      caFile: {{ dex_storage.ssl_ca_file }}
+{% endif %}
+
+web:
+  http: 0.0.0.0:5556
+
+telemetry:
+  http: 0.0.0.0:5558
+
+grpc:
+  addr: 0.0.0.0:5557
+  token: {{ dex_grpc_token | to_json }}
+  tlsCert: /etc/dex/dex-cert.pem
+  tlsKey: /etc/dex/dex-key.pem
+
+{% if groups.valkey is defined and groups.valkey | length > 0 %}
+{% set topology = hostvars[groups.valkey[0]].valkey_topology | default('standalone') %}
+valkey:
+{% if topology == 'sentinel' %}
+  mode: sentinel
+  addresses:
+{% for h in groups.valkey_sentinel | default([]) %}
+    - {{ hostvars[h].ansible_host }}:{{ dex_valkey_sentinel_port }}
+{% endfor %}
+  masterSet: {{ (hostvars[groups.valkey[0]].valkey_master_set | default('dex')) | to_json }}
+  # El puerto de control de sentinel tiene su propio requirepass
+  # (sentinel.conf.j2), asi que preguntarle quien es el master exige
+  # autenticarse. Sin esto, el cliente recibe "NOAUTH Authentication
+  # required" y no llega a conocer al master. Misma contrasena a proposito:
+  # es el mismo secreto operativo y no hay nada que gane un segundo.
+{% if dex_valkey_sentinel_username is defined %}
+  sentinelUsername: {{ dex_valkey_sentinel_username | to_json }}
+{% endif %}
+  sentinelPassword: {{ dex_valkey_password | to_json }}
+{% elif topology == 'cluster' %}
+  mode: cluster
+  addresses:
+{% for h in groups.valkey %}
+    - {{ hostvars[h].ansible_host }}:{{ dex_valkey_port }}
+{% endfor %}
+{% else %}
+  mode: standalone
+  addresses:
+    - {{ hostvars[groups.valkey[0]].ansible_host }}:{{ dex_valkey_port }}
+{% endif %}
+  keyPrefix: {{ dex_valkey_key_prefix | to_json }}
+{% if dex_valkey_username is defined %}
+  username: {{ dex_valkey_username | to_json }}
+{% endif %}
+  password: {{ dex_valkey_password | to_json }}
+{% if dex_valkey_tls_ca_cert | default('') %}
+  tls:
+    caCert: {{ dex_valkey_tls_ca_cert }}
+{% endif %}
+{% endif %}
+
+expiry:
+  deviceRequests: 5m
+  idTokens: 24h
+  authRequests: 24h
+
+signer:
+  type: local
+  config:
+    keysRotationPeriod: 6h
+    algorithm: RS256
+
+logger:
+  level: info
+  format: json
+
+oauth2:
+  responseTypes: [code]
+  skipApprovalScreen: false
+  alwaysShowLoginScreen: false
+
+sessions:
+  cookieName: dex_session
+  absoluteLifetime: 24h
+  validIfNotUsedFor: 1h
+  cookieEncryptionKey: {{ dex_session_cookie_key | to_json }}
+
+# dex se niega a arrancar sin ningun metodo de autenticacion. Con
+# dex_connectors vacio (el valor por defecto) hace falta la base de
+# contrasenas propia encendida; si se rellena dex_connectors, apagarla aparte.
+enablePasswordDB: {{ dex_enable_password_db | to_json }}
+
+connectors: {{ dex_connectors | to_json }}

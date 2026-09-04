@@ -1,0 +1,56 @@
+dex_dashboard_config_dir: /etc/dex-dashboard
+
+# Igual que dex_container_name en el rol dex: para no chocar con otro panel
+# suelto en la misma maquina durante un converge de prueba.
+dex_dashboard_container_name: dex-dashboard
+
+dex_dashboard_listen_port: 5560
+
+# UID/GID del proceso dentro del contenedor (ver el Dockerfile del fork).
+dex_dashboard_config_owner: "1001"
+dex_dashboard_config_group: "1001"
+
+dex_dashboard_oidc_client_id: dex-dashboard
+
+# El panel se niega a arrancar sin al menos un administrador, a proposito:
+# admitir a cualquier usuario autenticado seria no tener puerta. Por eso estas
+# listas van vacias por defecto y hay que rellenarlas en el inventario.
+dex_dashboard_admin_groups: []
+dex_dashboard_admin_emails: []
+dex_dashboard_admin_write_groups: []
+dex_dashboard_admin_write_emails: []
+
+dex_dashboard_session_ttl: 8h
+dex_dashboard_idle_ttl: 1h
+dex_dashboard_reauth_window: 15m
+
+# El panel corre en el mismo nodo que su dex (mismos hosts en el inventario de
+# ejemplo), asi que le llega por localhost. default(5557) para no depender de
+# que el rol dex haya cargado sus propios defaults en este host.
+dex_dashboard_grpc_address: "127.0.0.1:{{ dex_grpc_port | default(5557) }}"
+
+# Prefijo de clave del panel en Valkey, distinto del de dex ("dex:", en
+# ansible/roles/dex/defaults/main.yml) para que un Valkey compartido no mezcle
+# las claves de los dos procesos. Mismo valor por defecto que trae
+# config.dashboard.docker.yaml (DEX_DASHBOARD_VALKEY_KEY_PREFIX) y que ya usa
+# Ejemplos/dashboard.
+dex_dashboard_valkey_key_prefix: "dex-dashboard:"
+
+# La CA interna con la que el panel verifica el TLS de Valkey (el rol valkey
+# deja sus nodos escuchando solo en TLS: sin esto el panel habla RESP en claro
+# contra un listener TLS y no arranca). Variable propia de este rol, como
+# dex_dashboard_valkey_key_prefix de arriba y por el mismo motivo: es la ruta
+# de DENTRO de este contenedor, y docker-compose.yml.j2 monta la CA en
+# /etc/dex-dashboard/, no en /etc/dex/ como el rol dex. Ningun valor unico en
+# group_vars puede ser correcto para los dos. Vaciarla ("") apaga el bloque
+# tls:, para quien apunte el panel a un Valkey ajeno sin cifrar.
+dex_dashboard_valkey_tls_ca_cert: /etc/dex-dashboard/internal-ca.pem
+
+# X-Forwarded-For del limitador de intentos de login. Apagado por defecto: con
+# el encendido y sin un proxy delante que ponga la cabecera en TODAS las
+# peticiones, quien golpea el panel elige su propia clave del limitador, y esas
+# claves van hoy a un Valkey compartido con noeviction -- llenarlo deja sin
+# poder crear sesiones a los administradores. Se enciende cuando el inventario
+# describe de verdad un despliegue con balanceador delante (el de ejemplo lo
+# hace), porque alli apagado mete a todos los administradores en un solo cubo.
+dex_dashboard_trust_forwarded_for: false

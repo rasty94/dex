@@ -152,7 +152,7 @@ proveedor de identidad y no debería estar accesible desde fuera del host.
 
 ## Límite de login compartido entre réplicas
 
-`dex.yaml` trae `valkey.address: valkey:6379` y `loginRateLimit` con `attempts: 3` a
+`dex.yaml` trae `valkey.addresses: [valkey:6379]` y `loginRateLimit` con `attempts: 3` a
 propósito: se agota rápido para poder verlo. Sin Valkey el límite es por proceso —
 `attempts × réplicas` en total—; con Valkey, dex y dex-replica cuentan sobre el mismo
 presupuesto.

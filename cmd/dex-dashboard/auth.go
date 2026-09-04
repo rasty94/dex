@@ -157,7 +157,10 @@ type authenticator struct {
 	secure       bool
 	reauthWindow time.Duration
 	loginLimiter *attemptLimiter
-	logger       *slog.Logger
+	// trustXFF mirrors Config.TrustForwardedFor: whether the throttle key may
+	// come from a header the caller controls.
+	trustXFF bool
+	logger   *slog.Logger
 }
 
 func newAuthenticator(ctx context.Context, c *Config, vk *dexvalkey.Client, logger *slog.Logger) (*authenticator, error) {
@@ -191,7 +194,8 @@ func newAuthenticator(ctx context.Context, c *Config, vk *dexvalkey.Client, logg
 		admin:        c.Admin,
 		secure:       strings.HasPrefix(c.BaseURL, "https://"),
 		reauthWindow: c.Admin.ReauthWindow,
-		loginLimiter: newAttemptLimiter(10, time.Minute),
+		loginLimiter: newAttemptLimiter(10, time.Minute, vk),
+		trustXFF:     c.TrustForwardedFor,
 		logger:       logger,
 	}, nil
 }
@@ -257,8 +261,9 @@ func (a *authenticator) readCookie(r *http.Request, name string) (*http.Cookie, 
 // without it, a re-authentication check would be satisfied by a silent redirect
 // and prove nothing.
 func (a *authenticator) startLogin(w http.ResponseWriter, r *http.Request, next string, forceReauth bool) {
-	if !a.loginLimiter.allow(clientAddr(r)) {
-		a.logger.Warn("login rate limit exceeded", "addr", clientAddr(r))
+	addr := clientAddr(r, a.trustXFF)
+	if !a.loginLimiter.allow(r.Context(), addr) {
+		a.logger.Warn("login rate limit exceeded", "addr", addr)
 		http.Error(w, "Too many login attempts. Try again in a minute.", http.StatusTooManyRequests)
 		return
 	}
@@ -495,26 +500,46 @@ func (a *authenticator) requireCSRF(next http.HandlerFunc) http.HandlerFunc {
 // a broken client, or someone probing, can drive an unbounded number of
 // authorization redirects and token exchanges at dex.
 //
-// ponytail: in-process and keyed by address only, matching how the sessions are
-// stored. It is a brake on noise, not a defense against a botnet.
+// ponytail: keyed by address only, matching how the sessions are stored. It is
+// a brake on noise, not a defense against a botnet.
 type attemptLimiter struct {
 	limit  int
 	window time.Duration
+
+	// shared counts in Valkey so replicas of this panel share one budget. When
+	// it is nil, or when it fails, the map below is used: that degrades to the
+	// behavior of a single replica rather than to no limit at all.
+	shared *dexvalkey.FixedWindow
 
 	mu       sync.Mutex
 	attempts map[string][]time.Time
 }
 
-func newAttemptLimiter(limit int, window time.Duration) *attemptLimiter {
-	return &attemptLimiter{limit: limit, window: window, attempts: map[string][]time.Time{}}
+func newAttemptLimiter(limit int, window time.Duration, vk *dexvalkey.Client) *attemptLimiter {
+	l := &attemptLimiter{limit: limit, window: window, attempts: map[string][]time.Time{}}
+	if vk != nil {
+		l.shared = dexvalkey.NewFixedWindow(vk, "dl")
+	}
+	return l
 }
 
 // allow records an attempt from key and reports whether it may proceed.
-func (l *attemptLimiter) allow(key string) bool {
+func (l *attemptLimiter) allow(ctx context.Context, key string) bool {
 	if l == nil {
 		return true
 	}
+	if l.shared != nil {
+		if n, err := l.shared.Incr(ctx, key, l.window); err == nil {
+			return n <= int64(l.limit)
+		}
+		// Fall through: a Valkey outage must not turn the throttle off.
+	}
+	return l.allowLocal(key)
+}
 
+// allowLocal is the in-process window, used with no shared store and when the
+// shared store cannot be reached.
+func (l *attemptLimiter) allowLocal(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -544,12 +569,16 @@ func (l *attemptLimiter) allow(key string) bool {
 	return true
 }
 
-// clientAddr identifies the caller for rate limiting. The dashboard sits behind
-// a proxy in every real deployment, so a forwarded address is used when present
-// — it is a brake on accidents, and treating it as authoritative is not the
-// point.
-func clientAddr(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+// clientAddr identifies the caller for rate limiting.
+//
+// X-Forwarded-For is only read when the deployment says a proxy sets it
+// (Config.TrustForwardedFor). Reading it unconditionally hands the throttle key
+// to whoever is being throttled: one unauthenticated request per made-up
+// address, each one a new key in the shared store. dex draws the same line for
+// its own limiter, where ratelimit.Key takes the address from the real-IP
+// resolver rather than from the header.
+func clientAddr(r *http.Request, trustForwardedFor bool) string {
+	if xff := r.Header.Get("X-Forwarded-For"); trustForwardedFor && xff != "" {
 		if first, _, found := strings.Cut(xff, ","); found {
 			return strings.TrimSpace(first)
 		}

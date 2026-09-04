@@ -31,7 +31,7 @@ services:
         container_name: dex
         command: ["dex", "serve", "/etc/dex/config.yaml"]
         restart: unless-stopped
-        # dex.yaml trae valkey.address: si Valkey no responde al arrancar, dex
+        # dex.yaml trae valkey.addresses: si Valkey no responde al arrancar, dex
         # se niega a servir. depends_on solo ordena el arranque de contenedores,
         # no basta por sí solo si Valkey tarda en aceptar conexiones, pero para
         # este ejemplo es suficiente.

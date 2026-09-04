@@ -19,7 +19,7 @@ func valkeySessionsFor(t *testing.T, addr string, ttl, idle time.Duration) *valk
 
 func valkeySessionsForWithLogger(t *testing.T, addr string, ttl, idle time.Duration, logger *slog.Logger) *valkeySessions {
 	t.Helper()
-	c, err := dexvalkey.New(t.Context(), dexvalkey.Config{Address: addr, KeyPrefix: "dex-dashboard:"})
+	c, err := dexvalkey.New(t.Context(), dexvalkey.Config{Addresses: []string{addr}, KeyPrefix: "dex-dashboard:"})
 	if err != nil {
 		t.Fatalf("valkey client: %v", err)
 	}

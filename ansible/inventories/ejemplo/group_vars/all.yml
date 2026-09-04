@@ -1,0 +1,18 @@
+# Cifrar con: ansible-vault encrypt ansible/inventories/ejemplo/group_vars/all.yml
+#
+# Ojo con el caracter '$': el feature flag expand_env de dex viene encendido y
+# aplica os.ExpandEnv a todas las cadenas de su configuracion. Una contrasena
+# con '$' se expande y deja de ser la contrasena.
+dex_image: ghcr.io/rasty94/dex:fork-v2.0.0
+# Esta contrasena solo va cifrada si dex_storage.ssl_mode (en hosts.yml, junto
+# a dex_storage) no se queda en "false": vale la pena leer el comentario de
+# alli antes de tocar esto.
+dex_storage_password: cambiame-sin-simbolo-dolar
+dex_grpc_token: cambiame-tambien
+dex_valkey_password: cambiame-igual
+dex_session_cookie_key: treinta-y-dos-bytes-exactos-aqui
+
+# El panel usa el mismo token gRPC de arriba, pero leido de fichero
+# (dex.tokenFile), nunca por entorno. clientSecret es del cliente OIDC
+# "dex-dashboard" que hay que dar de alta en dex aparte, con este repo.
+dex_dashboard_oidc_client_secret: cambiame-tambien-sin-dolar

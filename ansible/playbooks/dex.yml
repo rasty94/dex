@@ -1,0 +1,42 @@
+# El orden importa: dex se niega a arrancar sin Valkey, y con razon.
+- name: CA interna
+  # Antes que los demas: los tres roles (dex, el panel y valkey) consumen el
+  # hecho "internal_ca_cert" que publica este rol.
+  #
+  # Sin become a proposito, al reves que las tres tandas siguientes: todo lo
+  # que hace este rol es delegate_to: localhost y escribe en el directorio de
+  # la CA del nodo de control. Escalar aqui dejaria ese directorio --y la
+  # clave privada de la CA-- en manos de root en la maquina de quien lanza el
+  # playbook, que es justo lo contrario de lo que se quiere.
+  hosts: dex:dex_dashboard:valkey
+  roles: [internal_ca]
+
+- name: Valkey
+  # Antes que Dex: dex se niega a arrancar sin Valkey cuando esta configurado,
+  # asi que el orden no es cosmetico. valkey_sentinel se suma aqui porque un
+  # voto de sentinel puede vivir en un nodo de dex, fuera del grupo valkey
+  # (Task 11): sin esto ese host nunca entraria en esta tanda y su sentinel
+  # no se desplegaria nunca.
+  hosts: valkey:valkey_sentinel
+  serial: 1
+  # De aqui en adelante hace falta escalar: estas tandas escriben en /etc
+  # (/etc/valkey, /etc/dex, /etc/dex-dashboard), con duenos que son los
+  # usuarios de dentro de los contenedores (999, 1001), y hablan con el
+  # demonio de Docker. Un inventario que no lo necesite --el converge local,
+  # que escribe dentro del propio arbol de trabajo-- lo apaga con
+  # ansible_become: false en sus hosts, que es una variable de conexion y gana
+  # a esta directiva.
+  become: true
+  roles: [valkey]
+
+- name: Dex
+  hosts: dex
+  serial: 1        # de una en una: una actualizacion no deja el servicio abajo
+  become: true
+  roles: [dex]
+
+- name: Panel de administracion
+  hosts: dex_dashboard
+  serial: 1
+  become: true
+  roles: [dex_dashboard]
