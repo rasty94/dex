@@ -67,24 +67,15 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		opt.ShuffleInit = true
 	}
 
-	if cfg.TLS.CACert != "" || cfg.TLS.InsecureSkipVerify {
-		tlsCfg := &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: cfg.TLS.InsecureSkipVerify,
-		}
-		if cfg.TLS.CACert != "" {
-			pem, err := os.ReadFile(cfg.TLS.CACert)
-			if err != nil {
-				return nil, fmt.Errorf("read valkey caCert: %w", err)
-			}
-			pool := x509.NewCertPool()
-			if !pool.AppendCertsFromPEM(pem) {
-				return nil, fmt.Errorf("valkey caCert %q holds no certificate", cfg.TLS.CACert)
-			}
-			tlsCfg.RootCAs = pool
-		}
+	tlsCfg, err := tlsConfigFor(cfg.TLS)
+	if err != nil {
+		return nil, err
+	}
+	if tlsCfg != nil {
 		opt.TLSConfig = tlsCfg
 		if opt.Sentinel.MasterSet != "" {
+			// The sentinels are separate servers with their own listeners, and
+			// they are as TLS-only as the data nodes when the deployment is.
 			opt.Sentinel.TLSConfig = tlsCfg
 		}
 	}
@@ -99,6 +90,42 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("ping valkey: %w", err)
 	}
 	return &Client{Client: c, prefix: cfg.KeyPrefix}, nil
+}
+
+// tlsConfigFor builds what the connection dials with, or nil when this
+// deployment configured no TLS at all. Split out from New so the certificate
+// the client presents can be checked without a server that asks for one.
+func tlsConfigFor(cfg TLSConfig) (*tls.Config, error) {
+	if cfg.CACert == "" && cfg.Cert == "" && !cfg.InsecureSkipVerify {
+		return nil, nil
+	}
+
+	out := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	}
+	if cfg.CACert != "" {
+		caPEM, err := os.ReadFile(cfg.CACert)
+		if err != nil {
+			return nil, fmt.Errorf("read valkey caCert: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("valkey caCert %q holds no certificate", cfg.CACert)
+		}
+		out.RootCAs = pool
+	}
+	if cfg.Cert != "" {
+		// Loaded here rather than through GetClientCertificate: a bad pair must
+		// stop dex at startup, not once per handshake with an error the server
+		// reports and the client only sees as a closed connection.
+		pair, err := tls.LoadX509KeyPair(cfg.Cert, cfg.Key)
+		if err != nil {
+			return nil, fmt.Errorf("load valkey client certificate %q and key %q: %w", cfg.Cert, cfg.Key, err)
+		}
+		out.Certificates = []tls.Certificate{pair}
+	}
+	return out, nil
 }
 
 // firstNonEmpty returns a, or b when a is empty. Sentinels can carry their own

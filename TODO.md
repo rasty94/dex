@@ -78,32 +78,6 @@
       los tests, no implementa la invalidación asistida por servidor que necesita.
       Activarla evitaría un viaje de red por cada lectura de caché compartida, a
       costa de esa dependencia con los tests.
-- [ ] **La conexión con Valkey no presenta certificado de cliente.** El bloque
-      `tls:` de `pkg/valkey` solo tiene `caCert` e `insecureSkipVerify`: cifra el
-      viaje y verifica al servidor, pero quien autentica al cliente es la
-      contraseña, no un certificado. Esta nota venía dentro de la entrada «Valkey
-      es hoy un punto único de fallo», que se cerró al entregar sentinel y
-      cluster; la mitad del certificado de cliente sigue abierta y por eso vuelve
-      aquí sola. **La otra mitad, que hay que cambiar a la vez**: el rol de
-      Ansible pone `tls-auth-clients no` en `managed.conf.j2` y en
-      `sentinel.conf.j2` justamente porque el cliente no sabe presentar
-      certificado —con el valor de fábrica (`yes`) el servidor lo exige y dex no
-      llega a conectar—. Quien añada certificados de cliente a `pkg/valkey`
-      tiene que quitar esas dos líneas y hacer que el rol copie también un
-      certificado a los nodos de dex y del panel; con una sola de las dos
-      mitades, el despliegue deja de arrancar.
-- [ ] **En topología cluster, el bus queda sin autenticar.** Es la consecuencia
-      con filo del `tls-auth-clients no` de la entrada de arriba, y merece
-      seguirse aparte porque no se arregla igual: los nodos se autentican entre
-      sí con `requirepass`, pero el **bus del cluster** —el puerto del nodo más
-      10000, por donde viaja el gossip y la migración de slots— no tiene
-      equivalente de `requirepass`. Su única autenticación posible es el
-      certificado de cliente que `tls-cluster yes` exigiría, y que acabamos de
-      desactivar para que dex pudiera conectar. Cifrado sigue estando; autenticado
-      no. Sale a la luz solo en `valkey_topology: cluster`: standalone y sentinel
-      no tienen bus. La rebaja no empeora nada de lo que ya funcionaba —ese camino
-      no arrancaba antes— pero antes de poner un cluster en una red donde no confíes
-      del todo, esto es lo que hay que cerrar, y se cierra con la mitad de arriba.
 - [ ] `Client.Key` en `pkg/valkey/valkey.go` no tiene más uso que su propio
       test: cada componente que necesita una clave pasa por `HashKey`. Un
       ayudante de clave sin hashear y sin usuarios invita a que alguien meta un

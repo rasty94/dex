@@ -3,6 +3,8 @@ package valkey
 import (
 	"strings"
 	"testing"
+
+	"github.com/ghodss/yaml"
 )
 
 func TestConfigValidate(t *testing.T) {
@@ -21,6 +23,9 @@ func TestConfigValidate(t *testing.T) {
 		{"cluster is valid on db 0", Config{Mode: ModeCluster, Addresses: []string{"a:6379", "b:6379", "c:6379"}}, ""},
 		{"a valkey cluster has no database but zero", Config{Mode: ModeCluster, Addresses: []string{"a:6379"}, DB: 1}, "db"},
 		{"a mode without addresses is a mistake, not a way to disable it", Config{Mode: ModeSentinel}, "addresses"},
+		{"a client certificate without its key is refused", Config{Addresses: []string{"a:6379"}, TLS: TLSConfig{Cert: "c.pem"}}, "tls.key"},
+		{"a key without its certificate is refused", Config{Addresses: []string{"a:6379"}, TLS: TLSConfig{Key: "k.pem"}}, "tls.cert"},
+		{"the pair together is valid", Config{Addresses: []string{"a:6379"}, TLS: TLSConfig{Cert: "c.pem", Key: "k.pem"}}, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -38,5 +43,36 @@ func TestConfigValidate(t *testing.T) {
 				t.Errorf("Validate() = %v, want it to mention %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestTheYAMLKeysAreTheOnesTheRoleWrites unmarshals the block the Ansible role
+// renders. Neither binary rejects unknown fields by default, so a mistyped json
+// tag here would not fail: the certificate would simply never be loaded and the
+// server would refuse every connection with an error only its own log explains.
+func TestTheYAMLKeysAreTheOnesTheRoleWrites(t *testing.T) {
+	const rendered = `
+mode: standalone
+addresses:
+  - 10.0.0.1:6379
+keyPrefix: "dex:"
+password: "pw"
+tls:
+  caCert: /etc/dex/internal-ca.pem
+  cert: /etc/dex/dex-cert.pem
+  key: /etc/dex/dex-key.pem
+`
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(rendered), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.TLS.Cert != "/etc/dex/dex-cert.pem" {
+		t.Errorf("tls.cert = %q, want the path the role renders", cfg.TLS.Cert)
+	}
+	if cfg.TLS.Key != "/etc/dex/dex-key.pem" {
+		t.Errorf("tls.key = %q, want the path the role renders", cfg.TLS.Key)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want the rendered block to be valid", err)
 	}
 }

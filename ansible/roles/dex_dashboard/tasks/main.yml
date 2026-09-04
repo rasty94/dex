@@ -29,6 +29,27 @@
     mode: "0644"
   notify: Reiniciar el panel
 
+- name: Certificado propio del nodo, para presentarselo a Valkey
+  ansible.builtin.copy:
+    content: "{{ internal_ca_host_cert }}"
+    dest: "{{ dex_dashboard_config_dir }}/dashboard-cert.pem"
+    owner: "{{ dex_dashboard_config_owner }}"
+    group: "{{ dex_dashboard_config_group }}"
+    mode: "0644"
+  notify: Reiniciar el panel
+
+- name: Clave propia del nodo, para presentarsela a Valkey
+  # no_log: es la clave privada del nodo; copy con --diff imprimiria el
+  # fichero entero al crearlo o al cambiar.
+  ansible.builtin.copy:
+    content: "{{ internal_ca_host_key }}"
+    dest: "{{ dex_dashboard_config_dir }}/dashboard-key.pem"
+    owner: "{{ dex_dashboard_config_owner }}"
+    group: "{{ dex_dashboard_config_group }}"
+    mode: "0600"
+  notify: Reiniciar el panel
+  no_log: true
+
 - name: Configuracion del panel
   # no_log: la plantilla renderizada lleva clientSecret en claro; sin esto,
   # un -v o --diff lo imprime en la consola.

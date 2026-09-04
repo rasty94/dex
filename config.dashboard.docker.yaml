@@ -84,10 +84,19 @@ valkey:
 {{- if getenv "DEX_DASHBOARD_VALKEY_DB" "" }}
   db: {{ .Env.DEX_DASHBOARD_VALKEY_DB }}
 {{- end }}
-{{- if or (getenv "DEX_DASHBOARD_VALKEY_TLS_CA_CERT" "") (conv.ToBool (getenv "DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY" "false")) }}
+{{- /* DEX_DASHBOARD_VALKEY_TLS_CERT and _TLS_KEY are the certificate this process
+       presents, not the one it verifies -- that is _TLS_CA_CERT. A server
+       running with tls-auth-clients yes (the default, and what the Ansible
+       role deploys) closes the connection without them. They go together:
+       one alone is a startup error. */}}
+{{- if or (getenv "DEX_DASHBOARD_VALKEY_TLS_CA_CERT" "") (getenv "DEX_DASHBOARD_VALKEY_TLS_CERT" "") (conv.ToBool (getenv "DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY" "false")) }}
   tls:
 {{- if getenv "DEX_DASHBOARD_VALKEY_TLS_CA_CERT" "" }}
     caCert: {{ .Env.DEX_DASHBOARD_VALKEY_TLS_CA_CERT }}
+{{- end }}
+{{- if getenv "DEX_DASHBOARD_VALKEY_TLS_CERT" "" }}
+    cert: {{ .Env.DEX_DASHBOARD_VALKEY_TLS_CERT }}
+    key: {{ getenv "DEX_DASHBOARD_VALKEY_TLS_KEY" "" }}
 {{- end }}
 {{- if conv.ToBool (getenv "DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY" "false") }}
     insecureSkipVerify: {{ conv.ToBool .Env.DEX_DASHBOARD_VALKEY_TLS_INSECURE_SKIP_VERIFY }}

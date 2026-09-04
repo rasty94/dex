@@ -131,9 +131,25 @@ Cómo queda cada fichero:
 | `sentinel.conf` | **Nunca.** No incluye nada; es entero de sentinel desde que se crea |
 
 Esto importa hoy, no en abstracto: el `tls-port`, el `tls-replication yes`, el
-`tls-auth-clients no` y el `requirepass` del sentinel son cambios recientes de la
+`tls-auth-clients` y el `requirepass` del sentinel son cambios recientes de la
 plantilla. Un sentinel desplegado antes de ellos se queda **con su puerto de control en
 claro y sin autenticar** hasta que alguien lo migre a mano.
+
+El caso vivo ahora mismo es `tls-auth-clients`, que pasó de `no` a `yes`. Los nodos de
+datos lo reciben solos —`managed.conf` se reescribe en cada pasada—, pero **un sentinel
+ya desplegado no**: su fichero no se toca nunca, así que sigue aceptando clientes sin
+certificado hasta que se migre. Se comprueba con
+`docker exec <sentinel> grep tls-auth-clients /etc/valkey/sentinel.conf` y se arregla
+editando esa línea y reiniciando el contenedor.
+
+Y un aviso de ventana, para el mismo cambio: la tanda de Valkey va **antes** que la de
+dex, así que los nodos de datos empiezan a exigir certificado mientras dex todavía corre
+con la configuración vieja, que no lo presenta. El proceso que ya está arriba aguanta:
+pierde el almacén compartido y cae a sus contadores locales hasta que le llega su turno.
+El que **no** aguanta es el que reinicie dentro de esa ventana, porque `pkg/valkey.New`
+hace `PING` al arrancar y sin él dex se niega a servir. Si la ventana no es aceptable,
+desplegar primero solo dex y el panel (`--limit dex:dex_dashboard`) y en una segunda
+pasada Valkey: el par de cliente no molesta a un servidor que todavía no lo pide.
 
 Qué hacer, según qué se cambie:
 
@@ -398,11 +414,15 @@ deje de estar en claro.
 Otras dos cosas que la misma prueba dejó claras:
 
 - **`tls-auth-clients` viene en `yes` de fábrica**, o sea que el servidor exige
-  certificado de cliente. `pkg/valkey` solo sabe presentar la CA (su bloque `tls:` tiene
-  `caCert` e `insecureSkipVerify` y nada más), así que con el valor de fábrica un
-  cliente que solo trae la CA recibe `Server closed the connection`. Con
-  `tls-auth-clients no`, `PONG`. Lo mismo vale para los nodos de datos: por eso está en
-  `managed.conf.j2`. La autenticación la pone `requirepass`, no el certificado.
+  certificado de cliente. Durante un tiempo las dos plantillas lo pusieron en `no`,
+  porque `pkg/valkey` solo sabía presentar la CA y un cliente que solo la traía recibía
+  `Server closed the connection`. **Ya no**: `pkg/valkey` acepta `tls.cert` y `tls.key`,
+  el rol copia el par a los nodos de dex y del panel, y las dos plantillas han vuelto al
+  `yes` de fábrica. Importa más de lo que parecía: la directiva es global, no solo para
+  los clientes, así que mientras estuvo en `no` el bus del cluster iba cifrado y **sin
+  autenticar** —el bus no tiene `requirepass`—, y bastaba tener la CA para unirse.
+  Comprobado con un nodo de usar y tirar: con el par, `PONG`; sin él,
+  `remote error: tls: certificate required`.
 - **Con `requirepass`, un cliente sin credenciales recibe `NOAUTH Authentication
   required`** en el puerto de control. Esto importa porque el sentinel va en red de
   host: sin `requirepass`, cualquiera que alcance el 26379 podía repuntar el master set

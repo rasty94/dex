@@ -70,9 +70,15 @@ valkey:
   username: {{ dex_valkey_username | to_json }}
 {% endif %}
   password: {{ dex_valkey_password | to_json }}
-{% if dex_valkey_tls_ca_cert | default('') %}
+{% if (dex_valkey_tls_ca_cert | default('')) or (dex_valkey_tls_cert | default('')) %}
   tls:
+{% if dex_valkey_tls_ca_cert | default('') %}
     caCert: {{ dex_valkey_tls_ca_cert }}
+{% endif %}
+{% if dex_valkey_tls_cert | default('') %}
+    cert: {{ dex_valkey_tls_cert }}
+    key: {{ dex_valkey_tls_key }}
+{% endif %}
 {% endif %}
 {% endif %}
 

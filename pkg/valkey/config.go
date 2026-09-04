@@ -47,6 +47,14 @@ type Config struct {
 type TLSConfig struct {
 	CACert             string `json:"caCert"`
 	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
+
+	// Cert and Key are dex's own certificate, presented to the server. Needed
+	// when the server runs with tls-auth-clients yes, which is also what makes
+	// a cluster authenticate its bus: that setting is global, so leaving it off
+	// to spare the clients a certificate leaves the bus open to any node that
+	// has the CA. They go together or not at all.
+	Cert string `json:"cert"`
+	Key  string `json:"key"`
 }
 
 // mode returns the topology, defaulting to standalone.
@@ -63,6 +71,15 @@ func (c Config) mode() string {
 func (c Config) Validate() error {
 	if c.Address != "" {
 		return fmt.Errorf("valkey: the address field was replaced by addresses, a list; write addresses: [%q]", c.Address)
+	}
+
+	// Checked before the addresses, because half a pair is a mistake whether or
+	// not this deployment has a shared store at all.
+	if (c.TLS.Cert == "") != (c.TLS.Key == "") {
+		if c.TLS.Cert == "" {
+			return fmt.Errorf("valkey: tls.key is set without tls.cert; a client certificate is the pair, not the key alone")
+		}
+		return fmt.Errorf("valkey: tls.cert is set without tls.key; a client certificate is the pair, not the certificate alone")
 	}
 
 	if len(c.Addresses) == 0 {
