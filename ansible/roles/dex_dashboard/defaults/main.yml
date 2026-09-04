@@ -46,6 +46,17 @@ dex_dashboard_valkey_key_prefix: "dex-dashboard:"
 # tls:, para quien apunte el panel a un Valkey ajeno sin cifrar.
 dex_dashboard_valkey_tls_ca_cert: /etc/dex-dashboard/internal-ca.pem
 
+# El certificado que el panel PRESENTA a Valkey. Los nodos corren con
+# tls-auth-clients yes y sin esto rechazan la conexion. A diferencia del rol
+# dex, que reaprovecha el par de su gRPC, aqui el par se copia solo para esto:
+# el panel no sirve TLS propio, va detras del balanceador.
+#
+# Rutas de DENTRO de este contenedor. Vaciar dex_dashboard_valkey_tls_cert las
+# apaga las dos, para quien apunte el panel a un Valkey ajeno que no pida
+# certificado de cliente.
+dex_dashboard_valkey_tls_cert: /etc/dex-dashboard/dashboard-cert.pem
+dex_dashboard_valkey_tls_key: /etc/dex-dashboard/dashboard-key.pem
+
 # X-Forwarded-For del limitador de intentos de login. Apagado por defecto: con
 # el encendido y sin un proxy delante que ponga la cabecera en TODAS las
 # peticiones, quien golpea el panel elige su propia clave del limitador, y esas

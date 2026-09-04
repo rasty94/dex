@@ -25,12 +25,12 @@ tls-ca-cert-file /etc/valkey/tls/ca.crt
 # documentacion/despliegue-ansible.md.
 tls-replication yes
 
-# Igual que en los nodos de datos: con el valor de fabrica ("yes") el
-# servidor exige certificado de cliente, y pkg/valkey solo sabe presentar la
-# CA. Quien pregunta por el master es dex y el panel, asi que sin esto el
-# puerto de control no le sirve a nadie. La autenticacion la pone el
-# requirepass de abajo.
-tls-auth-clients no
+# Igual que en los nodos de datos, y por el mismo motivo: quien pregunta por
+# el master es dex y el panel, y ya traen su par firmado por la CA interna
+# (tls.cert y tls.key en su bloque valkey). Mientras solo sabian presentar la
+# CA esto tenia que estar en "no" o el puerto de control no le servia a nadie.
+# El requirepass de abajo sigue siendo la otra mitad.
+tls-auth-clients yes
 
 # El puerto de control va en red de host: sin esto, cualquiera que lo alcance
 # puede repuntar el master set a una direccion suya, y entonces dex le

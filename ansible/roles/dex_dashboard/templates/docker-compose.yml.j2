@@ -12,5 +12,7 @@ services:
             - {{ dex_dashboard_config_dir }}/config.yaml:/etc/dex-dashboard/config.yaml:ro
             - {{ dex_dashboard_config_dir }}/grpc-token:/etc/dex-dashboard/grpc-token:ro
             - {{ dex_dashboard_config_dir }}/internal-ca.pem:/etc/dex-dashboard/internal-ca.pem:ro
+            - {{ dex_dashboard_config_dir }}/dashboard-cert.pem:/etc/dex-dashboard/dashboard-cert.pem:ro
+            - {{ dex_dashboard_config_dir }}/dashboard-key.pem:/etc/dex-dashboard/dashboard-key.pem:ro
         ports:
             - "{{ dex_dashboard_listen_port }}:5560"

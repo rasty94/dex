@@ -31,6 +31,19 @@ dex_valkey_sentinel_port: 26379
 # ajeno sin cifrar.
 dex_valkey_tls_ca_cert: /etc/dex/internal-ca.pem
 
+# El certificado que dex PRESENTA a Valkey, no el que verifica. Los nodos
+# corren con tls-auth-clients yes y sin esto rechazan la conexion: el cliente
+# solo ve "Server closed the connection", el motivo esta en el log del
+# servidor. Es el mismo par que ya usa el TLS del gRPC (dex-cert.pem y
+# dex-key.pem, firmados por la CA interna): un segundo certificado para la
+# misma maquina y la misma CA no separa nada.
+#
+# Rutas de DENTRO del contenedor, como dex_valkey_tls_ca_cert. Vaciar
+# dex_valkey_tls_cert las apaga las dos, para quien apunte el rol a un Valkey
+# ajeno que no pida certificado de cliente.
+dex_valkey_tls_cert: /etc/dex/dex-cert.pem
+dex_valkey_tls_key: /etc/dex/dex-key.pem
+
 # Sin conectores externos, dex sirve con su base de contrasenas propia (el
 # mismo por defecto que trae config.yaml.dist). Rellenar dex_connectors con
 # los bloques de conector de verdad, tal cual van en config.yaml.
