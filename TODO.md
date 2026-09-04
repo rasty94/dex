@@ -8,7 +8,7 @@
 > sesiones e identidades, MFA nativo— está decidido y encendido; también en
 > [DONE.md](DONE.md).
 >
-> Última actualización: 2026-09-03
+> Última actualización: 2026-09-04
 > Imagen Docker: `ghcr.io/rasty94/dex:latest`
 > Repositorio: <https://github.com/rasty94/dex>
 
@@ -62,25 +62,27 @@
       los tests, no implementa la invalidación asistida por servidor que necesita.
       Activarla evitaría un viaje de red por cada lectura de caché compartida, a
       costa de esa dependencia con los tests.
-- [ ] El `attemptLimiter` del panel (`cmd/dex-dashboard/auth.go`) sigue siendo
-      local a propósito: protege el propio arranque de login del panel, no el
-      login de Dex, y con una sola réplica del panel por despliegue el límite
-      efectivo por proceso ya es el límite real.
+- [ ] **`attemptLimiter` del panel: la corrección, no el cierre.** El
+      razonamiento original —«con una sola réplica del panel por despliegue el
+      límite efectivo por proceso ya es el límite real»— era correcto cuando se
+      escribió y dejó de serlo por un cambio nuestro: el rol de Ansible
+      ([documentacion/despliegue-ansible.md](documentacion/despliegue-ansible.md))
+      puede desplegar el panel en varios hosts a la vez. Desde entonces
+      `cmd/dex-dashboard/auth.go` **sí** sabe compartir el presupuesto de
+      intentos en Valkey —reutiliza el `sharedCounter` de `server/ratelimit`,
+      con el mismo comportamiento ante una caída que el resto: cae al contador
+      local, nunca a «sin límite»—. Pero el propio rol no cierra el círculo
+      todavía: `ansible/roles/dex_dashboard/templates/config.yaml.j2` no
+      renderiza ningún bloque `valkey:`, a diferencia de la plantilla
+      equivalente del rol `dex`, así que un panel desplegado con dos hosts en
+      el grupo `dex_dashboard` —como trae el propio inventario de ejemplo—
+      sigue con sesiones y presupuesto de login **por proceso** hasta que esa
+      plantilla reciba el mismo bloque.
 - [ ] `Client.Key` en `pkg/valkey/valkey.go` no tiene más uso que su propio
       test: cada componente que necesita una clave pasa por `HashKey`. Un
       ayudante de clave sin hashear y sin usuarios invita a que alguien meta un
       secreto en el nombre de una clave donde no toca. Retirarlo, o darle un
       uso real, antes de que alguien lo use mal.
-- [ ] **Valkey es hoy un punto único de fallo, y `New` solo admite una
-      dirección.** `pkg/valkey/valkey.go` pasa un `InitAddress` con un
-      elemento: sin sentinel, sin cluster y sin certificado de cliente (el
-      bloque TLS solo tiene `caCert` e `insecureSkipVerify`, así que la
-      autenticación del cliente es la contraseña). Mientras Valkey esté
-      apagado la configuración sigue siendo opcional y esto no importa; en
-      cuanto se encienda en producción, dex deja de arrancar si el servidor no
-      responde. `valkey-go` soporta las tres cosas, y
-      [documentacion/valkey.md](documentacion/valkey.md) ya avisa de la
-      limitación.
 - [ ] La afirmación de que dex se niega a arrancar con un `cacheTTL` inválido
       no es cierta con el feature flag `continue_on_connector_failure` activo
       (su valor por defecto): ahí el conector falla, dex lo registra y arranca
@@ -92,21 +94,6 @@
 
 - [ ] Provider para HashiCorp Vault: Leer el `adminPassword` y los app-credentials nativamente de Vault sin exponerlos en el `config.yaml`.
 - [ ] Helm Chart u Operator Kubernetes Mejorado: Adaptar configuraciones del Fork directamente en los values nativos del chart oficial de la comunidad.
-- [ ] **Rol de Ansible para desplegar el fork.** Lo que hay hoy es un ejemplo para
-      probar en local y una guía de TLS escrita a mano
-      ([despliegue-docker-tls.md](documentacion/despliegue-docker-tls.md)): no hay nada
-      que ponga esto en una máquina de verdad sin repetir los pasos a mano cada vez.
-      El rol tendría que cubrir la imagen y su versión, el fichero de configuración con
-      sus secretos fuera del repositorio, los certificados, el arranque como servicio, y
-      el panel como su propio proceso. Con Valkey recién integrado hay además una pieza
-      más que instalar y a la que hay que apuntar a los dos binarios.
-- [ ] **Un `docker compose` de producción, separado de los ejemplos.** Los de
-      `Ejemplos/` dicen en su primera línea que no se usen tal cual, y con razón:
-      publican en `127.0.0.1`, llevan los secretos escritos en el fichero, comparten
-      espacio de red entre servicios para no tocar `/etc/hosts`, y no tienen TLS. Hace
-      falta uno pensado para un despliegue: secretos por fuera, TLS, red separada por
-      servicio, y límites y reinicio declarados. La diferencia entre los dos ficheros es
-      justo lo que hay que documentar.
 - [ ] **Sondas que digan la verdad.** El orden de arranque está resuelto por dentro
       —`newAuthenticatorWithRetry` en [main.go:62](cmd/dex-dashboard/main.go#L62) reintenta
       el discovery, así que el panel puede levantarse antes que dex— pero las sondas no
@@ -116,7 +103,27 @@
       bien; como sonda de disponibilidad miente, y el orquestador manda tráfico a un panel
       donde todas las páginas van a fallar. Falta además decir qué hacer cuando Valkey no
       está: dex se niega a arrancar, que es lo correcto, pero hay que reintentar en vez de
-      darlo por muerto.
+      darlo por muerto. Sigue abierta con el rol de Ansible desplegado: ver
+      [despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
+- [ ] **Fases 3, 4 y 5 del despliegue en alta disponibilidad**, con sus decisiones ya
+      tomadas pero sin spec propia todavía —el rol de Ansible de la fase 2 ya está en
+      [DONE.md](DONE.md)—, ver la
+      [hoja de ruta](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md):
+      - **Fase 3 — el balanceador**: HAProxy más keepalived (VRRP entre dos nodos, no
+        un balanceador de balanceadores).
+      - **Fase 4 — MariaDB en alta disponibilidad**: primario y réplica con
+        replicación semisíncrona, ProxySQL como punto de entrada, orchestrator para
+        detectar la caída y promover. **Galera descartado, y no por gusto**: dex fija
+        `transaction_isolation = SERIALIZABLE` en cada conexión
+        ([storage/sql/config.go:236](storage/sql/config.go#L236) y
+        [storage/ent/mysql.go:53](storage/ent/mysql.go#L53)) y Galera solo garantiza
+        REPEATABLE READ.
+      - **Fase 5 — la colección de Ansible publicable**, al final porque no se puede
+        empaquetar lo que aún no existe.
+      - **El camino `ent` con MariaDB queda fuera y no soportado**: el feature flag
+        `DEX_ENT_ENABLED` (apagado por defecto) usa `atlas`, que hace sondeo de
+        versión, y MariaDB devuelve una cadena compuesta
+        (`5.5.5-10.11.2-MariaDB`) que atlas no interpreta como MySQL.
 
 ### 4. 🔐 Autenticación Avanzada (Beyond TOTP)
 

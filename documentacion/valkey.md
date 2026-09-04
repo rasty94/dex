@@ -156,6 +156,10 @@ valkey:
 Un cluster no tiene más base de datos que la 0: `db` distinto de `0` en este modo es
 un error de arranque, no una conexión que falla más tarde en el primer comando.
 
+Para desplegar cualquiera de las tres topologías con Ansible —el rol que monta Valkey,
+dex y el panel en máquinas reales, con TLS y los secretos cifrados—, ver
+[despliegue-ansible.md](despliegue-ansible.md).
+
 ## Qué pasa si Valkey se cae con dex ya sirviendo
 
 Cada componente elige distinto, y a propósito:

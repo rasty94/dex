@@ -32,6 +32,14 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 - `documentacion/valkey.md`: lo que el servidor compartido tiene que cumplir,
   qué se pierde en un reinicio, qué hace cada componente cuando el almacén se cae
   y las métricas que lo delatan.
+- El `attemptLimiter` del panel (`cmd/dex-dashboard/auth.go`) puede contar en
+  Valkey cuando el panel tiene `valkey.addresses` configurado, reutilizando el
+  mismo `sharedCounter` que el limitador de dex. Sin Valkey configurado, nada
+  cambia: sigue siendo el contador local de siempre.
+- Colección de Ansible (`ansible/`) que despliega dex, el panel y Valkey en
+  Docker sobre las tres topologías (`standalone`, `sentinel`, `cluster`), con
+  una CA interna propia para el TLS entre los tres y los secretos cifrados con
+  `ansible-vault`. Documentado en `documentacion/despliegue-ansible.md`.
 
 ### Cambiado
 

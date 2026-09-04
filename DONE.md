@@ -4,7 +4,7 @@
 > trabajo vivo. La numeración de secciones es la histórica del TODO original, así
 > que las referencias antiguas siguen resolviendo.
 >
-> Última actualización: 2026-09-03
+> Última actualización: 2026-09-04
 
 ---
 
@@ -301,6 +301,76 @@
 - [x] `TestHandlePassword`: el `// NOSONAR` de `dc6ebdcf` quedó dentro de un literal JSON, invalidando la config del conector mock. El conector no abría y el grant `password` respondía 400 en vez de 401 ante credenciales inválidas.
 - [x] `TestVerifyUnsignedMessageAndSignedAssertionWithRootXmlNs`: `testdata/oam-ca.pem` caducó en junio de 2026 y no tenemos la clave privada para refirmar los fixtures. El reloj de validación se fija a 2020 para seguir verificando la firma.
     - ⏰ `testdata/idp-cert.pem` caduca en enero de 2027, pero ya queda cubierto por el mismo reloj fijo.
+
+### 23. 🚀 Despliegue con Ansible — Valkey en alta disponibilidad y el compose de producción
+
+> Fases 1 y 2 de la
+> [hoja de ruta del despliegue](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md).
+> Cierra las tres entradas del TODO «Valkey es hoy un punto único de fallo», «Rol de
+> Ansible para desplegar el fork» y «Un `docker compose` de producción, separado de los
+> ejemplos». Documentación completa en
+> [despliegue-ansible.md](documentacion/despliegue-ansible.md); spec en
+> [2026-09-03-despliegue-ansible-valkey-ha.md](documentacion/specs/2026-09-03-despliegue-ansible-valkey-ha.md).
+
+- [x] **`pkg/valkey` ya no admite una sola dirección.** `Config.Mode` explícito
+      (`standalone`/`sentinel`/`cluster` — deducirlo del número de direcciones falla en
+      silencio: con varias direcciones que no forman un cluster, `valkey-go` cae a
+      hablar con una sola sin decirlo) y `Config.Addresses` como lista, con
+      `Config.MasterSet` para sentinel. `valkey-go` sigue el failover de sentinel y las
+      redirecciones del cluster sin que dex tenga que hacer nada; verificado en vivo
+      contra las dos topologías, incluido matar el master de sentinel y comprobar que
+      el limitador de login sigue contando el mismo presupuesto tras la promoción.
+      **Lo que destapó probarlo**: el campo lápida `Config.Address string` —cuyo único
+      papel es que `Validate` falle con un mensaje claro ante la forma vieja del
+      config, no un alias silencioso— se pagó solo a los pocos minutos de escribirlo:
+      al reconstruir `Ejemplos/dashboard`, `config.dashboard.docker.yaml` —que ningún
+      brief de esta tanda de tareas nombraba— seguía renderizando `address:` singular,
+      y el panel se cayó con el error nuevo en vez de arrancar callado y sin almacén
+      compartido, que es exactamente el fallo silencioso que la lápida existe para
+      convertir en ruidoso.
+- [x] **Rol de Ansible que despliega dex, el panel y Valkey** (`ansible/`): cuatro
+      roles (`internal_ca`, `valkey`, `dex`, `dex_dashboard`) y un playbook que los
+      ordena, las tres topologías de Valkey, secretos en `ansible-vault` con el fichero
+      de configuración como el secreto (modo `0600`), y TLS de punta a punta con una CA
+      interna propia. Idempotente de verdad, no solo de palabra: converge dos veces sin
+      cambios, y lo comprobado en vivo va más allá —disparar `CONFIG REWRITE` en un
+      Valkey vivo y volver a converger deja el fichero reescrito con el mismo md5;
+      formar un cluster real de dos nodos y repetir da `changed=0`.
+      **Lo que destaparon las dos rondas de arreglos, las dos invisibles bajo
+      `--check`** (el propio `docker_container_exec` se salta bajo `--check`, así que
+      la verificación de estos dos solo se pudo hacer contra infraestructura real):
+      - Un `split('\n')` dentro de un escalar de bloque YAML (`>-`) no partía nada
+        —los bloques no interpretan escapes de barra invertida, solo los escalares
+        entre comillas dobles lo hacen—, así que comparaba el resultado de un sentinel
+        contra el texto literal de dos caracteres `\n` en vez de partirlo. Habría
+        escrito una línea `sentinel monitor` rota **la primera vez que un sentinel
+        contestara de verdad**, es decir en el segundo despliegue de una instalación
+        real: justo el escenario que la tarea existe para proteger.
+      - La contraseña del cluster viajaba en el argv de `docker_container_exec` y se
+        leía con `docker top` desde el host durante la ventana del exec, pese al
+        `no_log` de Ansible —que solo tapa la salida del propio Ansible—. Era la
+        tercera puerta a la misma habitación, tras cerrar `docker inspect` (secretos
+        fuera del compose) y el `-v`/`--diff` de Ansible (`no_log` en las tareas que
+        tocan secretos): cerrada pasando la contraseña por `REDISCLI_AUTH` en el
+        entorno del exec en vez de por `-a`.
+- [x] **Un `docker compose` de producción, renderizado por máquina, separado de los
+      ejemplos.** Secretos fuera del compose, TLS con la CA interna, actualización con
+      `serial: 1` y la imagen fijada a una etiqueta `fork-vX.Y.Z`, nunca `latest`.
+      **Lo que destapó probarlo**: MariaDB verificado contra este fork por primera vez
+      —hasta ahora la inferencia era que el dialecto conservador de `storage/sql`
+      funcionaría, nunca comprobado—. 11.4 pasa entero (20 subtests) sin la ruta de
+      compatibilidad, lo esperado porque ya trae `transaction_isolation`; 10.11 pasa
+      entero y la línea «reconnecting with MySQL pre-5.7.20 compatibility mode» sale
+      **18 veces, una por conexión**, con `SERIALIZABLE` aceptado sin rechazo ni
+      degradación silenciosa —la preocupación que dejó fuera a Galera en la fase 4—.
+      Reproducido de primera mano en un contenedor `mariadb:10.11` aparte, mismo
+      resultado.
+
+Dos límites que quedan, documentados y sin cerrar en falso: el panel replicado por este
+rol **no** comparte todavía sus sesiones ni su presupuesto de login —la plantilla del
+rol `dex_dashboard` no renderiza el bloque `valkey:` que la de `dex` sí renderiza—, y la
+sonda de disponibilidad del panel sigue sin decir la verdad. Las dos, en TODO.md y en
+[despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
 
 ---
 
