@@ -46,11 +46,16 @@ sistema. Así se montó y así hay que reproducirlo:
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install ansible-core==2.21.3 ansible-lint==26.8.0 requests
+# Las dos colecciones estan declaradas en ansible/requirements.yml
 .venv/bin/ansible-galaxy collection install \
-    community.crypto:3.3.0 -p .venv/ansible_collections
-# community.docker puede ya estar en ~/.ansible/collections; si no:
-.venv/bin/ansible-galaxy collection install community.docker:5.2.1
+    -r ansible/requirements.yml -p .venv/ansible_collections
 ```
+
+Ese `ansible/requirements.yml` es la lista de colecciones en forma de fichero en vez de
+en prosa; el hook de `ansible-lint` de `pre-commit` **no** se apoya en él —lo explica su
+propio comentario en `.pre-commit-config.yaml`— sino en el paquete `ansible` como
+`additional_dependencies`, porque `ansible-lint` busca el `requirements.yml` en el
+directorio de trabajo y no en el proyecto que detecta.
 
 Todos los comandos de este documento asumen `.venv/bin/` por delante y esta variable
 de entorno, que junta las colecciones del venv con las que ya hubiera en el perfil del
