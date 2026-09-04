@@ -446,6 +446,87 @@ Sigue aceptando clientes sin certificado hasta que alguien lo migre a mano.
 
 ---
 
+### 25. 🚪 El balanceador: HAProxy y keepalived
+
+> Fase 3 de la
+> [hoja de ruta](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md).
+> Spec en
+> [2026-09-04-balanceador-haproxy-keepalived.md](documentacion/specs/2026-09-04-balanceador-haproxy-keepalived.md).
+
+- [x] **Roles `haproxy` y `keepalived`**, en la última tanda del playbook. HAProxy
+      termina el TLS público y reparte; keepalived mantiene la IP flotante con VRRP.
+- [x] **El gRPC pasa en `mode tcp`, sin terminarse.** El 5557 ya sirve TLS con la CA
+      interna y el panel lo verifica.
+- [x] **`internal_ca_extra_sans`**, que es lo que hace posible ese passthrough.
+- [x] **`dex_http_bind`, `dex_grpc_bind`, `dex_dashboard_bind`**: atar los puertos a la
+      interfaz privada deja de ser un ajuste y pasa a ser requisito.
+- [x] **El panel deja de hablar con el dex de su propia máquina** y pasa por el
+      balanceador.
+
+**Lo que destapó probarlo**, y es lo que más valió de toda la fase: **el panel no sabe
+servirse bajo un prefijo**. Registra todas sus rutas en la raíz y su `baseURL` solo
+construye el `redirect_uri` de OIDC. Publicado como `https://sso.interno/dex-dashboard`
+—que es lo que el inventario de la **fase 2** ya traía— recibe `/dex-dashboard/callback`,
+eso cae en su catch-all `"/"`, no hay sesión, arranca un login, dex devuelve al callback,
+y vuelta. Bucle infinito de redirecciones. **11 intentos de login por cada intento de
+entrar**, y lo único que lo paraba era el limitador que se añadió en la fase anterior.
+
+O sea: el inventario de ejemplo llevaba desde la fase 2 describiendo un despliegue en el
+que no se puede entrar al panel, y ninguna prueba de renderizado ni ningún `ansible-lint`
+lo habría dicho nunca. Solo apareció al hacer un login de verdad contra contenedores de
+verdad.
+
+Lo que costó atribuirlo bien: el bucle pasa **igual con un solo panel**, así que no era el
+balanceo; y pasa **igual con `curl` que con `urllib`**, así que no era el cliente ni las
+reglas del prefijo `__Host-` en las cookies. Y el primer arreglo —quitarle el prefijo con
+`replace-path`— fue una trampa: el callback completaba y parecía resuelto, pero el panel
+redirigía a `https://sso.interno/`, sin prefijo, porque **cada enlace de cada plantilla
+tiene el mismo problema**. Arreglar la entrada sin la salida se ve como un éxito durante
+exactamente una petición.
+
+La salida elegida es darle un nombre propio y repartir por cabecera `Host`. Cuesta un
+nombre DNS más y un certificado que cubra los dos. Hacer el panel consciente del prefijo
+queda como entrada propia del TODO.
+
+**Lo demás que salió de las pruebas:**
+
+- **`set-header` contra `add-header` no es un detalle de estilo.** Con `add`, el panel
+  contó `1.2.3.4` —la dirección que yo puse a mano en la cabecera— como clave del
+  limitador: el atacante elige su propio cubo en un Valkey que corre con `noeviction`.
+  Con `set`, contó la real. Comprobado mirando qué clave existía y comparando su SHA-256,
+  no leyendo la configuración.
+- **`option httplog` en `defaults` hace que HAProxy avise en cada arranque** de que
+  `fe_grpc` es TCP y no le sirve. Funciona igual, pero un aviso constante es donde se
+  esconde el que sí importa.
+- **keepalived arranca soltando «SECURITY VIOLATION - scripts are being executed but
+  script_security not enabled»** si no se declara la política. Con
+  `enable_script_security` el arranque sale limpio.
+- **`map('extract', hostvars, 'clave')` revienta cuando la clave falta**, no devuelve
+  `Undefined`, así que el `assert` de las prioridades fallaba con un error interno de
+  Jinja en vez de con su propio mensaje —el que dice cómo arreglarlo—. Con
+  `selectattr(..., 'defined')` el hueco se puede contar. `map(attribute=..., default=...)`
+  tampoco sirve.
+- **HAProxy resuelve las direcciones de `server` al arrancar y se niega a empezar** si un
+  nombre no resuelve. Con las IP del inventario no pasa; con nombres, sí.
+- **Levantar dos dex a la vez contra la misma base los hace competir por la migración**
+  (`Table 'client' already exists`). Es exactamente lo que el `serial: 1` del playbook
+  evita, visto de primera mano.
+
+**Probado contra contenedores, con sabotaje donde había algo que demostrar:** el reparto
+sin afinidad (9/9 entre los dos paneles con la misma sesión, ocho páginas autenticadas,
+todas 200), el `X-Forwarded-For`, el passthrough del gRPC verificado contra el nombre del
+balanceador —y saboteado quitando la SAN: `x509: certificate is valid for
+t13-dex-1-sinsan, not sso.interno`—, la sonda sacando un nodo (`Layer4 timeout`) y
+devolviéndolo (`Layer7 check passed, code: 200`), y la reemisión de certificados al
+cambiar las SAN, con `changed=0` en la segunda pasada.
+
+**VRRP no.** Necesita dos máquinas y una L2; dos contenedores con `NET_ADMIN` en el mismo
+host comparten pila de red y el resultado no diría nada. Está en la lista ejecutable de
+[despliegue-ansible.md](documentacion/despliegue-ansible.md), con los del failover de
+sentinel.
+
+---
+
 ## 🔄 Sincronización con upstream — bloques cerrados
 
 > Divergencia de partida: **313 commits de upstream / 52 nuestros** desde `99c4233`

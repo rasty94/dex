@@ -18,7 +18,7 @@ El orden no es arbitrario: cada fase necesita que la anterior exista.
 | --- | --- | --- |
 | 1 | `pkg/valkey` con standalone, sentinel y cluster | Especificada |
 | 2 | Roles `valkey`, `dex` y `dex_dashboard`, con el panel replicado | Especificada |
-| 3 | El balanceador: HAProxy y keepalived | Especificada |
+| 3 | El balanceador: HAProxy y keepalived | Entregada |
 | 4 | MariaDB: despliegue y alta disponibilidad | Pendiente de spec |
 | 5 | La colección de Ansible publicable | Pendiente de spec |
 
