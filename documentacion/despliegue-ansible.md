@@ -115,6 +115,46 @@ reescribe su propia configuración (`CONFIG REWRITE` en cada failover, `nodes.co
 cluster) y un rol que sobrescriba esos ficheros le devuelve al nodo un `replicaof`
 caducado, deshaciendo la promoción que acababa de pasar.
 
+### Lo que un nodo ya desplegado no recibe
+
+La otra cara de esa regla, y conviene saberla **antes** de que muerda: como `valkey.conf`
+y `sentinel.conf` se crean con `force: false`, un nodo que ya está desplegado **no recibe
+por sí solo los cambios que se hagan después en esas plantillas**. Volver a lanzar el
+playbook no basta, y no avisa de nada: la tarea sale `ok` porque el fichero ya existe.
+
+Cómo queda cada fichero:
+
+| Fichero | ¿Llegan los cambios de la plantilla? |
+| --- | --- |
+| `managed.conf` | Sí, se reescribe en cada pasada y el handler reinicia el contenedor |
+| `valkey.conf` | Solo por el `include` de la primera línea, y **lo que el propio Valkey haya escrito después gana**: un `CONFIG REWRITE` deja sus directivas por debajo del `include`, y las posteriores mandan |
+| `sentinel.conf` | **Nunca.** No incluye nada; es entero de sentinel desde que se crea |
+
+Esto importa hoy, no en abstracto: el `tls-port`, el `tls-replication yes`, el
+`tls-auth-clients no` y el `requirepass` del sentinel son cambios recientes de la
+plantilla. Un sentinel desplegado antes de ellos se queda **con su puerto de control en
+claro y sin autenticar** hasta que alguien lo migre a mano.
+
+Qué hacer, según qué se cambie:
+
+- **Parámetros que sentinel sabe cambiar en caliente** —`down-after-milliseconds`,
+  `failover-timeout`, `auth-pass`, el quorum— van por `SENTINEL SET <conjunto> <opción>
+  <valor>` contra cada sentinel. Eso es lo que sentinel escribe él mismo en su fichero, y
+  es el camino correcto: editar `sentinel.conf` a mano y reiniciar es lo que deshace
+  failovers.
+- **Puertos, TLS y `requirepass`** no se cambian en caliente. Hay que **recrear el nodo de
+  forma controlada, de uno en uno**: parar el contenedor, borrar el fichero
+  (`sentinel.conf`, o `valkey.conf` si un `CONFIG REWRITE` está tapando lo que se quiere
+  cambiar), volver a lanzar el playbook para ese host, y **esperar a que el nodo vuelva a
+  estar sano antes de tocar el siguiente** —en sentinel, que el resto del quorum lo vea; en
+  cluster o en réplicas, que la replicación se haya puesto al día—. Nunca los tres a la
+  vez: sin quorum no hay promoción, y ese es justo el día en que hace falta.
+- **En una topología con master**, empezar por las réplicas y dejar el master para el
+  final, provocando su relevo a propósito (`SENTINEL FAILOVER <conjunto>`) en vez de
+  descubriéndolo al pararlo.
+
+Un despliegue nuevo no tiene nada de esto: el fichero se crea ya con la plantilla de hoy.
+
 ## Secretos
 
 Las contraseñas y claves van en `group_vars/all.yml`, cifrado con:
