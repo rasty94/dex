@@ -31,6 +31,15 @@ valkey:
     - {{ hostvars[h].ansible_host }}:{{ dex_valkey_sentinel_port | default(26379) }}
 {% endfor %}
   masterSet: {{ (hostvars[groups.valkey[0]].valkey_master_set | default('dex')) | to_json }}
+  # El puerto de control de sentinel tiene su propio requirepass
+  # (sentinel.conf.j2), asi que preguntarle quien es el master exige
+  # autenticarse. Sin esto, el cliente recibe "NOAUTH Authentication
+  # required" y no llega a conocer al master. Misma contrasena a proposito:
+  # es el mismo secreto operativo y no hay nada que gane un segundo.
+{% if dex_valkey_sentinel_username is defined %}
+  sentinelUsername: {{ dex_valkey_sentinel_username | to_json }}
+{% endif %}
+  sentinelPassword: {{ dex_valkey_password | to_json }}
 {% elif topology == 'cluster' %}
   mode: cluster
   addresses:

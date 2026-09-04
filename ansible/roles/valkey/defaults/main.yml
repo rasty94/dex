@@ -46,11 +46,11 @@ valkey_notify_handler: Reiniciar valkey
 # distintos (spec S5.4). Sin uso en standalone ni sentinel.
 valkey_replica_port: 6380
 
-# Sentinel (Task 11). Nombre del contenedor parametrizado por el mismo motivo
-# que valkey_container_name. El puerto de control (26379) se deja en claro a
-# proposito: es el que usan los propios sentinels entre si y el operador con
-# valkey-cli sin --tls (ver el comentario en sentinel.conf.j2 sobre el
-# certificado que sentinel si necesita para hablar con el master).
+# Sentinel. Nombre del contenedor parametrizado por el mismo motivo que
+# valkey_container_name. El puerto de control (26379) es TLS-only, igual que
+# el de los nodos de datos: "port 0" mas "tls-port" en sentinel.conf.j2, y
+# con su propio requirepass. Cualquier valkey-cli contra el necesita --tls y
+# REDISCLI_AUTH.
 valkey_sentinel_container_name: valkey-sentinel
 valkey_sentinel_port: 26379
 

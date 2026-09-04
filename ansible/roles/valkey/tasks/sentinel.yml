@@ -46,16 +46,27 @@
   # anterior: valkey-cli no esta instalado en el host, solo dentro de la
   # imagen. failed_when: false cubre tanto "el contenedor no existe todavia"
   # (arranque inicial) como "sentinel no conoce el master set todavia".
+  #
+  # --tls y REDISCLI_AUTH porque el puerto de control de sentinel ya no esta
+  # en claro ni abierto: mismo trato que los nodos de datos en cluster.yml, y
+  # la contrasena por entorno y no por -a para que no quede en el argv,
+  # legible con "docker top" mientras dura el exec. no_log tapa el otro lado,
+  # el del propio Ansible.
   community.docker.docker_container_exec:
     container: "{{ valkey_sentinel_container_name }}"
     command: >-
-      valkey-cli -p {{ valkey_sentinel_port | default(26379) }}
+      valkey-cli --tls --cacert /etc/valkey/tls/ca.crt
+      --cert /etc/valkey/tls/node.crt --key /etc/valkey/tls/node.key
+      -p {{ valkey_sentinel_port | default(26379) }}
       sentinel get-master-addr-by-name {{ valkey_master_set_effective }}
+    env:
+      REDISCLI_AUTH: "{{ dex_valkey_password | string }}"
   register: valkey_known_master
   changed_when: false
   failed_when: false
   delegate_to: "{{ groups['valkey_sentinel'] | first }}"
   run_once: true
+  no_log: true
 
 - name: El primer host del grupo es el master, solo en el arranque inicial
   # Despues de esto manda sentinel. El rol no vuelve a asignar el papel de

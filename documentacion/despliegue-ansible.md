@@ -196,9 +196,13 @@ máquina tal como aparece en él.
 # Desplegar sentinel (grupos valkey y valkey_sentinel del inventario)
 .venv/bin/ansible-playbook -i <inv>/hosts.yml ansible/playbooks/dex.yml
 
-# Quién es el master ahora mismo, preguntando a cualquier sentinel
-ssh <host-sentinel-1> docker exec valkey-sentinel \
-    valkey-cli -p 26379 sentinel get-master-addr-by-name dex
+# Quién es el master ahora mismo, preguntando a cualquier sentinel. El puerto
+# de control es TLS-only y lleva requirepass, así que hace falta --tls y la
+# contraseña, que va por entorno (`-e REDISCLI_AUTH` sin valor: docker la toma
+# del entorno del cliente) y nunca escrita en la orden.
+ssh <host-sentinel-1> docker exec -e REDISCLI_AUTH valkey-sentinel \
+    valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
+    -p 26379 sentinel get-master-addr-by-name dex
 
 # Pararlo
 ssh <host-del-master> docker stop valkey
@@ -206,14 +210,16 @@ ssh <host-del-master> docker stop valkey
 # Esperar mas que down-after-milliseconds + un margen (valores de fabrica:
 # 5000 ms de deteccion, hasta 60000 ms de plazo de failover) y volver a
 # preguntar: tiene que devolver una IP distinta a la de antes
-ssh <host-sentinel-1> docker exec valkey-sentinel \
-    valkey-cli -p 26379 sentinel get-master-addr-by-name dex
+ssh <host-sentinel-1> docker exec -e REDISCLI_AUTH valkey-sentinel \
+    valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
+    -p 26379 sentinel get-master-addr-by-name dex
 
 # El punto que importa: repetir el playbook y confirmar que el master sigue
 # siendo el promocionado, no el primer host del grupo valkey del inventario
 .venv/bin/ansible-playbook -i <inv>/hosts.yml ansible/playbooks/dex.yml
-ssh <host-sentinel-1> docker exec valkey-sentinel \
-    valkey-cli -p 26379 sentinel get-master-addr-by-name dex
+ssh <host-sentinel-1> docker exec -e REDISCLI_AUTH valkey-sentinel \
+    valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
+    -p 26379 sentinel get-master-addr-by-name dex
 # -> tiene que coincidir con la IP promocionada, no con la original
 ```
 
@@ -264,26 +270,57 @@ ssh <host-1> docker exec -e REDISCLI_AUTH=<dex_valkey_password> valkey \
 La salida lista cada master con sus réplicas y la IP de cada una: confirmar a mano que
 ninguna IP de réplica coincide con la IP de la máquina de su propio master.
 
-### 4. Pregunta abierta: ¿basta el certificado del sentinel para el master TLS-only?
+### 4. El sentinel también va en TLS, y esto es lo que lo demuestra
 
-`ansible/roles/valkey/templates/sentinel.conf.j2` le da a sentinel su propio
-certificado (`tls-cert-file`, `tls-key-file`, `tls-ca-cert-file`) para poder hablar con
-un master que solo escucha en su puerto TLS (`port 0` en `managed.conf.j2`). Lo que
-**no** se ha verificado contra sentinels reales es si eso basta para la conexión
-saliente de sentinel hacia el master, o si sentinel necesita además su propio
-`tls-port` — la pregunta quedó anotada en la Task 11 y no se pudo cerrar porque
-`docker_container_exec` se salta bajo `--check`.
+**Respondida la pregunta que este documento dejaba abierta: sí, el sentinel necesita
+su propio `tls-port`, y además `tls-replication yes`.** Darle solo su certificado no
+basta.
+
+`ansible/roles/valkey/templates/sentinel.conf.j2` tiene hoy la misma forma que los
+nodos de datos —`port 0` más `tls-port`, `tls-auth-clients no` y `requirepass`— y eso
+no es simetría por gusto: sin ello el sentinel no tenía configuración válida en
+**ninguna** dirección. `pkg/valkey` copia la configuración TLS del cliente al
+`SentinelOption` en cuanto hay TLS (un solo mando, a propósito), así que un cliente sin
+`tls:` no alcanzaba al master TLS-only y uno con `tls:` hablaba TLS contra un 26379 en
+texto plano. Las dos fallaban.
+
+Comprobado contra contenedores de Valkey 8 de verdad, no razonado:
+
+| Configuración del sentinel | Lo que ve `sentinel master dex` |
+| --- | --- |
+| Solo los `tls-*-file`, sin `tls-replication` | `flags: s_down,o_down,master,disconnected`, `runid` vacío |
+| Con `tls-replication yes` | `flags: master`, `runid` aprendido, enlace correcto |
+
+Es decir: lo que cifra la conexión **saliente** del sentinel hacia el master es
+`tls-replication yes`, no el `tls-port`. El `tls-port` es para el otro lado, el de quien
+le pregunta —dex, el panel y el operador—, y es lo que permite que el puerto de control
+deje de estar en claro.
+
+Otras dos cosas que la misma prueba dejó claras:
+
+- **`tls-auth-clients` viene en `yes` de fábrica**, o sea que el servidor exige
+  certificado de cliente. `pkg/valkey` solo sabe presentar la CA (su bloque `tls:` tiene
+  `caCert` e `insecureSkipVerify` y nada más), así que con el valor de fábrica un
+  cliente que solo trae la CA recibe `Server closed the connection`. Con
+  `tls-auth-clients no`, `PONG`. Lo mismo vale para los nodos de datos: por eso está en
+  `managed.conf.j2`. La autenticación la pone `requirepass`, no el certificado.
+- **Con `requirepass`, un cliente sin credenciales recibe `NOAUTH Authentication
+  required`** en el puerto de control. Esto importa porque el sentinel va en red de
+  host: sin `requirepass`, cualquiera que alcance el 26379 podía repuntar el master set
+  a una dirección suya, y entonces dex le pregunta al sentinel quién es el master y le
+  manda `AUTH <contraseña>` a la máquina del atacante.
+
+Lo que sigue sin probarse contra máquinas de verdad —y por eso queda en esta lista— es
+el failover completo del paso 1 con esta configuración: aquí solo se ha verificado el
+enlace sentinel → master y el acceso autenticado al puerto de control.
 
 ```bash
 # Tras desplegar sentinel de verdad (paso 1), en cualquier host de sentinel:
 ssh <host-sentinel-1> docker logs valkey-sentinel | grep -i tls
 
-# Y el estado que ve sentinel del master, que dice si la conexion funciona
-ssh <host-sentinel-1> docker exec valkey-sentinel \
-    valkey-cli -p 26379 sentinel master dex
+# Y el estado que ve sentinel del master, que dice si la conexión funciona
+ssh <host-sentinel-1> docker exec -e REDISCLI_AUTH valkey-sentinel \
+    valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
+    -p 26379 sentinel master dex
+# -> flags: master, sin s_down ni o_down, y num-slaves con las réplicas reales
 ```
-
-Si `sentinel master dex` no muestra el master como alcanzable (`flags` sin `s_down` ni
-`o_down`, y `num-slaves` con el número real de réplicas) o los logs muestran errores de
-handshake TLS, hace falta añadir `tls-port` a `sentinel.conf.j2` y volver a probar.
-Documentar aquí el resultado en cuanto se responda.
