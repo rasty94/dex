@@ -33,6 +33,14 @@
   register: mariadb_estados
   changed_when: false
   failed_when: false
+  # ignore_unreachable ADEMAS de failed_when: false, porque no son lo mismo.
+  # failed_when cubre un rc distinto de cero; una maquina MUERTA no llega a
+  # tener rc: falla en la conexion y el delegate_to aborta la tanda entera. Sin
+  # esto, redesplegar con un nodo caido --justo cuando mas falta hace-- se para
+  # antes de decidir nada. Un resultado unreachable no trae rc, asi que el
+  # selectattr('rc', 'defined') de mariadb_escribibles ya lo cuenta como no
+  # escribible, que es lo correcto.
+  ignore_unreachable: true
   no_log: true
 
 - name: Este nodo respondio, esto no es un contenedor que todavia arranca
@@ -55,8 +63,6 @@
   # split('\t') y NO split(): sin argumento colapsa espacios y descarta campos
   # vacios, y un @@gtid_binlog_pos vacio desplazaria los indices sin fallar.
   ansible.builtin.set_fact:
-    mariadb_es_escribible: "{{ mariadb_propio_campos[0] == '0' }}"
-    mariadb_gtid_pos: "{{ mariadb_propio_campos[1] }}"
     mariadb_tiene_datos: "{{ (mariadb_propio_campos[2] | int) > 0 }}"
     mariadb_ya_replica: "{{ (mariadb_propio_campos[3] | int) > 0 }}"
   vars:
@@ -91,37 +97,69 @@
       no tiene. Revisalo a mano --GTID de cada nodo, binlogs-- y decide cual
       sobrevive antes de volver a desplegar.
 
-- name: Elegir el primario, leyendolo y solo asignandolo en el arranque inicial
-  # Si alguien ya es escribible, ESE es el primario. Si nadie lo es, SOLO un
-  # nodo pristino --primero del grupo, sin replicar y sin datos-- puede tomar el
-  # papel: es el arranque inicial. Un nodo que replica o que tiene datos y no
-  # ve primario NO se promueve solo: el primario real puede estar caido un
-  # instante y volver, y entonces habria dos. Promover es de orchestrator o del
-  # operador, nunca de este rol.
+- name: Elegir el primario, tres ramas y por este orden
+  # El orden de las ramas ES la regla; cada una tiene su porque:
+  #
+  # 1) ALGUIEN ES ESCRIBIBLE AHORA -> ese es el primario, lo diga quien lo
+  #    diga. El rol LEE el papel, no lo asigna: reasignarlo en cada pasada
+  #    desharia el failover que acababa de pasar.
+  #
+  # 2) NADIE ES ESCRIBIBLE, PERO ESTE NODO LO ERA hace unos segundos, en ESTA
+  #    misma ejecucion, justo antes del reinicio que provoco el propio rol
+  #    (mariadb_era_escribible_antes, capturado en tasks/main.yml antes del
+  #    flush_handlers) -> este nodo. Y read_only=ON es de fichero, no estado:
+  #    cualquier cambio de plantilla dispara el handler y devuelve al primario
+  #    en solo lectura, dejando el par SIN nadie escribible hasta que un
+  #    operador lo repare a mano. Esto NO es promoverse solo: no hay
+  #    bifurcacion posible cuando quien tiro el nodo fue uno mismo y se repone
+  #    exactamente el estado que habia. Si orchestrator promovio al OTRO
+  #    durante la ventana del reinicio, el otro sale en mariadb_escribibles y
+  #    gana la rama 1; este se queda huerfano, que es un caso ya documentado
+  #    (despliegue-ansible.md, "Lo que el operador tiene que hacer a mano").
+  #    Por eso la rama 2 va DESPUES de la 1 y no antes.
+  #
+  # 3) NADIE ES ESCRIBIBLE Y ESTE NODO ES PRISTINO --primero del grupo, sin
+  #    replicar y sin datos-- -> arranque inicial, alguien tiene que empezar.
+  #
+  # Ninguna -> no se elige a nadie y la tarea siguiente PARA. Un nodo que
+  # replica, o que tiene datos, y que no ve ningun primario ni fue el primario
+  # de hace un momento, no se promueve solo: el primario real puede estar caido
+  # un instante y volver, y entonces habria dos.
   #
   # Riesgo residual, dicho: un nodo 1 reconstruido de cero (volumen nuevo)
   # mientras el 2 esta caido en ese mismo instante pasaria por pristino. Es la
   # combinacion de dos averias a la vez, y el nodo estaria vacio.
+  #
+  # La cadena de "default(..., true)" es el orden: cada rama solo se mira si la
+  # anterior salio vacia (el segundo argumento a true hace que la cadena vacia
+  # cuente como "sin valor", no solo lo indefinido).
   ansible.builtin.set_fact:
     mariadb_primario: >-
-      {{ (mariadb_escribibles | first)
-         | default(inventory_hostname if mariadb_es_pristino_inicial else '') }}
+      {{ mariadb_rama1_alguien_escribible
+         | default(mariadb_rama2_repone_lo_que_tiro, true)
+         | default(mariadb_rama3_arranque_inicial, true) }}
   vars:
-    mariadb_es_pristino_inicial: >-
-      {{ inventory_hostname == (groups['mariadb'] | first)
-         and not (mariadb_ya_replica | bool)
-         and not (mariadb_tiene_datos | bool) }}
+    mariadb_rama1_alguien_escribible: "{{ mariadb_escribibles | first | default('') }}"
+    mariadb_rama2_repone_lo_que_tiro: >-
+      {{ inventory_hostname if (mariadb_era_escribible_antes | bool) else '' }}
+    mariadb_rama3_arranque_inicial: >-
+      {{ inventory_hostname
+         if (inventory_hostname == (groups['mariadb'] | first)
+             and not (mariadb_ya_replica | bool)
+             and not (mariadb_tiene_datos | bool))
+         else '' }}
 
 - name: Sin primario escribible a la vista, este nodo no se promueve solo
   ansible.builtin.assert:
     that: mariadb_primario | length > 0
     fail_msg: >-
-      Ningun nodo de MariaDB se declara escribible y {{ inventory_hostname }} no
-      es un nodo pristino (replica: {{ mariadb_ya_replica }}, con datos:
-      {{ mariadb_tiene_datos }}), asi que NO se promueve solo. Si el primario
-      esta caido, o lo promueve orchestrator o lo promueves tu a mano
-      (STOP REPLICA; SET GLOBAL read_only = OFF en el que sobreviva) y vuelves
-      a desplegar. Este rol nunca elige primario sobre datos existentes.
+      Ningun nodo de MariaDB se declara escribible, {{ inventory_hostname }} no
+      era escribible al empezar esta ejecucion y tampoco es un nodo pristino
+      (replica: {{ mariadb_ya_replica }}, con datos: {{ mariadb_tiene_datos }}),
+      asi que NO se promueve solo. Si el primario esta caido, o lo promueve
+      orchestrator o lo promueves tu a mano (STOP REPLICA; SET GLOBAL
+      read_only = OFF en el que sobreviva) y vuelves a desplegar. Este rol nunca
+      elige primario sobre datos existentes.
 
 - name: Estado del primario, cuando no es este nodo
   # gtid_binlog_pos y si tiene datos, del PRIMARIO: los necesita la replica para
@@ -233,10 +271,28 @@
   # Las sentencias --con las tres contrasenas-- van por stdin y NO por "-e":
   # "-e" las deja en el argv del proceso, legible con "docker top" mientras
   # dura el exec. El comando queda a secas, sin nada que ocultar.
+  #
+  # "SET SESSION sql_log_bin = 0" delante de cada una, y sin esto la
+  # replicacion se rompe al SEGUNDO despliegue de un par ya establecido
+  # (reproducido en vivo): estas sentencias corren tambien en la REPLICA --root
+  # tiene SUPER, asi que read_only no las para-- y con log_slave_updates = ON
+  # entran en el binlog de la replica con SU server_id. Eso adelanta el numero
+  # de secuencia del dominio 0 por encima del que trae el primario, y con
+  # gtid_strict_mode = ON el hilo de SQL se para en seco:
+  #
+  #   An attempt was made to binlog GTID 0-1-249 which would create an
+  #   out-of-order sequence number with existing GTID 0-2-250, and gtid strict
+  #   mode is enabled
+  #
+  # No propagarlas no pierde nada: el rol las aplica en los DOS nodos en cada
+  # pasada, asi que una rotacion de contrasena llega a los dos por este mismo
+  # camino y no hace falta el binlog para eso. El binlog de la replica queda
+  # con lo que recibio por replicacion y nada mas, que es lo que
+  # log_slave_updates existe para conservar de cara a una promocion.
   community.docker.docker_container_exec:
     container: "{{ mariadb_container_name }}"
     command: mariadb --defaults-file=/run/secrets/root.cnf
-    stdin: "{{ item }}"
+    stdin: "SET SESSION sql_log_bin = 0; {{ item }}"
   loop:
     - >-
       CREATE USER IF NOT EXISTS '{{ mariadb_repl_user }}'@'%'

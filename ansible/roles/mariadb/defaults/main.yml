@@ -37,6 +37,13 @@ mariadb_config_group: "999"
 # Mismo criterio que dex_http_bind: con el balanceador delante, atarlo a la
 # interfaz privada deja de ser un ajuste. El valor de fabrica no cambia nada de
 # lo de hoy.
+#
+# Quien lo cambie tiene que dejar 127.0.0.1 DENTRO de la lista: este rol habla
+# consigo mismo por loopback (root.cnf, el "mariadb-admin ping" de la espera de
+# arranque, probe.cnf del agente de sonda), asi que un valor como
+# "{{ ansible_host }}" a secas deja al rol sin poder conectarse a su propio
+# nodo. MariaDB 11.4 acepta una lista separada por comas, y hay un assert en
+# tasks/main.yml que lo comprueba antes de renderizar 50-dex.cnf.
 mariadb_bind_address: "0.0.0.0"
 
 # Usuarios de servicio. Ninguno de los tres es el usuario de dex: cada uno tiene

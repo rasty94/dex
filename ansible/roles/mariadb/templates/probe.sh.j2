@@ -6,9 +6,12 @@
 # el rato y a proposito: no es una averia, es lo que la sonda tiene que decir, y
 # HAProxy la muestra DOWN por eso.
 #
-# Un nodo que no responde a la consulta --MariaDB caida, disco lleno, demasiadas
-# conexiones-- tambien da 503, que es lo correcto: no sirve aunque tecnicamente
-# sea el primario.
+# Un nodo que no RESPONDE a la consulta --MariaDB caida, demasiadas conexiones--
+# tambien da 503, que es lo correcto: no sirve aunque tecnicamente sea el
+# primario. Lo que esta sonda NO cubre es un nodo que responde pero no puede
+# escribir: con el disco lleno, este SELECT sigue devolviendo 0 y la sonda sigue
+# diciendo 200 mientras cada INSERT falla. Para eso hace falta otra cosa --una
+# escritura de prueba-- con su propio coste, y no esta aqui.
 #
 # Las credenciales van en /probe.cnf (modo 0600), NO en el argv: docker top deja
 # la linea de ordenes de cualquier proceso a la vista de cualquiera que este en

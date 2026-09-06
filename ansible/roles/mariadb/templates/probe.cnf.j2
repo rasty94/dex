@@ -1,7 +1,7 @@
 # Renderizado por Ansible. No editar aqui.
 #
-# Este fichero existe para que la contrasena NO viaje en el argv del cliente:
-# "mariadb -p<contrasena>" la deja legible con docker top mientras dura la
+# Este fichero existe para que la contraseña NO viaje en el argv del cliente:
+# "mariadb -p<contraseña>" la deja legible con docker top mientras dura la
 # consulta, y la sonda consulta cada pocos segundos.
 [client]
 user = {{ mariadb_probe_user }}

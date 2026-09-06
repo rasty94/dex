@@ -33,6 +33,53 @@
       y dos nodos con el mismo server_id rompen la replicacion sin decirlo.
     success_msg: mariadb_server_id declarado.
 
+# ANTES de renderizar 50-dex.cnf, no despues: si el valor deja fuera el
+# loopback, el nodo arranca sin escuchar ahi y el fallo aparece tres tareas mas
+# tarde como "mariadb-admin ping" que nunca contesta, o como un agente de sonda
+# que da 503 para siempre. El mensaje de aqui dice cual es la causa.
+- name: El bind_address tiene que incluir el loopback
+  ansible.builtin.assert:
+    that:
+      - mariadb_bind_address == '0.0.0.0'
+        or '127.0.0.1' in (mariadb_bind_address | split(','))
+    fail_msg: >-
+      mariadb_bind_address vale "{{ mariadb_bind_address }}" y no incluye
+      127.0.0.1. El rol se conecta a su PROPIO nodo por loopback --root.cnf,
+      el "mariadb-admin ping" de la espera de arranque y probe.cnf del agente
+      de sonda llevan host = 127.0.0.1-- asi que atarlo solo a la interfaz
+      privada deja al rol sin poder hablar con el nodo que acaba de arrancar.
+      MariaDB 11.4 acepta una lista separada por comas: usa
+      "127.0.0.1,{{ ansible_host | default('<ip-privada>') }}".
+    success_msg: mariadb_bind_address incluye el loopback.
+
+# AQUI y no mas abajo: tiene que leerse ANTES de que nada de este rol pueda
+# reiniciar el contenedor (los handlers, o un "docker compose up" con la
+# definicion del servicio cambiada). Lo consume la rama 2 de la eleccion del
+# primario en replicacion.yml: read_only=ON es de fichero, asi que un reinicio
+# que provoca este mismo rol devuelve al primario a solo lectura y deja el par
+# sin nadie escribible. Sin este hecho no habria forma de distinguir "repongo
+# lo que yo mismo acabo de tirar" de "me promuevo solo", que es lo que el rol
+# no hace nunca.
+#
+# Que el contenedor no exista todavia --arranque inicial-- o no conteste es un
+# resultado valido: entonces no era escribible, y punto.
+- name: Si este nodo era escribible ANTES de que el rol lo tocara
+  community.docker.docker_container_exec:
+    container: "{{ mariadb_container_name }}"
+    command: >-
+      mariadb --defaults-file=/run/secrets/root.cnf -N -B
+      -e "SELECT @@read_only"
+  register: mariadb_estado_previo
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Recordarlo como hecho
+  ansible.builtin.set_fact:
+    mariadb_era_escribible_antes: >-
+      {{ mariadb_estado_previo.rc | default(1) == 0
+         and (mariadb_estado_previo.stdout | default('') | trim) == '0' }}
+
 - name: Directorio de configuracion
   ansible.builtin.file:
     path: "{{ mariadb_config_dir }}"

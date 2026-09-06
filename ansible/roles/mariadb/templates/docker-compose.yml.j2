@@ -40,7 +40,14 @@ services:
         entrypoint: ["socat"]
         command:
             - "-T2"
-            - "TCP-LISTEN:{{ mariadb_probe_port }},fork,reuseaddr"
+            # max-children: un tope al numero de /probe.sh simultaneos. Con
+            # "fork" a secas, cualquiera que alcance este puerto puede abrir
+            # conexiones sin limite y cada una arranca un cliente mariadb --el
+            # agente no tiene autenticacion, no la necesita para responder si
+            # este nodo es primario--. 16 sobra para las sondas de HAProxy (una
+            # cada dos segundos por balanceador) y pone un techo a lo que un
+            # bucle tonto puede hacerle a la maquina de base de datos.
+            - "TCP-LISTEN:{{ mariadb_probe_port }},fork,reuseaddr,max-children=16"
             - "SYSTEM:/probe.sh"
         # Como el usuario mysql y no como root: lo unico que necesita leer es su
         # propio probe.cnf, que es suyo y esta en 0600.
