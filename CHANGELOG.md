@@ -29,15 +29,15 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
   ajuste y pasan a ser un requisito, porque el trato de `trustForwardedFor` es
   que el balanceador sea el unico camino.
 - Roles de Ansible `mariadb` y `orchestrator`: MariaDB en alta disponibilidad,
-  fase 4 del despliegue. El primero levanta un par primario/replica con
-  replicacion semisincrona y el agente de sonda que dice cual de los dos es el
+  fase 4 del despliegue. El primero levanta un par primario/réplica con
+  replicación semisíncrona y el agente de sonda que dice cuál de los dos es el
   primario escribible; el segundo, orchestrator en modo raft a tres, detecta la
-  caida y promueve. Motivo: quitar el ultimo punto unico de fallo del
+  caída y promueve. Motivo: quitar el último punto único de fallo del
   despliegue, la base de datos donde viven las claves de firma, los refresh
   tokens y las sesiones.
 - Frontend y backend `fe_mysql`/`be_mysql` nuevos en el rol `haproxy`, en
-  `mode tcp` con `balance first` y comprobacion por el puerto del agente de
-  sonda. Motivo: HAProxy no habla SQL, asi que necesita una forma de saber cual
+  `mode tcp` con `balance first` y comprobación por el puerto del agente de
+  sonda. Motivo: HAProxy no habla SQL, así que necesita una forma de saber cuál
   de los dos nodos de MariaDB es el primario sin tocar el protocolo.
 
 ### Cambiado
@@ -55,8 +55,8 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
     Quien tuviera el panel bajo una ruta no podia entrar en el, asi que no hay
     despliegue que romper.
 - `dex_storage.host` del inventario de ejemplo pasa a apuntar al balanceador, no
-  a una maquina de MariaDB. Motivo: tras un failover el primario cambia de
-  nodo; apuntar a una maquina fija mantendria el punto unico de fallo que esta
+  a una máquina de MariaDB. Motivo: tras un failover el primario cambia de
+  nodo; apuntar a una máquina fija mantendría el punto único de fallo que esta
   fase existe para quitar.
 - `ssl_mode` del inventario de ejemplo pasa de `"false"` a `"true"`. Motivo:
   desde esta fase la base de datos es un componente propio, servido con la CA
