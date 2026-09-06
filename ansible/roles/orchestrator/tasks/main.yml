@@ -38,7 +38,11 @@
     state: directory
     mode: "0750"
 
-- name: Certificado de la CA interna, para verificar a los MariaDB
+# Solo la CA, ni cert ni clave del host: con MySQLTopologySSLSkipVerify a true
+# --unica opcion viable, ver el comentario de la plantilla-- orchestrator no
+# presenta certificado de cliente, asi que copiarlos seria configuracion muerta.
+# La CA si se usa: es lo que hace que MySQLTopologyUseMutualTLS levante TLS.
+- name: Certificado de la CA interna, con el que se monta el TLS de la topologia
   ansible.builtin.copy:
     content: "{{ internal_ca_cert }}"
     dest: "{{ orchestrator_config_dir }}/tls/ca.crt"
