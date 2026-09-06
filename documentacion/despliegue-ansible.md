@@ -326,9 +326,45 @@ visible. Vigilar `Rpl_semi_sync_master_no_tx` (arriba) es la única forma de ent
 ### La réplica figura `DOWN` en HAProxy, y es lo que tiene que decir
 
 El agente de sonda de cada nodo responde 200 solo si es primario escribible, 503 en
-cualquier otro caso —incluida una consulta que no contesta: MariaDB caída, disco
-lleno, demasiadas conexiones—. La réplica sale `DOWN` en el backend `be_mysql` todo el
-rato y a propósito: no es una avería, es la sonda diciendo la verdad.
+cualquier otro caso —incluida una consulta que no contesta: MariaDB caída, demasiadas
+conexiones—. La réplica sale `DOWN` en el backend `be_mysql` todo el rato y a
+propósito: no es una avería, es la sonda diciendo la verdad.
+
+Lo que la sonda **no** cubre: un nodo que responde pero **no puede escribir**. Con el
+disco lleno, `SELECT @@read_only + @@innodb_read_only` sigue devolviendo `0` y la sonda
+sigue diciendo 200 mientras cada `INSERT` falla. Detectar eso exige una escritura de
+prueba periódica, con su propio coste y su propia basura que limpiar, y no está aquí.
+La sonda dice «MariaDB responde y este nodo es el escribible», no «este nodo puede
+escribir».
+
+### La replicación va cifrada, pero no verifica al servidor
+
+`CHANGE MASTER` se hace con `master_ssl = 1` y `master_ssl_ca` apuntando a la CA
+interna, así que el binlog viaja cifrado entre los dos nodos. No se pone
+`master_ssl_verify_server_cert`: la réplica se conecta al primario **por IP**
+(`ansible_host`), y con eso activo MariaDB compara esa IP contra el *common name* del
+certificado, no contra sus SAN —que es donde el rol `internal_ca` sí pone la IP—. El
+hueco que queda es un ataque activo en la red entre las dos máquinas (alguien que se
+haga pasar por el primario); el pasivo —leer la replicación— está cerrado. Cerrarlo del
+todo exige que la réplica marque un *nombre* al conectarse, y eso es un cambio de cómo
+se identifica cada nodo, no un parámetro más.
+
+Orchestrator está en el mismo sitio, y no por elección: su conexión a los dos MariaDB
+va cifrada —`MySQLTopologyUseMutualTLS` a `true` lo deja explícito en vez de depender
+del `MySQLTopologyUseMixedTLS` que la herramienta trae de fábrica sin escribirlo en
+ninguna parte— pero **tampoco verifica al servidor**, y aquí ni siquiera es una
+decisión: la última versión de orchestrator (2022) carga el fichero de CA en
+`ClientCAs`, que es la mitad de *servidor* de la configuración TLS, y deja `RootCAs`
+vacío; su cliente de MySQL acaba usando el almacén de certificados del sistema y
+rechaza cualquier CA propia con `x509: certificate signed by unknown authority`. Por
+eso `MySQLTopologySSLSkipVerify` está en `true` y no en `false`: el `false` anterior
+prometía una verificación que nunca ocurrió. Por el mismo camino tampoco presenta
+certificado de cliente (con el usuario en `REQUIRE X509` recibe `Access denied`), así
+que el rol no le copia cert ni clave: serían ficheros sin uso.
+
+Importa porque la cuenta de orchestrator lleva `SUPER`, `PROCESS` y `READ_ONLY ADMIN`.
+Lo que sigue sosteniendo esa credencial es que la red entre las máquinas sea privada,
+igual que el bus del clúster de Valkey.
 
 ### El primer arranque tarda ~10 s de más
 
@@ -378,7 +414,7 @@ mariadb-dump --defaults-file=... --all-databases --master-data=2 \
 
 ### Lo que el operador tiene que hacer a mano
 
-Tres huecos que la fase deja abiertos a propósito: automatizarlos sin una comprobación
+Cuatro huecos que la fase deja abiertos a propósito: automatizarlos sin una comprobación
 que hoy nadie puede hacer con seguridad es peor que dejarlos manuales.
 
 **A. Un primario que reinicia vuelve en solo lectura.** `read_only=ON` en el arranque
@@ -410,6 +446,14 @@ mismos **~3 s** de siempre. El acuse:
 curl -s "http://<host-orchestrator>:<orchestrator_http_port>/api/ack-all-recoveries?comment=<motivo>"
 ```
 
+Contra `<host-orchestrator>`, **no** contra `localhost`: `ListenAddress` ata la API a
+`ansible_host`, la interfaz privada, y no a todas. Y el aviso que va con eso: **esta API
+no lleva autenticación**. Orchestrator la soporta, pero configurarla es otra fase; hasta
+entonces, cualquiera que alcance ese puerto puede promover, desenganchar o poner en solo
+lectura los dos nodos de datos. El 3000 no puede ser alcanzable fuera de la red privada
+—misma condición que el bus del clúster de Valkey—, y `ListenAddress` es lo único que
+hoy lo sostiene.
+
 No se baja el valor a ciegas: encadenar promociones sin ninguna ventana de por medio
 es el riesgo contrario. Candidato de TODO: acuse automático, o una alarma sobre
 `api/audit-recovery` cuando aparezca una recuperación con `Acknowledged: false`.
@@ -424,7 +468,7 @@ primario:
 # Si NO divergio: reenganchar por GTID al primario nuevo
 docker exec <contenedor-viejo> mariadb --defaults-file=/run/secrets/root.cnf \
     -e "SET GLOBAL gtid_slave_pos = '<gtid_binlog_pos del primario nuevo>'"
-docker exec <contenedor-viejo> mariadb --defaults-file=/run/secrets/root.cnf <<'SQL'
+docker exec -i <contenedor-viejo> mariadb --defaults-file=/run/secrets/root.cnf <<'SQL'
 CHANGE MASTER TO
     master_host = '<ip-del-primario-nuevo>',
     master_port = 3306,
@@ -439,6 +483,36 @@ SQL
 # Si SI divergio: mariadb-dump o mariabackup, igual que en "El rol no clona
 # la replica si el primario ya tiene datos", de arriba.
 ```
+
+**D. Desplegar un cambio de plantilla REINICIA el primario, y eso puede disparar un
+failover.** Cualquier cambio en `50-dex.cnf.j2`, `probe.sh.j2`, `probe.cnf.j2`, el
+`docker-compose.yml.j2` del rol o el material TLS dispara el handler «Reiniciar
+mariadb», que recrea el contenedor. Durante esa ventana el primario no responde, y si
+dura más que la detección de orchestrator (`InstancePollSeconds`, 5 s de fábrica),
+orchestrator lo da por muerto y promueve a la réplica: el despliegue se encuentra con
+un failover que nadie pidió y con el nodo viejo huérfano (punto C). Antes de un
+despliegue **con cambios** en el rol `mariadb`, declarar la ventana:
+
+```bash
+# Antes: silenciar la deteccion sobre el primario
+curl -s "http://<host-orchestrator>:<orchestrator_http_port>/api/begin-downtime/<host-primario>/<mariadb_port>/<quien>/<motivo>/30m"
+
+# Desplegar
+
+# Despues: devolverlo a vigilancia
+curl -s "http://<host-orchestrator>:<orchestrator_http_port>/api/end-downtime/<host-primario>/<mariadb_port>"
+```
+
+(o `orchestrator-client -c begin-downtime -i <host>:<puerto> -d 30m`, que llama a esa
+misma API). Un despliegue **sin cambios** no reinicia nada y no necesita la ventana: el
+rol es idempotente y el handler no salta.
+
+Con la ventana declarada, el rol repone el `read_only=OFF` del primario él solo al
+terminar —es la rama 2 de la elección del primario en `replicacion.yml`: si este nodo
+era escribible al empezar la ejecución y al terminar no lo es nadie, lo que hay que
+reponer es lo que el propio rol tiró—. Sin la ventana, si orchestrator llegó a promover
+a la réplica durante el reinicio, esa réplica sale escribible, gana ella, y el nodo
+viejo queda huérfano: punto C.
 
 ## Qué NO cubre este despliegue
 
