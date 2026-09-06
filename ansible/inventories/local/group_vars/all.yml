@@ -21,3 +21,58 @@ mariadb_root_password: convergerootsinsimbolo
 mariadb_repl_password: convergereplsinsimbolo
 mariadb_probe_password: convergeprobesinsimbolo
 mariadb_orchestrator_password: convergeorchsinsimbolo
+
+# Certificado autofirmado desechable del converge de haproxy (Fase 4, tarea 4).
+# Sin cifrar a proposito, igual que el resto de este fichero: no es un secreto
+# de verdad, solo lo que el rol necesita para arrancar en local. Un inventario
+# de verdad cifra esto con ansible-vault (ver el comentario de
+# haproxy_tls_cert en el rol).
+haproxy_tls_cert: |
+  -----BEGIN CERTIFICATE-----
+  MIIDHzCCAgegAwIBAgIUEhLn+YAvuO+2d4yqH+brIb3KMtUwDQYJKoZIhvcNAQEL
+  BQAwHzEdMBsGA1UEAwwUdDE0LWhhcHJveHktY29udmVyZ2UwHhcNMjYwOTA2MTMz
+  OTMyWhcNMjYwOTA3MTMzOTMyWjAfMR0wGwYDVQQDDBR0MTQtaGFwcm94eS1jb252
+  ZXJnZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAJJwo7N9nui1xuRx
+  06e+Pr+FH+glEr1vVc23dbP6+/BVlEyTV+o6V8cba4v5oKhA4Gup6i8lkm+1Q5Dj
+  R8vQFknsAXZ7UEx9QLScywFUh9k9jpn7gmFHCrYlZ2LmwdWHPLX8bgsqUXPFRv8p
+  TWNpvJ+IzHgSAN5wHr8eeGOFhynUM/rdAPYzZCjiqnk3MMH3FVaXZQUpJRL/DKQf
+  T63lclCust9qir00nt9oNjp2MZIE4YWCKGk+hrSaEFTKh99v2JCnm7X8am/Zm2RY
+  S2/qtRVhvM5eOZHfgd6D+eAA4VgO2MVwE5MjTX4f1LCoepB0FD49uY3JVxUDFLgq
+  +AxRepMCAwEAAaNTMFEwHQYDVR0OBBYEFDNxhJOaj/wR3fl/Fz7KSrpdkDS9MB8G
+  A1UdIwQYMBaAFDNxhJOaj/wR3fl/Fz7KSrpdkDS9MA8GA1UdEwEB/wQFMAMBAf8w
+  DQYJKoZIhvcNAQELBQADggEBAAv5myZrvlwOkTtzsKa8Cta/EvPMDgk7pBD4A+l8
+  kd4bli9ZQlueZJ3WNgFDJsQo6s8Lx4Rv82Gq6r4Z7k8GWkY/c0wi2bMiCea9eK71
+  xHyLOmeulDb/MwA20LYPd1IZoPqFoHWUQnrzp8Jyjh2M5LG61dFobwGcz4rRTiip
+  533xYXjiYC5q5PPsfRl/kSy0y/5GFTdq6/AM/nRO+ndchtBQ5XL28xfRcXO68G8N
+  nD75g9I6Gc3utkw8MNcs4GBFupGokEPh3EkuYEpU2xdtMjVg0CmdnqPoCtouCdFX
+  729TFcheGZtd/wXkQubLUw4gGai9Bd/y/VfZYf8+b8u5vUM=
+  -----END CERTIFICATE-----
+haproxy_tls_key: |
+  -----BEGIN PRIVATE KEY-----
+  MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCScKOzfZ7otcbk
+  cdOnvj6/hR/oJRK9b1XNt3Wz+vvwVZRMk1fqOlfHG2uL+aCoQOBrqeovJZJvtUOQ
+  40fL0BZJ7AF2e1BMfUC0nMsBVIfZPY6Z+4JhRwq2JWdi5sHVhzy1/G4LKlFzxUb/
+  KU1jabyfiMx4EgDecB6/HnhjhYcp1DP63QD2M2Qo4qp5NzDB9xVWl2UFKSUS/wyk
+  H0+t5XJQrrLfaoq9NJ7faDY6djGSBOGFgihpPoa0mhBUyoffb9iQp5u1/Gpv2Ztk
+  WEtv6rUVYbzOXjmR34Heg/ngAOFYDtjFcBOTI01+H9SwqHqQdBQ+PbmNyVcVAxS4
+  KvgMUXqTAgMBAAECggEANDMEl1mjCG6rbAkLGlMdSOWqPvTgHjiOjFrmEPbZUY0f
+  5L/s6ahMW8PxbR7ZXsBpftc9i/rHnRwu7nmlwQf2ufjveI1yTSGkq/zr/BhmqFBi
+  AY9+pTBOqCjjFoUM+RFQ2coWa9J04GCk8xWE6Xfqba+0uuQn/SJYQ2YYIdmaGZVp
+  u88apb4eCfE+lR8ouw/xG7YH2/xGCl+zLdN9WxUFwbNcXNtAVweczJIV/gtNPOOA
+  144wod3qq7t0uzB9DorENUt0yLeVdy5SkMPS3acIBdcYqsBMCv1CuQq54vKKVGoi
+  qIifkQdRuLniyf6Op6GAPrh62BGCqbCthlwDWjzB2QKBgQDDGFmdaGiUBqETusCH
+  XZ2eUhKYqjwMK2sRCERPr7kIn7uC5eSQezqNt8yt+0sRjAI9voYF6YjcWNGiD6pb
+  AIlolbOwO5N4RrjPqUdHIoDpJSmO270M5Acy0MYv8HSnDInZobZzpDa9KFK8ji9D
+  y4fgDy8A+yrk9YoafjB/nb4uNwKBgQDAJ9wofVXSuvV6DQFlp81e00JRcfhlKEHx
+  I0LzHxPYhyGbTJp9VuWho8HFXxkeBuaZnkCGOFIDt6sDYqUyb+/dSj2i6NWFJhKx
+  8c+AGDje63ZRt8AUXsEtv2fSF6alPSXdnED7c3TmgwUbr77vcx3CXfk8e/8wltxp
+  dEV5HpxIhQKBgQC+rKnJQiYTpnb/hWJt6n0GI0ixlI+jhTvbJa0+BIxfdV4ajP1a
+  iFWt9JlC4Xt45tG57t+mH5z3XodkUNM6pcemQ8me0FtNDjHKI7PaPkqnkv6O9QxL
+  8QFoFMveRrB8I7EG1xou46vsK+DREFX5eI6P2cciulgt9hzHz9UupMke+QKBgD+1
+  t5ARJkBtTnB+GWV8AmKbRtS8JfBcLajm2Q7E0g6rlx/ngR1nj1FNezSWeDx1a0Wp
+  q5kU2VR0NBY2QbF8XZoQQGlgK1MvMWmgU/0Tit+WUC997giS9hfV63VD9DO7F2/n
+  m8ADItI+xJXOak736vkDsVw1fIG+syufql0jIgwFAoGAFaf7BEcPq7QC1zZ+hFbD
+  b9dlahHdbz5CUksZoQyKppx/dy7jldbGAIYCsxQiwbaGi+jtHf4IF5WcTXeoYkse
+  nS6LUBHF8a0C7EUrZboBzOvW1/cwBg45WklDJYy6HSFgZA7CQJ5744qm4DTV67Va
+  AkJpyRbbyw8yGFF+cdS/3Sw=
+  -----END PRIVATE KEY-----
