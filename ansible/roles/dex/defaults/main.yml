@@ -62,3 +62,11 @@ dex_valkey_tls_key: /etc/dex/dex-key.pem
 # los bloques de conector de verdad, tal cual van en config.yaml.
 dex_enable_password_db: true
 dex_connectors: []
+
+# dex_storage no lleva default aqui: es obligatorio (host, usuario y
+# contrasena son propios de cada despliegue) y sin un valor de fabrica
+# razonable. El aviso de tasks/main.yml sobre ssl_mode "false" se queda --
+# sigue siendo posible apuntar el rol a una base de datos ajena y sin TLS --
+# pero desde la fase 4 el inventario de ejemplo despliega su propia MariaDB
+# (rol mariadb) y usa ssl_mode: "true" con la CA interna. Ningun default
+# cambia aqui: lo que cambia lo declara el inventario.

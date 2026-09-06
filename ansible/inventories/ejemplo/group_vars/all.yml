@@ -31,3 +31,17 @@ haproxy_tls_key: |
   -----END PRIVATE KEY-----
 # VRRP la trunca a 8 caracteres: los demas no cuentan, y el rol lo avisa.
 keepalived_auth_pass: cambiam
+
+# MariaDB. dex_storage_password (arriba) sigue siendo la del usuario "dex": no
+# se duplica. Estas cuatro son las de los usuarios de servicio.
+#
+# Ojo con el '$' igual que en las de arriba: el feature flag expand_env de dex
+# aplica os.ExpandEnv a su configuracion.
+mariadb_root_password: cambiame-sin-simbolo-dolar
+mariadb_repl_password: cambiame-tambien
+# La de la sonda es la unica que vive tambien en un fichero legible por el
+# contenedor del agente. Su usuario no tiene ningun privilegio (solo USAGE), asi
+# que filtrarla no da acceso a nada -- pero se cambia igual.
+mariadb_probe_password: cambiame-igual
+# Esta si es sensible: el usuario de orchestrator lleva SUPER.
+mariadb_orchestrator_password: cambiame-y-en-serio

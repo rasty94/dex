@@ -11,8 +11,33 @@
   # la CA del nodo de control. Escalar aqui dejaria ese directorio --y la
   # clave privada de la CA-- en manos de root en la maquina de quien lanza el
   # playbook, que es justo lo contrario de lo que se quiere.
-  hosts: dex:dex_dashboard:valkey:loadbalancer
+  hosts: dex:dex_dashboard:valkey:loadbalancer:mariadb:orchestrator
   roles: [internal_ca]
+
+- name: MariaDB
+  # Antes que dex: dex no arranca sin almacenamiento. Y antes que orchestrator,
+  # que no tiene nada que descubrir hasta que el par existe.
+  #
+  # serial: 1 igual que las demas, y aqui importa mas que en ninguna: dos nodos
+  # convergiendo a la vez pueden intentar establecer la replicacion cada uno por
+  # su lado.
+  hosts: mariadb
+  serial: 1
+  become: true
+  roles: [mariadb]
+
+- name: Orchestrator
+  # Despues de MariaDB. El grupo incluye un host que NO es de base de datos --el
+  # tercer voto del raft-- y por eso es una tanda propia y no un rol mas de la
+  # anterior.
+  #
+  # any_errors_fatal: true porque el assert del quorum (tasks/main.yml del rol)
+  # es run_once: si falla en el host que lo evalua, sin esto los otros dos
+  # seguirian convergiendo con un quorum que ya se sabe insuficiente.
+  hosts: orchestrator
+  any_errors_fatal: true
+  become: true
+  roles: [orchestrator]
 
 - name: Valkey
   # Antes que Dex: dex se niega a arrancar sin Valkey cuando esta configurado,
