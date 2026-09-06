@@ -180,8 +180,23 @@
   changed_when: true
   no_log: true
 
-- name: Los tres usuarios de servicio, en el primario
-  # Se crean solo en el primario a proposito: viajan a la replica por el binlog.
+- name: Los tres usuarios de servicio, en los dos nodos
+  # NO solo en el primario: la version anterior de este comentario decia que
+  # viajaban a la replica por el binlog, y en un par YA establecido es cierto
+  # -- pero en un bootstrap de dos nodos DESDE CERO con "serial: 1" no lo es.
+  # El primario completa TODA su tanda (esta tarea incluida) antes de que la
+  # replica calcule su punto de partida (tarea de mas abajo), asi que ese
+  # punto de partida cae DESPUES de estos CREATE USER/GRANT: la replica los
+  # trata como historia ya aplicada y los salta, no como replicacion futura.
+  # Comprobado en vivo en la tarea 5: tras un bootstrap limpio, "orchestrator"
+  # y "probe" no existian en la replica ("SELECT ... FROM mysql.user" vacio) y
+  # su sonda daba 503 por credenciales, no por ser de solo lectura -- lo que
+  # habria dejado un nodo promovido sin forma de pasar nunca la sonda de
+  # HAProxy. CREATE USER IF NOT EXISTS + ALTER USER + GRANT son idempotentes,
+  # asi que correrlo en los dos nodos es seguro incluso cuando la replicacion
+  # SI los propaga (el segundo CREATE USER de cualquiera de los dos origenes
+  # no hace nada).
+  #
   # Cada uno con los privilegios justos de su oficio, y el de la sonda con
   # ninguno: USAGE basta para leer @@read_only y @@innodb_read_only (comprobado),
   # y un agente alcanzable desde la red no debe poder hacer nada mas.
@@ -196,6 +211,24 @@
   # GRANT fallaba siempre. MariaDB guarda esa informacion en master.info via
   # GTID (gtid_slave_pos), que orchestrator ya puede leer con REPLICATION
   # CLIENT.
+  #
+  # SLAVE MONITOR, REPLICATION SLAVE ADMIN y READ_ONLY ADMIN: privilegios
+  # propios de MariaDB (no existen en MySQL, de ahi que el brief de la tarea 5
+  # no los trajera) sin los que orchestrator no hace nada util, comprobado en
+  # vivo en esa misma tarea con el error exacto de MariaDB:
+  #   - Sin SLAVE MONITOR: "api/discover" devuelve "Error 1227: Access denied;
+  #     you need (at least one of) the SLAVE MONITOR privilege(s)" y no
+  #     descubre ninguna instancia -- ni con SUPER de por medio.
+  #   - Sin REPLICATION SLAVE ADMIN: detecta el "DeadMaster" bien, pero al
+  #     intentar promover falla en el log con "Error 1227: ... REPLICATION
+  #     SLAVE ADMIN privilege(s)" (CHANGE MASTER/RESET SLAVE) y no promueve.
+  #   - Sin READ_ONLY ADMIN: mismo intento, "Error 1227: ... READ_ONLY ADMIN
+  #     privilege(s)" al hacer SET GLOBAL read_only -- exactamente lo que
+  #     ApplyMySQLPromotionAfterMasterFailover necesita para quitarlo.
+  # MariaDB introdujo estos privilegios de grano fino en 10.5 precisamente
+  # para no tener que dar SUPER completo a herramientas como esta; aqui ya se
+  # le da SUPER por otros motivos (ver el GRANT de abajo), pero SUPER solo NO
+  # basta para estas operaciones concretas en 11.4.
   #
   # Las sentencias --con las tres contrasenas-- van por stdin y NO por "-e":
   # "-e" las deja en el argv del proceso, legible con "docker top" mientras
@@ -222,9 +255,9 @@
       IDENTIFIED BY '{{ mariadb_orchestrator_password }}';
       ALTER USER '{{ mariadb_orchestrator_user }}'@'%'
       IDENTIFIED BY '{{ mariadb_orchestrator_password }}';
-      GRANT SUPER, PROCESS, REPLICATION SLAVE, REPLICATION CLIENT, RELOAD
+      GRANT SUPER, PROCESS, REPLICATION SLAVE, REPLICATION CLIENT, RELOAD,
+        SLAVE MONITOR, REPLICATION SLAVE ADMIN, READ_ONLY ADMIN
         ON *.* TO '{{ mariadb_orchestrator_user }}'@'%';
-  when: inventory_hostname == mariadb_primario
   changed_when: true
   no_log: true
 

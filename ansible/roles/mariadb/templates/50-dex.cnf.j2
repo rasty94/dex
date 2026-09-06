@@ -21,6 +21,16 @@ log_bin = /var/lib/mysql/binlog
 binlog_format = ROW
 gtid_strict_mode = ON
 
+# Sin esto, ninguna replica es candidata a promocion para orchestrator: su
+# "chooseCandidateReplica" descarta a cualquier nodo con log_slave_updates
+# apagado (de fabrica en MariaDB) porque tras promoverlo su binlog no
+# reflejaria lo que recibio por replicacion. Con solo dos nodos de datos y sin
+# replicas encadenadas parece de mas, pero es orchestrator quien lo exige, no
+# la topologia -- comprobado en vivo en la tarea 5: con esto apagado, un
+# "DeadMaster" se detecta bien pero la recuperacion termina siempre en
+# "chooseCandidateReplica: no candidate replica found", sin promover a nadie.
+log_slave_updates = ON
+
 # Semisincrona, los DOS papeles en los DOS nodos: cualquiera puede acabar
 # siendo cualquier cosa despues de un failover, y un nodo promovido sin
 # rpl_semi_sync_master_enabled serviria escrituras sin la garantia.
