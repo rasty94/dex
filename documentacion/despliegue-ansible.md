@@ -514,6 +514,15 @@ reponer es lo que el propio rol tiró—. Sin la ventana, si orchestrator llegó
 a la réplica durante el reinicio, esa réplica sale escribible, gana ella, y el nodo
 viejo queda huérfano: punto C.
 
+Y un tercer caso, además del failover de orchestrator: si la réplica está caída o muda
+en ese mismo instante, la rama 2 tampoco repone —exige oír a los dos nodos antes de
+devolver el `read_only=OFF`, precisamente para no arriesgarse a un segundo primario— y
+el rol deja el primario en solo lectura sin que nadie lo note hasta la siguiente
+petición de escritura; una segunda ejecución del playbook no lo arregla sola, porque ya
+no «era escribible» al empezar esa segunda pasada. La regla: no desplegar cambios de
+plantilla en el rol `mariadb` con un nodo del par caído; si no hay más remedio, reponer
+con el paso A (`SET GLOBAL read_only = OFF` en el nodo correcto) y volver a desplegar.
+
 ## Qué NO cubre este despliegue
 
 - **La sonda de disponibilidad del panel sigue sin decir la verdad.** El `/healthz` del

@@ -125,6 +125,10 @@
       sin `rc` — mismo resultado práctico para `mariadb_escribibles`, pero no es
       lo mismo que una máquina inalcanzable por red (SSH/conexión caída de
       verdad), que es el caso que `ignore_unreachable: true` existe para cubrir.
+      Ligado: desplegar un cambio de plantilla con la réplica caída o muda deja
+      el primario en solo lectura sin que orchestrator ni una segunda pasada del
+      playbook lo reparen solos — paso A de
+      [despliegue-ansible.md](documentacion/despliegue-ansible.md#lo-que-el-operador-tiene-que-hacer-a-mano).
 - [ ] **HAProxy con `timeout server 1h` en `be_mysql`, sin `option clitcpka`/
       `srvtcpka` de por medio, ni un `connMaxLifetime` explícito en el lado de
       dex.** Una conexión del pool de `database/sql` puede quedar viva más de una
