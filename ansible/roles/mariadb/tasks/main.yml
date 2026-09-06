@@ -163,46 +163,45 @@
     project_src: "{{ mariadb_config_dir }}"
     state: present
 
+# Antes de reiniciar, esperar a que el init de la imagen termine. En un
+# arranque inicial "Levantar mariadb" de arriba dispara el PRIMER arranque del
+# contenedor, y la imagen oficial hace su propio init dentro de ese mismo
+# arranque: crea el datadir, CREATE DATABASE/CREATE USER de MARIADB_DATABASE y
+# MARIADB_USER, y solo AL FINAL levanta el servidor definitivo con red. Ese
+# init corre con un servidor TEMPORAL en --skip-networking (asi lo hace el
+# entrypoint oficial): mientras dura, nada por TCP contesta.
+#
+# Si el reinicio de "Reiniciar mariadb" (el handler, mas abajo via
+# flush_handlers) cae DENTRO de esa ventana --y con las plantillas
+# ("50-dex.cnf", "probe.sh"...) recien escritas notificando el handler en
+# cuanto "Levantar mariadb" las deja "changed", cae siempre en un arranque
+# inicial-- "recreate: always" mata el contenedor a mitad del init. El
+# contenedor nuevo ve el datadir ya creado (la imagen no distingue "a medias"
+# de "completo") y se SALTA el init entero: la base existe (se alcanzo a
+# crear) pero el usuario de MARIADB_USER no, porque ese paso venia despues.
+# Reproducido en vivo: "dex" en SHOW DATABASES, sin fila en mysql.user, y el
+# log del contenedor nuevo dice "MariaDB upgrade not required" en vez de
+# "Initializing database".
+#
+# mariadb-admin ping por TCP es la señal correcta porque el servidor temporal
+# de la imagen NO escucha ahi: un ping que contesta significa "el init
+# termino y el servidor definitivo esta arriba", exactamente cuando ya es
+# seguro reiniciar. Se espera aqui TAMBIEN (no solo despues del flush,
+# mas abajo) para que el handler nunca llegue a correr en mitad del init.
+- name: Antes de reiniciar, esperar a que el init de la imagen termine
+  ansible.builtin.include_tasks: esperar.yml
+
 # Los handlers corren al final de la tanda, y las tareas de replicacion
 # (tarea 3) necesitan el nodo respondiendo YA. Este flush es lo que ordena las
 # dos cosas.
 - name: Aplicar los reinicios pendientes antes de tocar la replicacion
   ansible.builtin.meta: flush_handlers
 
-- name: Esperar a que MariaDB acepte conexiones
-  # 90 segundos y no 30: el PRIMER arranque de un primario con la semisincrona
-  # encendida y sin replica todavia bloquea el timeout entero
-  # (rpl_semi_sync_master_timeout, 10 s) durante el bootstrap de la propia
-  # imagen, y deja un "Timeout waiting for reply of binlog" en el log. Es
-  # esperado, no es un fallo, y una espera corta lo leeria como un despliegue
-  # roto.
-  #
-  # Se pregunta DESDE DENTRO del contenedor y no al puerto del host: en Docker
-  # Desktop (macOS) el host no alcanza la red del contenedor, y un wait_for
-  # sobre el puerto fallaria siempre en un converge local. mariadb-admin ping
-  # devuelve 0 en cuanto el servidor contesta, aunque deniegue las
-  # credenciales (comprobado), asi que no necesita contrasena. Y es una sonda
-  # mas fuerte que "puerto abierto": el servidor tiene que responder.
-  community.docker.docker_container_exec:
-    container: "{{ mariadb_container_name }}"
-    command: mariadb-admin -h127.0.0.1 -P{{ mariadb_port }} ping
-  register: mariadb_ping
-  until: mariadb_ping.rc == 0
-  retries: 45
-  delay: 2
-  changed_when: false
-  failed_when: false
-
-- name: MariaDB tiene que responder antes de seguir
-  ansible.builtin.assert:
-    that:
-      - mariadb_ping.rc == 0
-    fail_msg: >-
-      {{ mariadb_container_name }} no respondio a mariadb-admin ping en 90 s.
-      El primer arranque tarda 10 s de mas a proposito (ver el comentario de
-      arriba), asi que un fallo aqui es de verdad: revisar
-      "docker logs {{ mariadb_container_name }}".
-    success_msg: MariaDB responde.
+# Segunda vez, ahora para el caso normal: el propio reinicio de "Reiniciar
+# mariadb" (ya con el init de la imagen hecho hace tiempo, en un nodo que no
+# es su primer arranque) tambien tarda en aceptar conexiones.
+- name: Esperar a que MariaDB acepte conexiones tras el reinicio
+  ansible.builtin.include_tasks: esperar.yml
 
 - name: Replicacion
   ansible.builtin.include_tasks: replicacion.yml

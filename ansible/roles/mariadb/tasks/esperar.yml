@@ -1,0 +1,37 @@
+# Incluido dos veces desde main.yml (antes y despues del flush_handlers): ver
+# el comentario de "Antes de reiniciar, esperar a que el init de la imagen
+# termine" para el porque.
+- name: Esperar a que MariaDB acepte conexiones
+  # 90 segundos y no 30: el PRIMER arranque de un primario con la semisincrona
+  # encendida y sin replica todavia bloquea el timeout entero
+  # (rpl_semi_sync_master_timeout, 10 s) durante el bootstrap de la propia
+  # imagen, y deja un "Timeout waiting for reply of binlog" en el log. Es
+  # esperado, no es un fallo, y una espera corta lo leeria como un despliegue
+  # roto.
+  #
+  # Se pregunta DESDE DENTRO del contenedor y no al puerto del host: en Docker
+  # Desktop (macOS) el host no alcanza la red del contenedor, y un wait_for
+  # sobre el puerto fallaria siempre en un converge local. mariadb-admin ping
+  # devuelve 0 en cuanto el servidor contesta, aunque deniegue las
+  # credenciales (comprobado), asi que no necesita contrasena. Y es una sonda
+  # mas fuerte que "puerto abierto": el servidor tiene que responder.
+  community.docker.docker_container_exec:
+    container: "{{ mariadb_container_name }}"
+    command: mariadb-admin -h127.0.0.1 -P{{ mariadb_port }} ping
+  register: mariadb_ping
+  until: mariadb_ping.rc == 0
+  retries: 45
+  delay: 2
+  changed_when: false
+  failed_when: false
+
+- name: MariaDB tiene que responder antes de seguir
+  ansible.builtin.assert:
+    that:
+      - mariadb_ping.rc == 0
+    fail_msg: >-
+      {{ mariadb_container_name }} no respondio a mariadb-admin ping en 90 s.
+      El primer arranque tarda 10 s de mas a proposito (ver el comentario de
+      arriba), asi que un fallo aqui es de verdad: revisar
+      "docker logs {{ mariadb_container_name }}".
+    success_msg: MariaDB responde.
