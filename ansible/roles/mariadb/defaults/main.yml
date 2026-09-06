@@ -1,0 +1,57 @@
+# La regla que hace idempotente este rol es la misma que la del rol valkey:
+# 50-dex.cnf es de Ansible y se reescribe en cada pasada; lo que MariaDB
+# escriba por su cuenta --auto.cnf, los ficheros de estado de la replicacion--
+# no se toca nunca.
+mariadb_config_dir: /etc/mariadb
+
+# Nombre de los contenedores y de la imagen. Parametrizados por el mismo motivo
+# que valkey_container_name: poder correr un converge de prueba en una
+# maquina que ya tenga otro "mariadb" suelto sin chocar con el.
+mariadb_container_name: mariadb
+mariadb_probe_container_name: mariadb-probe
+mariadb_image: mariadb:11.4
+
+mariadb_port: 3306
+
+# El puerto del agente de sonda. Es de ESTE rol y el rol haproxy lo lee, igual
+# que keepalived lee haproxy_https_port: los dos corren en la misma ejecucion.
+# Deliberadamente sin default en el rol que no es su dueno, para que correr
+# haproxy suelto falle con "undefined variable" en vez de sondear un puerto
+# inventado, que dejaria todos los backends DOWN sin decir por que.
+mariadb_probe_port: 3307
+
+mariadb_database: dex
+mariadb_user: dex
+
+# UID/GID del usuario "mysql" dentro de la imagen oficial. No son
+# parametrizables desde fuera: vienen en su /etc/passwd. Comprobado con
+#   docker run --rm --entrypoint sh mariadb:11.4 -c 'id mysql'
+#   -> uid=999(mysql) gid=999(mysql)
+# El directorio de configuracion y el material TLS tienen que ser legibles por
+# el, porque el entrypoint hace setpriv a ese usuario.
+mariadb_config_owner: "999"
+mariadb_config_group: "999"
+
+# La interfaz por la que escucha. El contenedor va en red de host, asi que
+# quien limita la exposicion es esta directiva y no un mapeo de puertos.
+# Mismo criterio que dex_http_bind: con el balanceador delante, atarlo a la
+# interfaz privada deja de ser un ajuste. El valor de fabrica no cambia nada de
+# lo de hoy.
+mariadb_bind_address: "0.0.0.0"
+
+# Usuarios de servicio. Ninguno de los tres es el usuario de dex: cada uno tiene
+# los privilegios justos de su oficio, y el de la sonda no tiene ninguno.
+mariadb_repl_user: repl
+mariadb_probe_user: probe
+mariadb_orchestrator_user: orchestrator
+
+# Este nodo es nuestro (lo instala y lo arranca este rol), asi que una
+# contrasena vacia hace fallar el despliegue en vez de avisar: mismo criterio
+# que valkey_allow_no_password. Solo un converge de prueba desechable tiene
+# motivo para ponerlo a true.
+mariadb_allow_no_password: false
+
+# server_id NO tiene default a proposito. Es la identidad de replicacion del
+# nodo y va explicita en el inventario: derivarla del indice del grupo hace que
+# reordenar el inventario reasigne identidades, y dos nodos con el mismo
+# server_id rompen la replicacion de una forma que no se ve hasta que falla.

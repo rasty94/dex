@@ -1,0 +1,9 @@
+# Igual que en los roles dex, valkey y haproxy: docker compose solo recrea un
+# contenedor cuando cambia la definicion del propio servicio, no el contenido
+# de un fichero montado por bind mount (aqui, 50-dex.cnf y el material TLS).
+# recreate: always fuerza el reinicio cuando este handler salta.
+- name: Reiniciar mariadb
+  community.docker.docker_compose_v2:
+    project_src: "{{ mariadb_config_dir }}"
+    state: present
+    recreate: always

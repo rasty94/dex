@@ -1,0 +1,30 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/mariadb/templates/.
+services:
+    mariadb:
+        image: {{ mariadb_image }}
+        container_name: {{ mariadb_container_name }}
+        restart: unless-stopped
+        # Red de host: la replicacion es entre maquinas y orchestrator y HAProxy
+        # llegan desde fuera. Quien limita la exposicion es bind_address en
+        # 50-dex.cnf, no un mapeo de puertos.
+        network_mode: host
+        environment:
+            # Las contrasenas van por FICHERO, no por valor: docker inspect
+            # imprime el entorno del contenedor entero. Con el sufijo _FILE la
+            # imagen lee el contenido y en el entorno solo queda la ruta
+            # (comprobado con docker inspect sobre esta misma imagen).
+            MARIADB_ROOT_PASSWORD_FILE: /run/secrets/root-password
+            MARIADB_DATABASE: {{ mariadb_database }}
+            MARIADB_USER: {{ mariadb_user }}
+            MARIADB_PASSWORD_FILE: /run/secrets/dex-password
+        volumes:
+            - {{ mariadb_config_dir }}/50-dex.cnf:/etc/mysql/conf.d/50-dex.cnf:ro
+            - {{ mariadb_config_dir }}/tls:/etc/mysql/tls:ro
+            - {{ mariadb_config_dir }}/secrets:/run/secrets:ro
+            # Volumen con nombre, NO un bind mount del arbol: un
+            # "docker compose down -v" mal dado no puede llevarse los datos por
+            # delante desde el rol.
+            - mariadb-data:/var/lib/mysql
+volumes:
+    mariadb-data:

@@ -1,0 +1,76 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/mariadb/templates/.
+#
+# Este fichero es lo UNICO que Ansible posee. Lo que MariaDB escriba por su
+# cuenta --auto.cnf con el UUID del servidor, los ficheros de estado de la
+# replicacion-- vive en el volumen de datos y no se toca nunca: sobrescribirlo
+# le devolveria al nodo una topologia caducada y desharia la promocion que
+# acabara de pasar. Es la misma regla que managed.conf en el rol valkey.
+[mariadbd]
+# La seccion se llama [mariadbd], no [mysqld]: comprobado contra 11.4.
+bind_address = {{ mariadb_bind_address }}
+port = {{ mariadb_port }}
+
+# Identidad de replicacion. Explicita en el inventario, nunca derivada del
+# indice del grupo: ver el comentario de defaults/main.yml.
+server_id = {{ mariadb_server_id }}
+
+# GTID y binlog por filas. GTID es lo que permite a orchestrator repuntar una
+# replica sin coordenadas de fichero y posicion.
+log_bin = /var/lib/mysql/binlog
+binlog_format = ROW
+gtid_strict_mode = ON
+
+# Semisincrona, los DOS papeles en los DOS nodos: cualquiera puede acabar
+# siendo cualquier cosa despues de un failover, y un nodo promovido sin
+# rpl_semi_sync_master_enabled serviria escrituras sin la garantia.
+rpl_semi_sync_master_enabled = ON
+rpl_semi_sync_slave_enabled = ON
+
+# AFTER_SYNC, y NO el valor de fabrica. MariaDB trae AFTER_COMMIT (comprobado
+# contra 11.4.13; MySQL trae AFTER_SYNC): con el, el primario confirma y
+# DESPUES espera el ack de la replica, asi que si muere en ese hueco la
+# transaccion esta confirmada localmente y en ninguna replica. Un cliente pudo
+# ver el commit y la promocion se lo lleva por delante -- que es justo el
+# motivo por el que se eligio semisincrona sobre asincrona.
+rpl_semi_sync_master_wait_point = AFTER_SYNC
+
+# Los dos siguientes se dejan en su valor de fabrica A PROPOSITO, y se escriben
+# aqui para que el numero sea una decision y no un descuido:
+#
+#   rpl_semi_sync_master_timeout = 10000
+#     Al agotarse, el primario CAE A ASINCRONO Y SIGUE. Es lo correcto --una
+#     replica muerta no puede bloquear los logins-- pero significa que la
+#     garantia se apaga sola y en silencio. Como saber si sigue activa esta en
+#     documentacion/despliegue-ansible.md: NO basta con
+#     Rpl_semi_sync_master_status.
+#
+#   rpl_semi_sync_master_wait_no_slave = ON
+#     Con una sola replica, es lo que evita que un reinicio de esa replica deje
+#     al primario confirmando a ciegas durante la ventana.
+rpl_semi_sync_master_timeout = 10000
+rpl_semi_sync_master_wait_no_slave = ON
+
+# Los DOS nodos arrancan en solo lectura. El primario lo quita el bootstrap del
+# rol (tasks/replicacion.yml) y orchestrator lo quita al promover
+# (ApplyMySQLPromotionAfterMasterFailover). Sin esto, un nodo que arranca
+# despues de un failover aceptaria escrituras y bifurcaria el historial: dos
+# primarios divergiendo es la averia que no tiene arreglo automatico.
+#
+# Una replica que reinicia vuelve sola a solo lectura, que es lo que se quiere.
+read_only = ON
+
+# TLS con el certificado de la CA interna. Se sirve, pero no se EXIGE
+# (require_secure_transport se queda sin poner) por una razon concreta: quien
+# tiene que negarse a hablar en claro es el cliente, y dex ya lo hace con
+# dex_storage.ssl_mode "true". Exigirlo aqui obligaria tambien al agente de
+# sonda, cuya conexion no sale del loopback de la propia maquina, a montar TLS
+# para nada. Si algun dia hay clientes que no controlamos, esto se revisa.
+ssl_ca = /etc/mysql/tls/ca.crt
+ssl_cert = /etc/mysql/tls/node.crt
+ssl_key = /etc/mysql/tls/node.key
+
+# transaction_isolation NO se toca. Lo pone dex por conexion, en los parametros
+# del DSN (storage/sql/config.go), y ahi es donde tiene que estar. El valor de
+# fabrica de MariaDB es REPEATABLE-READ (comprobado), que es justo el
+# aislamiento con el que dex NO debe correr.

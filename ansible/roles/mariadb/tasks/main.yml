@@ -1,0 +1,108 @@
+# Este nodo es nuestro: lo instala, escribe su configuracion y lo arranca este
+# mismo rol, a diferencia de dex_storage --que avisa en vez de negarse porque
+# la base de datos no era nuestra--. Desde esta fase si lo es.
+- name: Las contrasenas de MariaDB no pueden quedar vacias sin querer
+  ansible.builtin.assert:
+    that:
+      - (mariadb_root_password | default('') | length > 0) or (mariadb_allow_no_password | bool)
+      - (dex_storage_password | default('') | length > 0) or (mariadb_allow_no_password | bool)
+      - (mariadb_repl_password | default('') | length > 0) or (mariadb_allow_no_password | bool)
+      - (mariadb_probe_password | default('') | length > 0) or (mariadb_allow_no_password | bool)
+      - (mariadb_orchestrator_password | default('') | length > 0) or (mariadb_allow_no_password | bool)
+    fail_msg: >-
+      Falta alguna de mariadb_root_password, dex_storage_password,
+      mariadb_repl_password, mariadb_probe_password o
+      mariadb_orchestrator_password. Van cifradas con ansible-vault en
+      group_vars. Si esto es un converge de prueba desechable,
+      mariadb_allow_no_password: true.
+    success_msg: Las cinco contrasenas de MariaDB estan presentes.
+
+# server_id no tiene default en el rol: es la identidad de replicacion y va
+# explicita en el inventario. Un assert propio, porque el fallo por defecto
+# ("'mariadb_server_id' is undefined" al renderizar la plantilla) no dice donde
+# ponerlo ni por que no se deriva del grupo.
+- name: Cada nodo declara su server_id, y el inventario es quien lo dice
+  ansible.builtin.assert:
+    that:
+      - mariadb_server_id is defined
+      - mariadb_server_id | int > 0
+    fail_msg: >-
+      {{ inventory_hostname }} no declara mariadb_server_id. Va en el inventario,
+      distinto por nodo y mayor que cero. No se deriva del indice del grupo a
+      proposito: reordenar el inventario reasignaria identidades de replicacion,
+      y dos nodos con el mismo server_id rompen la replicacion sin decirlo.
+    success_msg: mariadb_server_id declarado.
+
+- name: Directorio de configuracion
+  ansible.builtin.file:
+    path: "{{ mariadb_config_dir }}"
+    state: directory
+    owner: "{{ mariadb_config_owner }}"
+    group: "{{ mariadb_config_group }}"
+    mode: "0750"
+
+- name: Material TLS del nodo
+  ansible.builtin.include_tasks: tls.yml
+
+- name: Directorio de secretos
+  ansible.builtin.file:
+    path: "{{ mariadb_config_dir }}/secrets"
+    state: directory
+    owner: "{{ mariadb_config_owner }}"
+    group: "{{ mariadb_config_group }}"
+    mode: "0700"
+
+- name: Las contrasenas que lee la imagen, en fichero y nunca en el entorno
+  # docker inspect imprime el entorno del contenedor entero, asi que las
+  # contrasenas van por MARIADB_*_FILE y en el entorno solo viaja la ruta.
+  # no_log: sin esto, un -v o un --diff las imprimiria enteras.
+  ansible.builtin.copy:
+    content: "{{ item.valor }}"
+    dest: "{{ mariadb_config_dir }}/secrets/{{ item.nombre }}"
+    owner: "{{ mariadb_config_owner }}"
+    group: "{{ mariadb_config_group }}"
+    mode: "0600"
+  loop:
+    - {nombre: root-password, valor: "{{ mariadb_root_password | default('') }}"}
+    - {nombre: dex-password, valor: "{{ dex_storage_password | default('') }}"}
+  notify: Reiniciar mariadb
+  no_log: true
+
+- name: El fichero 50-dex.cnf, lo unico que Ansible posee
+  ansible.builtin.template:
+    src: 50-dex.cnf.j2
+    dest: "{{ mariadb_config_dir }}/50-dex.cnf"
+    owner: "{{ mariadb_config_owner }}"
+    group: "{{ mariadb_config_group }}"
+    mode: "0640"
+  notify: Reiniciar mariadb
+
+- name: Compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ mariadb_config_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Reiniciar mariadb
+
+- name: Levantar mariadb
+  community.docker.docker_compose_v2:
+    project_src: "{{ mariadb_config_dir }}"
+    state: present
+
+# Los handlers corren al final de la tanda, y las tareas de replicacion
+# (tarea 3) necesitan el nodo respondiendo YA. Este flush es lo que ordena las
+# dos cosas.
+- name: Aplicar los reinicios pendientes antes de tocar la replicacion
+  ansible.builtin.meta: flush_handlers
+
+- name: Esperar a que MariaDB acepte conexiones
+  # 90 segundos y no 30: el PRIMER arranque de un primario con la semisincrona
+  # encendida y sin replica todavia bloquea el timeout entero
+  # (rpl_semi_sync_master_timeout, 10 s) durante el bootstrap de la propia
+  # imagen, y deja un "Timeout waiting for reply of binlog" en el log. Es
+  # esperado, no es un fallo, y una espera corta lo leeria como un despliegue
+  # roto.
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host | default('127.0.0.1') }}"
+    port: "{{ mariadb_port }}"
+    timeout: 90

@@ -12,3 +12,12 @@ dex_valkey_password: ""
 valkey_allow_no_password: true
 dex_session_cookie_key: treinta-y-dos-bytes-de-prueba-aa
 dex_dashboard_oidc_client_secret: converge-client-secret
+
+# Contrasenas desechables del converge de MariaDB (Fase 4, tarea 1). El rol
+# se niega a arrancar sin ellas porque ese nodo es nuestro, igual que valkey;
+# mariadb_allow_no_password en el grupo mariadb de hosts.yml es el escape
+# hatch para este converge.
+mariadb_root_password: convergerootsinsimbolo
+mariadb_repl_password: convergereplsinsimbolo
+mariadb_probe_password: convergeprobesinsimbolo
+mariadb_orchestrator_password: convergeorchsinsimbolo
