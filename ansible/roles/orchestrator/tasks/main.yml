@@ -1,0 +1,72 @@
+- name: El raft necesita un numero impar de votantes, y tres es el numero
+  # Con dos nodos de datos, la decision de promover no puede tomarse ahi: un
+  # nodo solo no distingue "el otro se ha muerto" de "me he quedado aislado".
+  # Por eso el quorum vive aqui, y por eso el tercer voto tiene que estar en una
+  # maquina que NO sea de base de datos. Con dos votantes, perder uno deja al
+  # otro sin quorum y no hay promocion: exactamente lo que se queria evitar.
+  ansible.builtin.assert:
+    that:
+      - (groups['orchestrator'] | default([])) | length >= 3
+      - ((groups['orchestrator'] | default([])) | length) % 2 == 1
+    fail_msg: >-
+      El grupo orchestrator tiene {{ (groups['orchestrator'] | default([])) | length }}
+      hosts: hacen falta al menos 3 y en numero impar. El tercero va en una
+      maquina que no sea de base de datos --un balanceador o un nodo de dex--,
+      igual que el tercer sentinel de la fase 2.
+    success_msg: El raft de orchestrator tiene un numero impar de votantes.
+  run_once: true
+
+- name: La contrasena de orchestrator no puede quedar vacia
+  ansible.builtin.assert:
+    that:
+      - mariadb_orchestrator_password | default('') | length > 0
+    fail_msg: >-
+      mariadb_orchestrator_password esta vacia. Es el usuario con el que
+      orchestrator habla a los dos MariaDB, y lleva SUPER: va cifrada con
+      ansible-vault en group_vars.
+    success_msg: mariadb_orchestrator_password esta presente.
+
+- name: Directorio de configuracion
+  ansible.builtin.file:
+    path: "{{ orchestrator_config_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Directorio de TLS
+  ansible.builtin.file:
+    path: "{{ orchestrator_config_dir }}/tls"
+    state: directory
+    mode: "0750"
+
+# Solo la CA, ni cert ni clave del host: con MySQLTopologySSLSkipVerify a true
+# --unica opcion viable, ver el comentario de la plantilla-- orchestrator no
+# presenta certificado de cliente, asi que copiarlos seria configuracion muerta.
+# La CA si se usa: es lo que hace que MySQLTopologyUseMutualTLS levante TLS.
+- name: Certificado de la CA interna, con el que se monta el TLS de la topologia
+  ansible.builtin.copy:
+    content: "{{ internal_ca_cert }}"
+    dest: "{{ orchestrator_config_dir }}/tls/ca.crt"
+    mode: "0644"
+  notify: Reiniciar orchestrator
+
+- name: Configuracion
+  # no_log: lleva MySQLTopologyPassword en claro. El fichero va en 0600 por lo
+  # mismo.
+  ansible.builtin.template:
+    src: orchestrator.conf.json.j2
+    dest: "{{ orchestrator_config_dir }}/orchestrator.conf.json"
+    mode: "0600"
+  notify: Reiniciar orchestrator
+  no_log: true
+
+- name: Compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ orchestrator_config_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Reiniciar orchestrator
+
+- name: Levantar orchestrator
+  community.docker.docker_compose_v2:
+    project_src: "{{ orchestrator_config_dir }}"
+    state: present

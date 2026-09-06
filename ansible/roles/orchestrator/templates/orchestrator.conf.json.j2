@@ -1,0 +1,40 @@
+{
+    "_comentario": "Renderizado por Ansible. No editar aqui: los cambios se pierden en el proximo despliegue. La plantilla esta en ansible/roles/orchestrator/templates/.",
+    "Debug": false,
+    "_comentario_listen": "Atado a la interfaz privada y NO a todas: esta API no lleva autenticacion (orchestrator la soporta, es otra fase) y cualquiera que alcance este puerto puede promover, desenganchar o poner en solo lectura los dos nodos de datos. Misma anotacion que el bus del cluster de Valkey: el puerto NO puede ser alcanzable fuera de la red privada.",
+    "ListenAddress": "{{ ansible_host }}:{{ orchestrator_http_port }}",
+
+    "MySQLTopologyUser": "{{ mariadb_orchestrator_user }}",
+    "MySQLTopologyPassword": "{{ mariadb_orchestrator_password }}",
+    "_comentario_tls": "UseMutualTLS a true para que el TLS contra la topologia sea EXPLICITO. No lo enciende: medido en vivo, esta conexion ya iba cifrada antes con MutualTLS a false, porque MySQLTopologyUseMixedTLS viene a true de fabrica (ni siquiera aparece en el JSON de ejemplo de la imagen) y con MySQLTopologySSLCAFile puesto eso basta para montar TLS. Lo que se gana es no depender de un valor de fabrica que no esta escrito en ningun sitio y cuyo modo mixto tolera texto en claro. Comprobado poniendo el usuario orchestrator en REQUIRE SSL: con esta configuracion sigue sondeando --luego la sesion es TLS-- y una conexion con --ssl=0 recibe Access denied.",
+    "_comentario_skipverify": "SkipVerify a true, y la clave anterior decia false MINTIENDO: la verificacion nunca ocurrio. Esta build (la ultima, de 2022) no sabe verificar contra una CA propia por este camino --su ssl.NewTLSConfig carga el CAFile en ClientCAs, semantica de SERVIDOR, y deja RootCAs vacio, asi que el cliente de MySQL cae al almacen del sistema--. Comprobado: al forzar de verdad la verificacion salta 'ERROR ReadTopologyInstance(...): x509: certificate signed by unknown authority' cada InstancePollSeconds y orchestrator se queda sin poder leer la topologia. Tampoco presenta certificado de cliente por este camino (con el usuario en REQUIRE X509 recibe Access denied), asi que no se copian aqui cert ni clave del host: seria configuracion muerta. Lo que queda sin cubrir es un ataque ACTIVO que suplante a un nodo dentro de la red privada; el mismo hueco que master_ssl_verify_server_cert en la replicacion, y documentado igual.",
+    "MySQLTopologySSLCAFile": "/etc/orchestrator/tls/ca.crt",
+    "MySQLTopologySSLSkipVerify": true,
+    "MySQLTopologyUseMutualTLS": true,
+    "InstancePollSeconds": {{ orchestrator_poll_seconds }},
+
+    "_comentario_seeds": "Sin semillas, orchestrator arranca con el backend vacio y no descubre nada: no hay failover automatico en un despliegue nuevo hasta que alguien haga un api/discover a mano. Con ellas descubre el par solo, y desde cualquiera de los dos llega al otro por la topologia.",
+    "DiscoverySeeds": [
+{% for h in groups['mariadb'] %}
+        "{{ hostvars[h].ansible_host }}:{{ hostvars[h].mariadb_port }}"{{ "," if not loop.last }}
+{% endfor %}
+    ],
+
+    "BackendDB": "sqlite",
+    "SQLite3DataFile": "/var/lib/orchestrator/orchestrator.db",
+
+    "RaftEnabled": true,
+    "RaftDataDir": "/var/lib/orchestrator",
+    "RaftBind": "{{ ansible_host }}:{{ orchestrator_raft_port }}",
+    "DefaultRaftPort": {{ orchestrator_raft_port }},
+    "RaftNodes": [
+{% for h in groups['orchestrator'] %}
+        "{{ hostvars[h].ansible_host }}:{{ hostvars[h].orchestrator_raft_port | default(orchestrator_raft_port) }}"{{ "," if not loop.last }}
+{% endfor %}
+    ],
+
+    "FailureDetectionPeriodBlockMinutes": {{ orchestrator_failure_detection_block_minutes }},
+    "RecoveryPeriodBlockSeconds": {{ orchestrator_recovery_block_seconds }},
+    "RecoverMasterClusterFilters": ["*"],
+    "ApplyMySQLPromotionAfterMasterFailover": true
+}

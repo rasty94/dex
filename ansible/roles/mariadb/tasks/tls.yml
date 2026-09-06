@@ -1,0 +1,44 @@
+# El material TLS no lo genera este rol: lo hace internal_ca y lo publica como
+# hechos para el mismo host, siempre que el playbook incluya a este grupo en su
+# tanda "CA interna" (ver ansible/playbooks/dex.yml). Aqui solo se copia.
+#
+# El certificado del nodo necesita el nombre del balanceador entre sus SAN,
+# porque dex se conecta marcando ese nombre y la sesion TLS se negocia contra el
+# nodo que toque: es internal_ca_extra_sans, la misma variable que la fase 3
+# anadio para el passthrough del gRPC.
+- name: Directorio de TLS
+  ansible.builtin.file:
+    path: "{{ mariadb_config_dir }}/tls"
+    state: directory
+    owner: "{{ mariadb_config_owner }}"
+    group: "{{ mariadb_config_group }}"
+    mode: "0750"
+
+- name: Certificado de la CA interna
+  ansible.builtin.copy:
+    content: "{{ internal_ca_cert }}"
+    dest: "{{ mariadb_config_dir }}/tls/ca.crt"
+    owner: "{{ mariadb_config_owner }}"
+    group: "{{ mariadb_config_group }}"
+    mode: "0644"
+  notify: Reiniciar mariadb
+
+- name: Certificado propio del nodo
+  ansible.builtin.copy:
+    content: "{{ internal_ca_host_cert }}"
+    dest: "{{ mariadb_config_dir }}/tls/node.crt"
+    owner: "{{ mariadb_config_owner }}"
+    group: "{{ mariadb_config_group }}"
+    mode: "0644"
+  notify: Reiniciar mariadb
+
+- name: Clave propia del nodo
+  # no_log: es la clave privada del nodo; --diff la imprimiria entera.
+  ansible.builtin.copy:
+    content: "{{ internal_ca_host_key }}"
+    dest: "{{ mariadb_config_dir }}/tls/node.key"
+    owner: "{{ mariadb_config_owner }}"
+    group: "{{ mariadb_config_group }}"
+    mode: "0600"
+  notify: Reiniciar mariadb
+  no_log: true

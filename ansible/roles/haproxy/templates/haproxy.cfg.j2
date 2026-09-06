@@ -89,3 +89,72 @@ backend be_grpc
 {% for h in groups['dex'] %}
     server {{ h }} {{ hostvars[h].ansible_host }}:{{ dex_grpc_port | default(5557) }} check
 {% endfor %}
+{% if groups['mariadb'] is defined and groups['mariadb'] | length > 0 %}
+
+frontend fe_mysql
+    # mode tcp, y aqui NO es solo por no terminar el TLS. Un proxy que
+    # MULTIPLEXA conexiones de cliente sobre conexiones de backend tendria que
+    # rastrear el transaction_isolation que dex mete en cada conexion
+    # (SERIALIZABLE, en los parametros del DSN), o dex acabaria corriendo en el
+    # REPEATABLE-READ de fabrica de MariaDB sin decir una palabra. Es la misma
+    # perdida silenciosa de correccion por la que se descarto Galera, entrando
+    # por otra puerta. En mode tcp esto es un tubo de bytes y la sesion es de
+    # punta a punta: no hay nada que rastrear.
+    bind :{{ haproxy_mysql_port }}
+    mode tcp
+    option tcplog
+    # 1h, y no los 60 s de "defaults". Un pool de conexiones no es trafico HTTP:
+    # dex abre conexiones y las deja OCIOSAS entre peticiones --database/sql sin
+    # connMaxLifetime--, asi que con el timeout de fabrica HAProxy corta por
+    # abajo cualquier conexion del pool que pase un minuto sin usarse y dex se
+    # encuentra conexiones muertas en la siguiente peticion (un error por cada
+    # conexion caducada, hasta que el pool se renueva). El timeout largo tiene
+    # que estar en los DOS lados de la sesion tcp: cortar solo uno deja la mitad
+    # colgando.
+    timeout client 1h
+    default_backend be_mysql
+
+backend be_mysql
+    mode tcp
+    # Un solo nodo activo a la vez: el que la sonda declara primario. No es
+    # balanceo, es enrutado, y "balance first" lo deja explicito. La replica
+    # figura DOWN todo el rato y a proposito.
+    #
+    # NI una lectura va a la replica: con replicacion por debajo, una lectura
+    # enviada ahi puede no ver un codigo de autorizacion recien escrito, y eso
+    # son logins que fallan sin motivo aparente y sin dejar rastro util. Dex
+    # ademas usa el mismo pool para todo, asi que no hay forma de marcar "esta
+    # consulta tolera retraso". No hay backend de lecturas: es una decision, no
+    # una optimizacion pendiente.
+    balance first
+    # La otra mitad del timeout de fe_mysql: ver el comentario de alli.
+    timeout server 1h
+    # check port es la pieza: la salud se comprueba en el puerto del agente y el
+    # trafico va al 3306. Sondeando el propio 3306 no habria forma de distinguir
+    # un primario de una replica -- los dos aceptan la conexion.
+    option httpchk
+    http-check send meth GET uri /
+    http-check expect status 200
+{% for h in groups['mariadb'] %}
+    # hostvars[h].mariadb_port, no mariadb_port a secas: comprobado en vivo
+    # (converge de la tarea 4) que una variable sin cualificar dentro de este
+    # bucle usa el valor del host que RENDERIZA la plantilla (el propio
+    # balanceador), el mismo para las dos lineas, y no el de cada "h". En
+    # produccion los dos nodos comparten el mismo mariadb_port (el 3306 de
+    # dentro) asi que no se nota; en el converge local, con los dos nodos en
+    # la misma maquina y puertos distintos por host para no chocar entre si,
+    # las dos lineas salian con el puerto del primer nodo y la sonda del
+    # segundo nodo comprobaba el puerto equivocado. hostvars[h] devuelve el
+    # mismo resultado cuando el valor es uniforme y el correcto cuando no.
+    #
+    # on-marked-down shutdown-sessions: al pasar el servidor a DOWN, cierra las
+    # conexiones que ya tenia abiertas. Sin esto, un primario que sigue VIVO
+    # pero que ha pasado a solo lectura --lo que hace la sonda darlo por DOWN--
+    # se queda con el pool de dex enganchado y recibiendo escrituras que ahora
+    # fallan con "read-only", mientras el nodo promovido esta UP y sin trafico.
+    # Las pruebas no lo destaparon porque todas mataban el nodo con "docker
+    # stop", que rompe el TCP y hace este trabajo por casualidad; un failover de
+    # verdad --orchestrator quitando y poniendo read_only-- no lo rompe.
+    server {{ h }} {{ hostvars[h].ansible_host }}:{{ hostvars[h].mariadb_port }} check port {{ hostvars[h].mariadb_probe_port }} on-marked-down shutdown-sessions
+{% endfor %}
+{% endif %}

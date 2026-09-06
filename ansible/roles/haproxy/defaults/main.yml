@@ -51,3 +51,16 @@ haproxy_dashboard_health_path: /healthz
 # cubre, el fallo se ve como un aviso de certificado en el navegador.
 haproxy_dashboard_base_url: "{{ hostvars[groups['dex_dashboard'][0]].dex_dashboard_base_url }}"
 haproxy_dashboard_host: "{{ haproxy_dashboard_base_url | urlsplit('hostname') }}"
+
+# El puerto por el que se publica MariaDB. Es el mismo 3306 de dentro: cambiarlo
+# no aporta nada y obligaria a tocar dex_storage.port en el inventario.
+#
+# mariadb_probe_port NO se declara aqui, y no es un olvido: lo declara el
+# INVENTARIO en las vars del grupo mariadb, no el rol mariadb ni este. Sus
+# defaults son de la tanda de MariaDB; esta plantilla la renderiza la tanda del
+# balanceador, otra tanda, leyendo por hostvars, y los defaults de un rol solo
+# existen en la tanda que lo incluye -- por eso no basta con que mariadb tenga
+# un default propio. Sin que el inventario lo declare, correr haproxy suelto
+# falla con "undefined variable" en vez de sondear un puerto inventado, que
+# dejaria todos los backends DOWN sin decir por que.
+haproxy_mysql_port: 3306

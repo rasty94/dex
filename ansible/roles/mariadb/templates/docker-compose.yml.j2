@@ -1,0 +1,61 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/mariadb/templates/.
+services:
+    mariadb:
+        image: {{ mariadb_image }}
+        container_name: {{ mariadb_container_name }}
+        restart: unless-stopped
+        # Red de host: la replicacion es entre maquinas y orchestrator y HAProxy
+        # llegan desde fuera. Quien limita la exposicion es bind_address en
+        # 50-dex.cnf, no un mapeo de puertos.
+        network_mode: host
+        environment:
+            # Las contrasenas van por FICHERO, no por valor: docker inspect
+            # imprime el entorno del contenedor entero. Con el sufijo _FILE la
+            # imagen lee el contenido y en el entorno solo queda la ruta
+            # (comprobado con docker inspect sobre esta misma imagen).
+            MARIADB_ROOT_PASSWORD_FILE: /run/secrets/root-password
+            MARIADB_DATABASE: {{ mariadb_database }}
+            MARIADB_USER: {{ mariadb_user }}
+            MARIADB_PASSWORD_FILE: /run/secrets/dex-password
+        volumes:
+            - {{ mariadb_config_dir }}/50-dex.cnf:/etc/mysql/conf.d/50-dex.cnf:ro
+            - {{ mariadb_config_dir }}/tls:/etc/mysql/tls:ro
+            - {{ mariadb_config_dir }}/secrets:/run/secrets:ro
+            # Volumen con nombre, NO un bind mount del arbol: un
+            # "docker compose down -v" mal dado no puede llevarse los datos por
+            # delante desde el rol.
+            - mariadb-data:/var/lib/mysql
+    mariadb-probe:
+        # La MISMA imagen que el servidor: ya trae socat y el cliente mariadb
+        # (comprobado: /usr/bin/socat y /usr/bin/mariadb). No hace falta escribir
+        # un binario ni construir una imagen propia para esto.
+        image: {{ mariadb_image }}
+        container_name: {{ mariadb_probe_container_name }}
+        restart: unless-stopped
+        network_mode: host
+        # entrypoint sobrescrito: aqui no se arranca ningun servidor, solo socat.
+        # Sin esto correria el entrypoint de MariaDB, que intentaria inicializar
+        # un segundo directorio de datos.
+        entrypoint: ["socat"]
+        command:
+            - "-T2"
+            # max-children: un tope al numero de /probe.sh simultaneos. Con
+            # "fork" a secas, cualquiera que alcance este puerto puede abrir
+            # conexiones sin limite y cada una arranca un cliente mariadb --el
+            # agente no tiene autenticacion, no la necesita para responder si
+            # este nodo es primario--. 16 sobra para las sondas de HAProxy (una
+            # cada dos segundos por balanceador) y pone un techo a lo que un
+            # bucle tonto puede hacerle a la maquina de base de datos.
+            - "TCP-LISTEN:{{ mariadb_probe_port }},fork,reuseaddr,max-children=16"
+            - "SYSTEM:/probe.sh"
+        # Como el usuario mysql y no como root: lo unico que necesita leer es su
+        # propio probe.cnf, que es suyo y esta en 0600.
+        user: "{{ mariadb_config_owner }}:{{ mariadb_config_group }}"
+        volumes:
+            - {{ mariadb_config_dir }}/probe.sh:/probe.sh:ro
+            - {{ mariadb_config_dir }}/probe.cnf:/probe.cnf:ro
+        depends_on:
+            - mariadb
+volumes:
+    mariadb-data:
