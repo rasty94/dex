@@ -65,6 +65,13 @@
   loop:
     - {nombre: root-password, valor: "{{ mariadb_root_password | default('') }}"}
     - {nombre: dex-password, valor: "{{ dex_storage_password | default('') }}"}
+    - nombre: root.cnf
+      valor: |
+        [client]
+        user = root
+        password = {{ mariadb_root_password | default('') }}
+        host = 127.0.0.1
+        port = {{ mariadb_port }}
   notify: Reiniciar mariadb
   no_log: true
 
@@ -149,3 +156,6 @@
       arriba), asi que un fallo aqui es de verdad: revisar
       "docker logs {{ mariadb_container_name }}".
     success_msg: MariaDB responde.
+
+- name: Replicacion
+  ansible.builtin.include_tasks: replicacion.yml

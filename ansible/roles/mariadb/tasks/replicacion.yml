@@ -1,0 +1,266 @@
+# Establecer la replicacion es la unica operacion realmente destructiva de este
+# rol: rehacerla sobre un par vivo lo rompe, igual que --cluster create sobre un
+# cluster ya formado en el rol valkey. Por eso se detecta antes de tocar nada, y
+# hay CUATRO salidas y no dos:
+#
+#   a) ya hay replicacion  -> no se hace nada
+#   b) nadie replica y nadie escribe -> arranque inicial, se establece una vez
+#   c) mas de un nodo escribible -> historial bifurcado: se para y se avisa
+#   d) el primario ya tiene datos y la replica no replica -> se niega a clonar
+#
+# El papel de primario lo decide el rol SOLO en el arranque inicial. A partir de
+# ahi manda orchestrator y el rol LEE quien es, no lo asigna: un rol que
+# reasigna el papel en cada pasada deshace el failover que acababa de pasar, que
+# es exactamente el fallo que el rol valkey evita no tocando valkey.conf.
+- name: Estado de cada nodo del grupo, preguntado a todos desde este host
+  # A TODOS y no solo a este, porque la tanda va con serial: 1 y en la primera
+  # pasada los hechos del otro nodo no existen todavia. Sin esto, tras un
+  # failover de orchestrator el primer host del grupo se veria solo, se creeria
+  # el primario del arranque inicial y se quitaria el read_only: dos primarios,
+  # historial bifurcado. Un nodo que no contesta --contenedor aun no creado en
+  # el arranque inicial, o caido-- cuenta como no escribible.
+  community.docker.docker_container_exec:
+    container: "{{ hostvars[item].mariadb_container_name | default(mariadb_container_name) }}"
+    command: >-
+      mariadb --defaults-file=/run/secrets/root.cnf -N -B
+      -e "SELECT @@read_only, @@gtid_binlog_pos,
+                 (SELECT COUNT(*) FROM information_schema.tables
+                   WHERE table_schema = '{{ mariadb_database }}'),
+                 (SELECT COUNT(*) FROM information_schema.processlist
+                   WHERE command = 'Slave_IO')"
+  loop: "{{ groups['mariadb'] }}"
+  delegate_to: "{{ item }}"
+  register: mariadb_estados
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Este nodo respondio, esto no es un contenedor que todavia arranca
+  # Un rc distinto de 0 en el PROPIO nodo no es una topologia rota: es un nodo
+  # que no ha contestado todavia. Los demas pueden no contestar (aun no
+  # desplegados) y eso es normal.
+  ansible.builtin.assert:
+    that: mariadb_propio.rc == 0
+    fail_msg: >-
+      {{ inventory_hostname }} no respondio a la consulta de estado
+      (rc={{ mariadb_propio.rc }}). Puede que el contenedor siga arrancando: el
+      primer arranque de un primario con la semisincrona encendida bloquea 10
+      segundos de mas a proposito. Repite el despliegue cuando el nodo este
+      arriba.
+  vars:
+    mariadb_propio: >-
+      {{ mariadb_estados.results | selectattr('item', 'equalto', inventory_hostname) | first }}
+
+- name: Descomponer el estado de este nodo
+  # split('\t') y NO split(): sin argumento colapsa espacios y descarta campos
+  # vacios, y un @@gtid_binlog_pos vacio desplazaria los indices sin fallar.
+  ansible.builtin.set_fact:
+    mariadb_es_escribible: "{{ mariadb_propio_campos[0] == '0' }}"
+    mariadb_gtid_pos: "{{ mariadb_propio_campos[1] }}"
+    mariadb_tiene_datos: "{{ (mariadb_propio_campos[2] | int) > 0 }}"
+    mariadb_ya_replica: "{{ (mariadb_propio_campos[3] | int) > 0 }}"
+  vars:
+    # Comilla doble y NO ">-": un escalar YAML "plegado" (">-") deja el "\t"
+    # tal cual, dos caracteres, y split() lo busca literal en vez de partir
+    # por el tabulador real que trae el stdout (comprobado: con ">-" el
+    # split no encuentra separador y devuelve la cadena entera como un unico
+    # elemento). Las comillas dobles son las unicas que YAML desescapa antes
+    # de pasarle el texto a Jinja.
+    mariadb_propio_campos: "{{ (mariadb_estados.results | selectattr('item', 'equalto', inventory_hostname) | first).stdout | trim | split('\t') }}"
+
+- name: Nodos del grupo que contestaron y se declaran escribibles
+  # De los resultados del loop, no de hostvars: es lo que hace la decision
+  # independiente de serial.
+  ansible.builtin.set_fact:
+    mariadb_escribibles: >-
+      {{ mariadb_estados.results
+         | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0)
+         | selectattr('stdout', 'defined')
+         | selectattr('stdout', 'match', '^0\t')
+         | map(attribute='item') | list }}
+
+- name: Dos nodos escribibles a la vez no se reparan solos
+  # Historial bifurcado: los dos han podido aceptar escrituras distintas. Un rol
+  # que "arregle" esto eligiendo uno tira las escrituras del otro sin decirlo.
+  ansible.builtin.assert:
+    that: mariadb_escribibles | length <= 1
+    fail_msg: >-
+      Mas de un nodo de MariaDB se declara escribible
+      ({{ mariadb_escribibles | join(', ') }}). Eso es un historial bifurcado y
+      no se toca desde aqui: cada uno ha podido aceptar escrituras que el otro
+      no tiene. Revisalo a mano --GTID de cada nodo, binlogs-- y decide cual
+      sobrevive antes de volver a desplegar.
+
+- name: Elegir el primario, leyendolo y solo asignandolo en el arranque inicial
+  # Si alguien ya es escribible, ESE es el primario: puede haberlo promovido
+  # orchestrator. Solo cuando nadie lo es --arranque inicial-- se elige el
+  # primer host del grupo.
+  ansible.builtin.set_fact:
+    mariadb_primario: "{{ (mariadb_escribibles | first) | default(groups['mariadb'] | first) }}"
+
+- name: Estado del primario, cuando no es este nodo
+  # gtid_binlog_pos y si tiene datos, del PRIMARIO: los necesita la replica para
+  # el punto de partida y para la negativa a clonar. Se sacan del mismo loop.
+  ansible.builtin.set_fact:
+    # Comilla doble, mismo motivo que mariadb_propio_campos mas arriba.
+    mariadb_primario_campos: "{{ (mariadb_estados.results | selectattr('item', 'equalto',
+      mariadb_primario) | first).stdout | default('') | trim | split('\t') }}"
+
+- name: Con datos en el primario, la replica no se clona desde aqui
+  # Clonar bases de datos en produccion desde un playbook, sin ventana ni
+  # comprobacion de tamano, es un mecanismo que no se puede probar aqui y que
+  # borra datos si se equivoca.
+  #
+  # Y hay una razon tecnica ademas de la prudente: el enganche de este rol salta
+  # la historia del primario fijando gtid_slave_pos (ver el paso siguiente). Eso
+  # SOLO es correcto cuando la replica no tiene nada que perder. Con datos ya
+  # escritos, saltarse la historia deja una replica silenciosamente incompleta,
+  # que es mucho peor que una que se para con un error.
+  ansible.builtin.assert:
+    that: not ((mariadb_primario_campos[2] | int) > 0)
+    fail_msg: >-
+      El primario ({{ mariadb_primario }}) ya tiene tablas en la base
+      "{{ mariadb_database }}" y {{ inventory_hostname }} todavia no replica. El
+      rol NO clona: hazlo a mano y vuelve a desplegar.
+        1) En el primario:  mariadb-dump --defaults-file=... --all-databases
+                              --master-data=2 --single-transaction --gtid > volcado.sql
+           (o mariabackup, que no bloquea, si la base es grande)
+        2) En la replica:   cargar el volcado y fijar gtid_slave_pos con el valor
+                            que el propio volcado trae en su cabecera
+        3) Volver a lanzar el playbook: detectara la replicacion y no tocara nada
+  when:
+    - inventory_hostname != mariadb_primario
+    - not (mariadb_ya_replica | bool)
+
+- name: Quitar el solo lectura del primario
+  # Los dos nodos arrancan en read_only (ver 50-dex.cnf.j2). Este es el unico
+  # sitio donde el rol lo quita, y solo al primario.
+  community.docker.docker_container_exec:
+    container: "{{ mariadb_container_name }}"
+    command: >-
+      mariadb --defaults-file=/run/secrets/root.cnf
+      -e "SET GLOBAL read_only = OFF"
+  when: inventory_hostname == mariadb_primario
+  changed_when: true
+  no_log: true
+
+- name: Los tres usuarios de servicio, en el primario
+  # Se crean solo en el primario a proposito: viajan a la replica por el binlog.
+  # Cada uno con los privilegios justos de su oficio, y el de la sonda con
+  # ninguno: USAGE basta para leer @@read_only y @@innodb_read_only (comprobado),
+  # y un agente alcanzable desde la red no debe poder hacer nada mas.
+  #
+  # CREATE USER IF NOT EXISTS mas GRANT es idempotente; ALTER USER refresca la
+  # contrasena si cambio en el vault sin fallar si no cambio.
+  #
+  # El usuario orchestrator NO lleva "GRANT SELECT ON mysql.slave_master_info":
+  # esa tabla es de MySQL con master_info_repository=TABLE. En MariaDB 11.4 no
+  # existe (comprobado: "Table 'mysql.slave_master_info' doesn't exist", y
+  # @@master_info_repository ni siquiera es una variable aqui), asi que el
+  # GRANT fallaba siempre. MariaDB guarda esa informacion en master.info via
+  # GTID (gtid_slave_pos), que orchestrator ya puede leer con REPLICATION
+  # CLIENT.
+  community.docker.docker_container_exec:
+    container: "{{ mariadb_container_name }}"
+    command: >-
+      mariadb --defaults-file=/run/secrets/root.cnf -e "{{ item }}"
+  loop:
+    - >-
+      CREATE USER IF NOT EXISTS '{{ mariadb_repl_user }}'@'%'
+      IDENTIFIED BY '{{ mariadb_repl_password }}';
+      ALTER USER '{{ mariadb_repl_user }}'@'%'
+      IDENTIFIED BY '{{ mariadb_repl_password }}';
+      GRANT REPLICATION SLAVE ON *.* TO '{{ mariadb_repl_user }}'@'%';
+    - >-
+      CREATE USER IF NOT EXISTS '{{ mariadb_probe_user }}'@'%'
+      IDENTIFIED BY '{{ mariadb_probe_password }}';
+      ALTER USER '{{ mariadb_probe_user }}'@'%'
+      IDENTIFIED BY '{{ mariadb_probe_password }}';
+      GRANT USAGE ON *.* TO '{{ mariadb_probe_user }}'@'%';
+    - >-
+      CREATE USER IF NOT EXISTS '{{ mariadb_orchestrator_user }}'@'%'
+      IDENTIFIED BY '{{ mariadb_orchestrator_password }}';
+      ALTER USER '{{ mariadb_orchestrator_user }}'@'%'
+      IDENTIFIED BY '{{ mariadb_orchestrator_password }}';
+      GRANT SUPER, PROCESS, REPLICATION SLAVE, REPLICATION CLIENT, RELOAD
+        ON *.* TO '{{ mariadb_orchestrator_user }}'@'%';
+  when: inventory_hostname == mariadb_primario
+  changed_when: true
+  no_log: true
+
+- name: Punto de partida de la replica, saltando el bootstrap que ya hizo
+  # ESTE es el paso que la spec no tenia y sin el la replicacion no arranca.
+  #
+  # La imagen de MariaDB, en su primer arranque, crea la base y el usuario de dex
+  # -- y esas sentencias entran en el binlog del primario. La replica hizo su
+  # propio bootstrap identico por su cuenta. Con gtid_slave_pos vacio, la replica
+  # reproduce el binlog del primario DESDE EL PRINCIPIO, incluido ese bootstrap,
+  # y se para en seco:
+  #
+  #   Last_SQL_Error: Error 'Operation CREATE USER failed for 'dex'@'%'' on query
+  #
+  # Reproducido en vivo. Fijar gtid_slave_pos al gtid_binlog_pos actual del
+  # primario salta esa historia, y es correcto SOLO porque la tarea anterior ya
+  # se ha negado a seguir si el primario tenia datos.
+  community.docker.docker_container_exec:
+    container: "{{ mariadb_container_name }}"
+    command: >-
+      mariadb --defaults-file=/run/secrets/root.cnf
+      -e "SET GLOBAL gtid_slave_pos = '{{ mariadb_primario_campos[1] }}'"
+  when:
+    - inventory_hostname != mariadb_primario
+    - not (mariadb_ya_replica | bool)
+  changed_when: true
+  no_log: true
+
+- name: Enganchar la replica al primario
+  # master_use_gtid = slave_pos, no coordenadas de fichero y posicion: es lo que
+  # permite a orchestrator repuntar la topologia sin tener que calcularlas.
+  # master_port es el del PRIMARIO, no el propio: en produccion los dos son
+  # 3306 y da igual, pero en el converge local son distintos (13306/13316) y
+  # con el propio puerto la replica se conectaria a si misma.
+  community.docker.docker_container_exec:
+    container: "{{ mariadb_container_name }}"
+    command: >-
+      mariadb --defaults-file=/run/secrets/root.cnf
+      -e "CHANGE MASTER TO
+            master_host = '{{ hostvars[mariadb_primario].ansible_host }}',
+            master_port = {{ hostvars[mariadb_primario].mariadb_port | default(mariadb_port) }},
+            master_user = '{{ mariadb_repl_user }}',
+            master_password = '{{ mariadb_repl_password }}',
+            master_ssl = 1,
+            master_ssl_ca = '/etc/mysql/tls/ca.crt',
+            master_use_gtid = slave_pos;
+          START REPLICA"
+  when:
+    - inventory_hostname != mariadb_primario
+    - not (mariadb_ya_replica | bool)
+  changed_when: true
+  no_log: true
+
+- name: La replica esta al dia
+  # Una tarea que se ejecuta siempre, no solo cuando se acaba de enganchar: es
+  # la que delata una replicacion que se paro entre despliegues.
+  community.docker.docker_container_exec:
+    container: "{{ mariadb_container_name }}"
+    command: >-
+      mariadb --defaults-file=/run/secrets/root.cnf -N -B
+      -e "SELECT COUNT(*) FROM information_schema.processlist
+           WHERE command IN ('Slave_IO', 'Slave_SQL')"
+  register: mariadb_hilos_replica
+  when: inventory_hostname != mariadb_primario
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Los dos hilos de replicacion tienen que estar corriendo
+  # Dos: el de E/S y el de SQL. Con uno solo la replica esta rota de una forma
+  # que no se nota hasta el failover, que es cuando ya no sirve enterarse.
+  ansible.builtin.assert:
+    that: mariadb_hilos_replica.stdout | trim | int == 2
+    fail_msg: >-
+      {{ inventory_hostname }} no tiene los dos hilos de replicacion corriendo
+      (encontrados: {{ mariadb_hilos_replica.stdout | trim }}). Miralo con
+      "SHOW REPLICA STATUS\G" dentro del contenedor: Last_SQL_Error suele decir
+      exactamente que sentencia la paro.
+  when: inventory_hostname != mariadb_primario
