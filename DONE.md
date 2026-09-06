@@ -737,6 +737,128 @@ Ejemplo listo para levantar: `Ejemplos/dashboard/`.
       avisa. Los grant types del conector sí se vacían: ahí la lista va envuelta en un
       mensaje. Comprobado sobre el despliegue, incluidos los dos casos de vaciar.
 
+### 27. 🗄️ MariaDB en alta disponibilidad
+
+> Fase 4 de la
+> [hoja de ruta del despliegue](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md).
+> Spec en
+> [2026-09-06-mariadb-alta-disponibilidad.md](documentacion/specs/2026-09-06-mariadb-alta-disponibilidad.md);
+> documentación de uso en
+> [despliegue-ansible.md](documentacion/despliegue-ansible.md).
+
+- [x] **Roles `mariadb` y `orchestrator`.** El primero levanta el par primario/réplica
+      en Docker con replicación semisíncrona
+      (`rpl_semi_sync_master_wait_point=AFTER_SYNC`, corregido sobre el `AFTER_COMMIT`
+      de fábrica de MariaDB) y GTID (`gtid_strict_mode=ON`), más el agente de sonda que
+      dice por HTTP si un nodo es primario escribible (200) o no (503) — la réplica
+      figura `DOWN` en HAProxy todo el rato, a propósito. El segundo corre en modo raft
+      a tres, con el tercer voto en un balanceador y no en un nodo de datos, y detecta
+      la caída y promueve.
+- [x] **Frontend y backend `fe_mysql`/`be_mysql` nuevos en el rol `haproxy`**, en
+      `mode tcp` con `balance first` y `check port {{ mariadb_probe_port }}`: un solo
+      nodo activo a la vez, el que la sonda declara escribible.
+- [x] **`dex_storage.host` pasa a apuntar al balanceador**, no a una máquina, y
+      `ssl_mode` del inventario de ejemplo pasa a `"true"` porque la base ya es un
+      componente propio, servido con el certificado de la CA interna.
+- [x] **Orden de tandas del playbook**: CA interna → MariaDB → orchestrator → Valkey →
+      dex → panel → balanceador. MariaDB antes que dex porque dex no arranca sin
+      storage; orchestrator justo después porque no tiene nada que descubrir hasta que
+      el par existe.
+
+**Decisiones tomadas sobre la marcha, no en la hoja de ruta original:**
+
+- **HAProxy y no ProxySQL**, corrigiendo la hoja de ruta: dex fija
+  `transaction_isolation='SERIALIZABLE'` por conexión, y un proxy que multiplexa
+  conexiones de cliente sobre las de backend tendría que rastrear esa variable o dex
+  acabaría corriendo en el `REPEATABLE-READ` de fábrica sin decirlo — la misma pérdida
+  silenciosa de corrección por la que se descartó Galera, entrando por otra puerta.
+  HAProxy en `mode tcp` no multiplexa: es un tubo de bytes y no hay nada que rastrear.
+- **Los tres privilegios de grano fino de MariaDB 10.5+ para orchestrator**
+  (`SLAVE MONITOR`, `REPLICATION SLAVE ADMIN`, `READ_ONLY ADMIN`) más
+  `log_slave_updates=ON` en los dos nodos: sin cualquiera de los cuatro, ningún
+  failover promueve. Ninguno tiene equivalente en MySQL, así que ningún ejemplo
+  pensado en MySQL los trae.
+
+**Lo que destapó probarlo** — la parte que vale:
+
+Un par recién creado no podía replicar con `gtid_slave_pos` vacío. La réplica se pone a
+reproducir el bootstrap de la propia imagen, que ella misma ya ejecutó, y se para con:
+
+```
+Last_SQL_Error: Error 'Operation CREATE USER failed for 'dex'@'%'' on
+query. Default database: 'mysql'. Query: 'CREATE USER 'dex'@'%'
+IDENTIFIED BY 'convergesinsimbolo''
+```
+
+El arreglo: fijar `gtid_slave_pos` al `@@gtid_binlog_pos` del primario antes del
+`CHANGE MASTER TO`, para que la réplica arranque su historia justo donde está el
+primario y no la reproduzca desde el principio. Reproducido dos veces y saboteado
+—quitando el fijado vuelve a salir el mismo error letra por letra— antes de darlo por
+bueno.
+
+Ligado a lo anterior: los usuarios de servicio (replicación, sonda, orchestrator) se
+crean idempotentes en los DOS nodos, no solo en el primario. Una réplica que arranca
+desde un GTID posterior a la creación del usuario en el primario nunca la recibe por
+binlog, y orchestrator no podía conectarse a ella.
+
+`Rpl_semi_sync_master_status` por sí solo miente. Medido contra un `mariadb:11.4` de
+verdad:
+
+| Momento | `..._status` | `..._clients` | Qué pasa de verdad |
+| --- | --- | --- | --- |
+| Recién arrancado, sin réplica | `ON` | `0` | La siguiente escritura bloquea 10 s y cae a asíncrono |
+| Tras una escritura sin réplica | `OFF` | `0` | Ya cayó: `Rpl_semi_sync_master_no_tx` = 1 |
+| Con la réplica enganchada | `ON` | `1` | Activa: `..._yes_tx` sube, `..._no_tx` se queda en 0 |
+
+`status: ON` con `clients: 0` dice «habilitada», no «funcionando». La comprobación
+correcta es la pareja, y el contador que vale para una alarma es
+`Rpl_semi_sync_master_no_tx`.
+
+El resto de lo que salió de probar, cada uno con su sitio propio en la documentación
+de uso: `AFTER_COMMIT` es de verdad el valor de fábrica de MariaDB y no un error de
+lectura de la spec —saboteado: sin la línea de la plantilla que fija `AFTER_SYNC`,
+sale `AFTER_COMMIT`—; `mysql.slave_master_info` no existe en MariaDB, es de MySQL, y
+el `GRANT` que lo suponía se retiró; el cliente `mariadb` reescribe su propio `argv`,
+así que sabotear pasando la contraseña con `-p` no la deja visible en `docker top`
+—la decisión de fichero-y-no-argv se mantiene igual, pero la prueba que la sostiene es
+«el cliente se autocensura», no «se veía y ahora no»—; `split('\t')` dentro de un
+escalar YAML plegado (`>-`) no interpreta el tabulador, hacen falta comillas dobles;
+los defaults de un rol no son hechos del host —`hostvars[h].mariadb_probe_port` sale
+indefinido desde la tanda del balanceador si el inventario no lo declara
+explícitamente, aunque el propio rol `mariadb` tenga un valor por defecto, porque los
+defaults de un rol solo están disponibles mientras ese rol corre—; con `serial: 1`,
+una réplica que arranca primero en el grupo y no ve al primario un instante se habría
+promovido sola de no ser porque la rama de arranque inicial solo se dispara para un
+nodo pristino, sin replicar y sin datos —probado: primario parado, el rol se niega en
+la réplica y el `read_only` queda intacto—; el primer arranque tarda ~10 s de más
+mientras la semisíncrona espera una réplica que aún no existe, y deja
+`Timeout waiting for reply of binlog` en el log, esperado; y Docker Desktop en macOS no
+expone la red de host al propio Ansible, así que el `wait_for` del puerto se sustituyó
+por `mariadb-admin ping` desde dentro del contenedor, que además es una sonda más
+fuerte porque exige que el servidor conteste de verdad, no solo que el puerto esté
+abierto.
+
+Verificado en vivo un failover automático completo por el balanceador: `TestMySQL` de
+`storage/sql` pasó contra el par a través de HAProxy (127.0.0.1:13300) en 15,4 s, y dex
+se recuperó solo tras matar el primario, sin reiniciarlo — su pool de `database/sql`
+reintentó conexión hasta que HAProxy tuvo un backend sano. Medido en un portátil con
+los tres orchestrator en la misma máquina el 2026-09-06 —no representativo de un
+despliegue real, solo cifras de referencia—: 4,64 s entre el `docker stop` del
+primario y la sonda 200 del nodo promovido; 6,87 s hasta la primera petición de dex
+con éxito (`/dex/auth`, que escribe en storage); tres peticiones de dex fallaron en
+medio (`auth=500`); `healthz` no falló ninguna, porque no toca storage.
+
+Tres huecos quedan abiertos y documentados como pasos del operador, no como bugs de
+esta fase: un primario que reinicia vuelve en solo lectura y nada lo repone solo —ni
+orchestrator (`set-writeable` es una orden manual) ni el rol (no promueve sobre
+datos)—; `RecoveryPeriodBlockSeconds: 3600` bloquea una segunda promoción dentro de la
+hora si la anterior no se confirmó —medido: 2 min 34 s bloqueado, ~3 s si se confirma
+de antemano—; y el primario viejo que vuelve tras un failover queda huérfano, sin
+`read_only=OFF` y sin replicar, observado cinco veces. Los tres, con las órdenes
+exactas, en
+[despliegue-ansible.md](documentacion/despliegue-ansible.md#lo-que-el-operador-tiene-que-hacer-a-mano)
+y en [TODO.md](TODO.md).
+
 ---
 
 ## 🎁 Heredado del re-port, ya encendido

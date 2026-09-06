@@ -19,13 +19,15 @@ El orden no es arbitrario: cada fase necesita que la anterior exista.
 | 1 | `pkg/valkey` con standalone, sentinel y cluster | Especificada |
 | 2 | Roles `valkey`, `dex` y `dex_dashboard`, con el panel replicado | Especificada |
 | 3 | El balanceador: HAProxy y keepalived | Entregada |
-| 4 | MariaDB: despliegue y alta disponibilidad | Especificada |
+| 4 | MariaDB: despliegue y alta disponibilidad | Entregada |
 | 5 | La colección de Ansible publicable | Pendiente de spec |
 
 Las fases 1 y 2 están en
-[2026-09-03-despliegue-ansible-valkey-ha.md](2026-09-03-despliegue-ansible-valkey-ha.md)
-y la 3 en
-[2026-09-04-balanceador-haproxy-keepalived.md](2026-09-04-balanceador-haproxy-keepalived.md).
+[2026-09-03-despliegue-ansible-valkey-ha.md](2026-09-03-despliegue-ansible-valkey-ha.md),
+la 3 en
+[2026-09-04-balanceador-haproxy-keepalived.md](2026-09-04-balanceador-haproxy-keepalived.md)
+y la 4 en
+[2026-09-06-mariadb-alta-disponibilidad.md](2026-09-06-mariadb-alta-disponibilidad.md).
 
 ## Decisiones ya tomadas
 
@@ -124,8 +126,5 @@ espera el ack **antes** de confirmar, que es lo que se creía estar comprando.
 
 ## Qué hay que verificar y nadie ha verificado
 
-- **MariaDB con este fork.** El dialecto MySQL de `storage/sql` es conservador y todo
-  apunta a que funciona, pero es una inferencia. Tarea propia en la fase 1: levantar un
-  contenedor de MariaDB y correr `storage/sql` contra él con `DEX_MYSQL_HOST`.
 - **El failover real entre máquinas**, tanto de Valkey como de MariaDB. Se verifica a
   mano, una vez por fase, con la transcripción fechada en la documentación.

@@ -23,9 +23,10 @@ completa está en
 - **Docker**, con el plugin `compose`. El rol usa
   `community.docker.docker_compose_v2` y `community.docker.docker_container_exec`; no
   instala Docker por sí mismo.
-- **Una base MariaDB o MySQL que ya exista**, alcanzable desde los nodos del grupo
-  `dex`. El rol la consume y comprueba que responde antes de arrancar dex; no la
-  instala ni la administra — eso es la fase 4 de la hoja de ruta, todavía sin spec.
+- **MariaDB o MySQL alcanzable desde los nodos del grupo `dex`.** Puede ser el par
+  primario/réplica que despliega el propio rol `mariadb` (fase 4, entregada — ver
+  «MariaDB en alta disponibilidad» más abajo) o una base ajena ya existente; el rol
+  `dex` solo comprueba que responde antes de arrancar, no la administra por sí mismo.
 
 ### En el nodo de control
 
@@ -275,6 +276,170 @@ Lo que hace:
   `valkey`/`valkey_sentinel` del inventario, con `keyPrefix` distinto para que no se
   mezclen las claves de los dos procesos.
 
+## MariaDB en alta disponibilidad
+
+Rol `mariadb` — primario y réplica en Docker, con TLS y replicación semisíncrona —,
+el agente de sonda que dice cuál de los dos es el primario, un frontend y un backend
+nuevos en el rol `haproxy` para el 3306, y el rol `orchestrator` en modo raft a tres
+para detectar la caída y promover. Es la fase 4 de la
+[hoja de ruta](specs/2026-09-03-despliegue-hoja-de-ruta.md); spec completa en
+[2026-09-06-mariadb-alta-disponibilidad.md](specs/2026-09-06-mariadb-alta-disponibilidad.md).
+
+### Una réplica no es una copia de seguridad
+
+Con todas las letras, porque es la confusión más cara de este terreno: **una réplica
+no es una copia de seguridad**. Replica al instante el `DROP TABLE` y el `UPDATE` sin
+`WHERE`. Esta fase protege de que se muera una máquina, **no** de que alguien se
+equivoque. Las copias de seguridad son trabajo propio, con su retención y sus
+restauraciones probadas, y quedan fuera de este despliegue.
+
+### Cómo saber si la semisíncrona está activa de verdad
+
+```sql
+SHOW STATUS WHERE Variable_name IN (
+    'Rpl_semi_sync_master_status',    -- ON no basta
+    'Rpl_semi_sync_master_clients',   -- tiene que ser >= 1
+    'Rpl_semi_sync_master_no_tx');    -- transacciones SIN la garantia
+```
+
+`status: ON` con `clients: 0` dice «habilitada», no «funcionando»: la siguiente
+escritura bloqueará hasta agotar `rpl_semi_sync_master_timeout` (10 s de fábrica) y
+caerá a asíncrono. Medido contra un `mariadb:11.4` de verdad:
+
+| Momento | `..._status` | `..._clients` | Qué pasa de verdad |
+| --- | --- | --- | --- |
+| Recién arrancado, sin réplica | `ON` | `0` | La siguiente escritura bloquea 10 s y cae a asíncrono |
+| Tras una escritura sin réplica | `OFF` | `0` | Ya cayó: `Rpl_semi_sync_master_no_tx` = 1 |
+| Con la réplica enganchada | `ON` | `1` | Activa: `..._yes_tx` sube, `..._no_tx` se queda en 0 |
+
+La comprobación correcta es la pareja `status` + `clients`, nunca `status` sola. El
+número que vale para una alarma es `Rpl_semi_sync_master_no_tx`: cuenta las
+transacciones que se confirmaron sin la protección que se creía tener.
+
+### La garantía se apaga sola, y en silencio
+
+Al agotarse `rpl_semi_sync_master_timeout` el primario **cae a asíncrono y sigue**. Es
+lo correcto —una réplica muerta no puede bloquear los logins— pero significa que la
+garantía de no perder escrituras recientes se apaga sola sin avisar en ningún sitio
+visible. Vigilar `Rpl_semi_sync_master_no_tx` (arriba) es la única forma de enterarse.
+
+### La réplica figura `DOWN` en HAProxy, y es lo que tiene que decir
+
+El agente de sonda de cada nodo responde 200 solo si es primario escribible, 503 en
+cualquier otro caso —incluida una consulta que no contesta: MariaDB caída, disco
+lleno, demasiadas conexiones—. La réplica sale `DOWN` en el backend `be_mysql` todo el
+rato y a propósito: no es una avería, es la sonda diciendo la verdad.
+
+### El primer arranque tarda ~10 s de más
+
+Con `rpl_semi_sync_master_enabled=ON` y sin réplica todavía, el primario espera el ack
+de una réplica que aún no existe hasta agotar `rpl_semi_sync_master_timeout`, y deja
+esto en el log:
+
+```
+Timeout waiting for reply of binlog
+```
+
+Esperado, no roto: es el mismo mecanismo del apartado anterior, visto en el arranque.
+
+### El digest de orchestrator, y por qué no hay una etiqueta de versión
+
+`openarkcode/orchestrator` no publica etiquetas de versión en Docker Hub, solo
+`latest`. La regla del repositorio de no usar nunca `latest` se cumple fijando la
+imagen **por digest** (`orchestrator_image`, en
+`ansible/roles/orchestrator/defaults/main.yml`). Para obtener uno nuevo:
+
+```bash
+docker manifest inspect openarkcode/orchestrator:latest
+```
+
+y leer el digest del manifiesto de la plataforma que toque. Cambiarlo es una decisión
+consciente, no una actualización rutinaria: **la última versión de orchestrator es de
+2022**, así que un digest nuevo no trae correcciones, trae otra construcción de lo
+mismo.
+
+### El rol no clona la réplica si el primario ya tiene datos
+
+Con datos ya escritos en el primario, el rol se niega a enganchar una réplica nueva —
+lo dice el `fail_msg` de la propia tarea—: clonar bases de datos en producción desde
+un playbook, sin ventana ni comprobación de tamaño, es un mecanismo que no se puede
+probar aquí y que borra datos si se equivoca. Los dos caminos, a mano:
+
+```bash
+# En el primario
+mariadb-dump --defaults-file=... --all-databases --master-data=2 \
+    --single-transaction --gtid > volcado.sql
+# (o mariabackup, que no bloquea, si la base es grande)
+
+# En la replica: cargar el volcado y fijar gtid_slave_pos con el valor que el
+# propio volcado trae en su cabecera. Despues, volver a lanzar el playbook:
+# detectara la replicacion existente y no tocara nada.
+```
+
+### Lo que el operador tiene que hacer a mano
+
+Tres huecos que la fase deja abiertos a propósito: automatizarlos sin una comprobación
+que hoy nadie puede hacer con seguridad es peor que dejarlos manuales.
+
+**A. Un primario que reinicia vuelve en solo lectura.** `read_only=ON` en el arranque
+es de fichero (`50-dex.cnf`), no un estado que orchestrator recuerde. Tras un
+`docker start` o un reinicio del primario, ningún nodo queda escribible: orchestrator
+no tiene ninguna política para un master que vuelve en solo lectura —`set-writeable`
+es una orden manual de su CLI/API, no algo que corra por su cuenta (comprobado contra
+el binario, `orchestrator -c help` y 30 s de sondeo en vivo)—, y el rol tampoco lo
+repone, porque no promueve sobre datos existentes, por diseño. Paso del operador, en
+el nodo correcto:
+
+```bash
+docker exec <contenedor-mariadb> mariadb --defaults-file=/run/secrets/root.cnf \
+    -e "SET GLOBAL read_only = OFF"
+```
+
+Es el coste que la spec elige a propósito (§4.3): seguridad frente a bifurcación del
+historial, antes que disponibilidad automática.
+
+**B. Una segunda promoción dentro de la hora se queda bloqueada.**
+`RecoveryPeriodBlockSeconds: 3600` en la configuración de orchestrator impide lanzar
+una recuperación nueva sobre el mismo clúster lógico mientras la anterior no se haya
+confirmado, aunque el fallo nuevo sea sobre el nodo contrario y legítimo. Medido el
+2026-09-06: con la recuperación anterior sin confirmar, el bloqueo duró **2 min 34 s**
+hasta un acuse manual; confirmada de antemano, la promoción siguiente tardó los
+mismos **~3 s** de siempre. El acuse:
+
+```bash
+curl -s "http://<host-orchestrator>:<orchestrator_http_port>/api/ack-all-recoveries?comment=<motivo>"
+```
+
+No se baja el valor a ciegas: encadenar promociones sin ninguna ventana de por medio
+es el riesgo contrario. Candidato de TODO: acuse automático, o una alarma sobre
+`api/audit-recovery` cuando aparezca una recuperación con `Acknowledged: false`.
+
+**C. El primario viejo que vuelve tras un failover queda huérfano.** Sin el
+`read_only=OFF` del punto A y sin replicar: orchestrator no lo reengancha, y el rol
+tampoco porque no clona sobre datos existentes. Observado cinco veces durante las
+pruebas de esta fase. Paso del operador, según haya divergido o no del nuevo
+primario:
+
+```bash
+# Si NO divergio: reenganchar por GTID al primario nuevo
+docker exec <contenedor-viejo> mariadb --defaults-file=/run/secrets/root.cnf \
+    -e "SET GLOBAL gtid_slave_pos = '<gtid_binlog_pos del primario nuevo>'"
+docker exec <contenedor-viejo> mariadb --defaults-file=/run/secrets/root.cnf <<'SQL'
+CHANGE MASTER TO
+    master_host = '<ip-del-primario-nuevo>',
+    master_port = 3306,
+    master_user = '<mariadb_repl_user>',
+    master_password = '<...>',
+    master_ssl = 1,
+    master_ssl_ca = '/etc/mysql/tls/ca.crt',
+    master_use_gtid = slave_pos;
+START REPLICA;
+SQL
+
+# Si SI divergio: mariadb-dump o mariabackup, igual que en "El rol no clona
+# la replica si el primario ya tiene datos", de arriba.
+```
+
 ## Qué NO cubre este despliegue
 
 - **La sonda de disponibilidad del panel sigue sin decir la verdad.** El `/healthz` del
@@ -289,9 +454,11 @@ Lo que hace:
   una cadena compuesta del tipo `5.5.5-10.11.2-MariaDB` que atlas no interpreta como
   MySQL. El camino soportado con MariaDB es `storage/sql` (el de por defecto), verificado
   contra 10.11 y 11.4.
-- **Las fases 3, 4 y 5** — el balanceador, MariaDB en alta disponibilidad y la colección
-  de Ansible publicable — con sus decisiones ya tomadas pero sin spec propia, en la
-  [hoja de ruta](specs/2026-09-03-despliegue-hoja-de-ruta.md).
+- **La fase 5** — la colección de Ansible publicable —, con sus decisiones ya tomadas
+  pero sin spec propia todavía, en la
+  [hoja de ruta](specs/2026-09-03-despliegue-hoja-de-ruta.md). Las fases 3 y 4 —el
+  balanceador y MariaDB en alta disponibilidad— ya están entregadas, cada una con su
+  propia spec.
 
 ## Verificación manual entre máquinas
 
@@ -523,4 +690,57 @@ del issuer y el del panel.
 openssl s_client -connect <vip>:443 -servername <nombre-del-panel> </dev/null 2>/dev/null \
     | openssl x509 -noout -ext subjectAltName
 # -> tienen que aparecer los dos nombres, o un comodin que los cubra
+```
+
+### 6. MariaDB: promoción automática entre máquinas
+
+Tres instancias de raft en un portátil comparten demasiado —misma red, mismo reloj,
+mismo disco— para que el resultado del quorum signifique algo, igual que con el
+failover de sentinel y los pasos de VRRP: hace falta máquinas de verdad.
+
+```bash
+# Quien es el primario ahora mismo, por la sonda de cada nodo
+ssh <host-db-1>
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:<mariadb_probe_port>/
+
+# Matar el primario de verdad
+ssh <host-primario> docker stop mariadb
+
+# Esperar al failover y comprobar que el otro nodo quedo escribible:
+# ApplyMySQLPromotionAfterMasterFailover tiene que haber quitado el solo lectura
+ssh <host-replica>
+docker exec mariadb mariadb --defaults-file=/run/secrets/root.cnf -N -B \
+    -e "SELECT @@read_only"
+# -> 0
+
+# Que HAProxy cambio de backend por la sonda, no porque orchestrator se lo dijera
+ssh <host-balanceador> docker logs haproxy | tail -20
+# -> el backend viejo a DOWN y el nuevo a UP, ambos por el check de la sonda
+
+# Una escritura por el balanceador tiene que llegar al nodo nuevo
+mariadb --host=<vip-o-nombre-balanceador> --port=<haproxy_mysql_port> \
+    --ssl-ca=<ca.crt> -u<usuario> -p -e "SELECT @@hostname"
+```
+
+Medido en un portátil con los tres orchestrator en la misma máquina —**no un
+despliegue real, cifras de referencia únicamente**—, el 2026-09-06: failover
+automático (`docker stop` del primario → sonda 200 del nodo promovido) **4,64 s**;
+`docker stop` → primera petición de dex con éxito (`/dex/auth`, que escribe en
+storage) **6,87 s**; peticiones de dex fallidas en medio, **3** (`healthz` no falló
+ninguna, porque no toca storage).
+
+### 7. La pérdida de escrituras con `AFTER_COMMIT` frente a `AFTER_SYNC`
+
+Demostrarla de verdad exige matar el primario en una ventana de milisegundos entre
+máquinas distintas —justo el hueco en el que `AFTER_COMMIT` confirma localmente antes
+de esperar el ack de la réplica—, y eso no se puede montar como prueba de laboratorio
+sin que el resultado sea casualidad. Lo que se documenta es el razonamiento y el valor
+fijado (§3.2 de la [spec de la fase 4](specs/2026-09-06-mariadb-alta-disponibilidad.md)):
+`AFTER_SYNC`, que espera el ack **antes** de confirmar, es el que evita perder un
+refresh token recién emitido si el primario muere justo después del commit. Lo único
+verificable en una sola máquina:
+
+```sql
+SELECT @@rpl_semi_sync_master_wait_point;
+-- -> AFTER_SYNC, no el AFTER_COMMIT de fabrica de MariaDB
 ```

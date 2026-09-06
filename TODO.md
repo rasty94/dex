@@ -8,7 +8,7 @@
 > sesiones e identidades, MFA nativo— está decidido y encendido; también en
 > [DONE.md](DONE.md).
 >
-> Última actualización: 2026-09-04
+> Última actualización: 2026-09-06
 > Imagen Docker: `ghcr.io/rasty94/dex:latest`
 > Repositorio: <https://github.com/rasty94/dex>
 
@@ -91,6 +91,33 @@
       igual sin él. La documentación del conector Keystone y el CHANGELOG
       deberían decirlo explícitamente en vez de dar a entender que el arranque
       siempre se detiene.
+- [ ] **Un primario de MariaDB que reinicia vuelve en solo lectura, y nada lo
+      repone solo.** `read_only=ON` en el arranque es de fichero, no un estado que
+      orchestrator recuerde: tras un `docker start` o un reinicio del primario,
+      ningún nodo queda escribible. Orchestrator no tiene ninguna política para un
+      master read-only —`set-writeable` es una orden manual de su CLI/API,
+      comprobado contra el binario, `orchestrator -c help` y 30 s de sondeo en
+      vivo—, y el rol tampoco lo repone porque no promueve sobre datos existentes,
+      por diseño. No se arregla en esta fase porque automatizarlo mal —reponer
+      `read_only=OFF` sin saber si hubo bifurcación— es justo el riesgo que la
+      spec de la fase 4 (§4.3) decide no correr: seguridad antes que
+      disponibilidad. Paso del operador, con la orden exacta, en
+      [despliegue-ansible.md](documentacion/despliegue-ansible.md#lo-que-el-operador-tiene-que-hacer-a-mano).
+- [ ] **`RecoveryPeriodBlockSeconds: 3600` de orchestrator bloquea una segunda
+      promoción de MariaDB dentro de la hora** si la anterior no está confirmada,
+      aunque el fallo nuevo sea sobre el nodo contrario y legítimo. Medido: **2 min
+      34 s** bloqueado hasta un `ack-all-recoveries` manual; confirmada de
+      antemano, la promoción siguiente tardó los mismos **~3 s** de siempre. No se
+      baja el valor a ciegas: encadenar promociones sin ninguna ventana de por
+      medio es el riesgo contrario. Candidato: acuse automático, o una alarma
+      sobre `api/audit-recovery` cuando aparezca una recuperación con
+      `Acknowledged: false`.
+- [ ] **El primario viejo de MariaDB que vuelve tras un failover queda
+      huérfano.** Sin `read_only=OFF` (punto de arriba) y sin replicar:
+      orchestrator no lo reengancha, y el rol tampoco porque no clona sobre datos
+      existentes. Observado cinco veces durante las pruebas de la fase 4. Paso del
+      operador: `gtid_slave_pos` + `CHANGE MASTER` si no divergió del nuevo
+      primario; `mariadb-dump`/`mariabackup` si sí.
 
 ### 3. ☁️ Ecosistema Cloud Native e Integraciones
 
@@ -120,19 +147,11 @@
       está: dex se niega a arrancar, que es lo correcto, pero hay que reintentar en vez de
       darlo por muerto. Sigue abierta con el rol de Ansible desplegado: ver
       [despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
-- [ ] **Fases 4 y 5 del despliegue en alta disponibilidad**, con sus decisiones ya
-      tomadas pero sin spec propia todavía —las fases 1, 2 y 3 están en
-      [DONE.md](DONE.md)—, ver la
-      [hoja de ruta](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md):
-      - **Fase 4 — MariaDB en alta disponibilidad**: primario y réplica con
-        replicación semisíncrona, ProxySQL como punto de entrada, orchestrator para
-        detectar la caída y promover. **Galera descartado, y no por gusto**: dex fija
-        `transaction_isolation = SERIALIZABLE` en cada conexión
-        ([storage/sql/config.go:236](storage/sql/config.go#L236) y
-        [storage/ent/mysql.go:53](storage/ent/mysql.go#L53)) y Galera solo garantiza
-        REPEATABLE READ.
-      - **Fase 5 — la colección de Ansible publicable**, al final porque no se puede
-        empaquetar lo que aún no existe.
+- [ ] **Fase 5 del despliegue en alta disponibilidad: la colección de Ansible
+      publicable**, con sus decisiones ya tomadas pero sin spec propia todavía —las
+      fases 1 a 4 están en [DONE.md](DONE.md)—, ver la
+      [hoja de ruta](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md). Al
+      final porque no se puede empaquetar lo que aún no existe.
       - **El camino `ent` con MariaDB queda fuera y no soportado**: el feature flag
         `DEX_ENT_ENABLED` (apagado por defecto) usa `atlas`, que hace sondeo de
         versión, y MariaDB devuelve una cadena compuesta
