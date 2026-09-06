@@ -92,11 +92,36 @@
       sobrevive antes de volver a desplegar.
 
 - name: Elegir el primario, leyendolo y solo asignandolo en el arranque inicial
-  # Si alguien ya es escribible, ESE es el primario: puede haberlo promovido
-  # orchestrator. Solo cuando nadie lo es --arranque inicial-- se elige el
-  # primer host del grupo.
+  # Si alguien ya es escribible, ESE es el primario. Si nadie lo es, SOLO un
+  # nodo pristino --primero del grupo, sin replicar y sin datos-- puede tomar el
+  # papel: es el arranque inicial. Un nodo que replica o que tiene datos y no
+  # ve primario NO se promueve solo: el primario real puede estar caido un
+  # instante y volver, y entonces habria dos. Promover es de orchestrator o del
+  # operador, nunca de este rol.
+  #
+  # Riesgo residual, dicho: un nodo 1 reconstruido de cero (volumen nuevo)
+  # mientras el 2 esta caido en ese mismo instante pasaria por pristino. Es la
+  # combinacion de dos averias a la vez, y el nodo estaria vacio.
   ansible.builtin.set_fact:
-    mariadb_primario: "{{ (mariadb_escribibles | first) | default(groups['mariadb'] | first) }}"
+    mariadb_primario: >-
+      {{ (mariadb_escribibles | first)
+         | default(inventory_hostname if mariadb_es_pristino_inicial else '') }}
+  vars:
+    mariadb_es_pristino_inicial: >-
+      {{ inventory_hostname == (groups['mariadb'] | first)
+         and not (mariadb_ya_replica | bool)
+         and not (mariadb_tiene_datos | bool) }}
+
+- name: Sin primario escribible a la vista, este nodo no se promueve solo
+  ansible.builtin.assert:
+    that: mariadb_primario | length > 0
+    fail_msg: >-
+      Ningun nodo de MariaDB se declara escribible y {{ inventory_hostname }} no
+      es un nodo pristino (replica: {{ mariadb_ya_replica }}, con datos:
+      {{ mariadb_tiene_datos }}), asi que NO se promueve solo. Si el primario
+      esta caido, o lo promueve orchestrator o lo promueves tu a mano
+      (STOP REPLICA; SET GLOBAL read_only = OFF en el que sobreviva) y vuelves
+      a desplegar. Este rol nunca elige primario sobre datos existentes.
 
 - name: Estado del primario, cuando no es este nodo
   # gtid_binlog_pos y si tiene datos, del PRIMARIO: los necesita la replica para
@@ -105,6 +130,17 @@
     # Comilla doble, mismo motivo que mariadb_propio_campos mas arriba.
     mariadb_primario_campos: "{{ (mariadb_estados.results | selectattr('item', 'equalto',
       mariadb_primario) | first).stdout | default('') | trim | split('\t') }}"
+
+- name: El primario respondio con los cuatro campos esperados
+  # Si el primario no contesto, mariadb_primario_campos queda [''] (un solo
+  # elemento, la cadena vacia) y el [1]/[2] de las tareas siguientes revienta
+  # con un "list index out of range" que no dice nada del problema real.
+  ansible.builtin.assert:
+    that: mariadb_primario_campos | length == 4
+    fail_msg: >-
+      El primario ({{ mariadb_primario }}) no respondio a la consulta de
+      estado. Repite el despliegue cuando este arriba.
+  when: inventory_hostname != mariadb_primario
 
 - name: Con datos en el primario, la replica no se clona desde aqui
   # Clonar bases de datos en produccion desde un playbook, sin ventana ni
@@ -160,10 +196,14 @@
   # GRANT fallaba siempre. MariaDB guarda esa informacion en master.info via
   # GTID (gtid_slave_pos), que orchestrator ya puede leer con REPLICATION
   # CLIENT.
+  #
+  # Las sentencias --con las tres contrasenas-- van por stdin y NO por "-e":
+  # "-e" las deja en el argv del proceso, legible con "docker top" mientras
+  # dura el exec. El comando queda a secas, sin nada que ocultar.
   community.docker.docker_container_exec:
     container: "{{ mariadb_container_name }}"
-    command: >-
-      mariadb --defaults-file=/run/secrets/root.cnf -e "{{ item }}"
+    command: mariadb --defaults-file=/run/secrets/root.cnf
+    stdin: "{{ item }}"
   loop:
     - >-
       CREATE USER IF NOT EXISTS '{{ mariadb_repl_user }}'@'%'
@@ -219,11 +259,14 @@
   # master_port es el del PRIMARIO, no el propio: en produccion los dos son
   # 3306 y da igual, pero en el converge local son distintos (13306/13316) y
   # con el propio puerto la replica se conectaria a si misma.
+  #
+  # Por stdin y no por "-e": master_password en el argv es tan visible con
+  # "docker top" como las contrasenas de "Los tres usuarios de servicio".
   community.docker.docker_container_exec:
     container: "{{ mariadb_container_name }}"
-    command: >-
-      mariadb --defaults-file=/run/secrets/root.cnf
-      -e "CHANGE MASTER TO
+    command: mariadb --defaults-file=/run/secrets/root.cnf
+    stdin: >-
+      CHANGE MASTER TO
             master_host = '{{ hostvars[mariadb_primario].ansible_host }}',
             master_port = {{ hostvars[mariadb_primario].mariadb_port | default(mariadb_port) }},
             master_user = '{{ mariadb_repl_user }}',
@@ -231,7 +274,7 @@
             master_ssl = 1,
             master_ssl_ca = '/etc/mysql/tls/ca.crt',
             master_use_gtid = slave_pos;
-          START REPLICA"
+          START REPLICA
   when:
     - inventory_hostname != mariadb_primario
     - not (mariadb_ya_replica | bool)
