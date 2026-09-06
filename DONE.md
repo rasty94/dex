@@ -859,6 +859,26 @@ exactas, en
 [despliegue-ansible.md](documentacion/despliegue-ansible.md#lo-que-el-operador-tiene-que-hacer-a-mano)
 y en [TODO.md](TODO.md).
 
+**Lo que destapó la revisión final:** dos Critical y un tercero encontrado ya en la
+tanda de arreglos. El primero, `mariadb_bind_address` del inventario de ejemplo atado
+solo a la interfaz privada: el propio rol habla con su nodo por loopback (`root.cnf`,
+la espera de arranque, el agente de sonda), así que ese valor dejaba al rol sin poder
+hablar con el nodo que acababa de arrancar — se corrigió a una lista con el loopback
+además de la interfaz privada, con un assert que lo exige antes de renderizar la
+configuración. El segundo, orchestrator sin ninguna semilla de descubrimiento: arrancaba
+con el backend vacío y nunca encontraba el par por su cuenta, así que el failover
+automático no existía en un despliegue nuevo hasta un `api/discover` a mano — se
+corrigió con `DiscoverySeeds` apuntando a los dos nodos del grupo. El tercero, ya en la
+propia tanda de arreglos: un reinicio del rol podía caer en mitad del init de la propia
+imagen de MariaDB (que arranca un servidor temporal en `--skip-networking` mientras crea
+la base y el usuario de aplicación), matando el contenedor antes de que el `CREATE USER`
+llegara a correr y dejando la base creada pero el usuario ausente para siempre y en
+silencio — se corrigió esperando a que el init termine (`mariadb-admin ping`, que solo
+contesta con el servidor definitivo arriba) tanto antes como después del reinicio, y
+además garantizando el usuario de aplicación en el mismo bucle idempotente que ya
+creaba los usuarios de servicio, para que un datadir a medias en cualquier otro momento
+no lo deje sin dueño.
+
 ---
 
 ## 🎁 Heredado del re-port, ya encendido

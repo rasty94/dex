@@ -61,6 +61,44 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 - `ssl_mode` del inventario de ejemplo pasa de `"false"` a `"true"`. Motivo:
   desde esta fase la base de datos es un componente propio, servido con la CA
   interna, y deja de ser la base ajena de la que el rol `dex` solo avisaba.
+- `mariadb_bind_address` del inventario de ejemplo pasa a
+  `"127.0.0.1,{{ ansible_host }}"`, con un assert nuevo en el rol `mariadb` que
+  exige el loopback en la lista antes de renderizar `50-dex.cnf`. Motivo: el
+  propio rol habla con su nodo por loopback (`root.cnf`, la espera de arranque,
+  `probe.cnf` del agente de sonda); atarlo solo a la interfaz privada lo deja
+  sin poder hablar con el nodo que acaba de arrancar.
+- `DiscoverySeeds` en `orchestrator.conf.json`, con los dos nodos de MariaDB del
+  grupo. Motivo: sin semilla, orchestrator arrancaba con el backend vacío y no
+  descubría el par por su cuenta — el failover automático no ocurría en un
+  despliegue nuevo hasta un `api/discover` manual.
+- `ListenAddress` de orchestrator atado a `ansible_host`, no a todas las
+  interfaces. Motivo: la API no lleva autenticación (la soporta, es otra fase),
+  así que el puerto no puede quedar alcanzable fuera de la red privada — misma
+  condición que el bus del clúster de Valkey.
+- `timeout client`/`timeout server` a `1h` en `fe_mysql`/`be_mysql`, y
+  `on-marked-down shutdown-sessions` en cada `server` de `be_mysql`. Motivo: el
+  timeout de fábrica (60 s) cortaba conexiones ociosas del pool de dex sin que
+  dex lo notara, y un primario que pasa a solo lectura sin caerse seguía
+  recibiendo el pool hasta que la sesión se cerraba sola.
+- El rol `mariadb` repone el `read_only=OFF` que su propio reinicio provocó
+  (tercera rama en la elección del primario), y la espera de
+  `mariadb-admin ping` se ejecuta también ANTES del `flush_handlers`
+  (`tasks/esperar.yml`), no solo después. Motivo del segundo: el init de la
+  imagen oficial corre con un servidor temporal en `--skip-networking`; un
+  reinicio del rol en mitad de ese init mataba el contenedor antes de que
+  `CREATE USER` del usuario de aplicación llegara a correr, dejando la base
+  creada y el usuario ausente en silencio.
+- `SET SESSION sql_log_bin = 0` delante de las sentencias de los usuarios de
+  servicio (`repl`, `probe`, `orchestrator`, `dex`). Motivo: sin esto, esas
+  sentencias entraban también en el binlog de la réplica (root tiene SUPER, así
+  que `read_only` no las para) y con `log_slave_updates = ON` rompían la
+  replicación en el segundo despliegue de un par ya establecido, con
+  `gtid_strict_mode` parando el hilo de SQL por una secuencia de GTID fuera de
+  orden.
+- `MySQLTopologyUseMutualTLS` de orchestrator pasa a `true`, explícito. Motivo:
+  la conexión ya iba cifrada por el `MySQLTopologyUseMixedTLS` que la
+  herramienta trae de fábrica sin escribirlo en ningún sitio; con `MutualTLS`
+  explícito deja de depender de ese valor no documentado.
 
 ---
 

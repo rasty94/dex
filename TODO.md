@@ -118,6 +118,27 @@
       existentes. Observado cinco veces durante las pruebas de la fase 4. Paso del
       operador: `gtid_slave_pos` + `CHANGE MASTER` si no divergió del nuevo
       primario; `mariadb-dump`/`mariabackup` si sí.
+- [ ] **`ignore_unreachable` de la detección de estado (`replicacion.yml`) no
+      tiene una prueba real con un nodo UNREACHABLE de verdad.** Lo que se probó
+      en la tanda de arreglos es un contenedor parado en la misma máquina
+      (`docker stop`), que el módulo `docker_container_exec` trata como un fallo
+      sin `rc` — mismo resultado práctico para `mariadb_escribibles`, pero no es
+      lo mismo que una máquina inalcanzable por red (SSH/conexión caída de
+      verdad), que es el caso que `ignore_unreachable: true` existe para cubrir.
+- [ ] **HAProxy con `timeout server 1h` en `be_mysql`, sin `option clitcpka`/
+      `srvtcpka` de por medio, ni un `connMaxLifetime` explícito en el lado de
+      dex.** Una conexión del pool de `database/sql` puede quedar viva más de una
+      hora sin que nadie la cierre por ninguno de los dos lados si el tráfico es
+      escaso; una keepalive TCP en HAProxy o un `connMaxLifetime` menor que 1h en
+      dex acotarían esa ventana en vez de depender solo del timeout de HAProxy.
+- [ ] **El assert de `mariadb_bind_address` (rol `mariadb`) no tolera espacios
+      tras la coma ni direcciones IPv6 (`::`, `::1`).** `'127.0.0.1' in (valor |
+      split(','))` es una comparación de cadena exacta: `"127.0.0.1, 10.0.0.1"`
+      (con espacio) o un bind por `::` no se reconocen como "incluye el
+      loopback" y el assert falla aunque el valor sea funcionalmente correcto.
+      Falla en el lado seguro (no arranca en vez de arrancar mal), así que no es
+      urgente, pero merece un `trim` por elemento y una nota sobre IPv6 si algún
+      despliegue lo necesita.
 
 ### 3. ☁️ Ecosistema Cloud Native e Integraciones
 
