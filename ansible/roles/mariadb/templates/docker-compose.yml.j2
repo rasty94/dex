@@ -26,5 +26,29 @@ services:
             # "docker compose down -v" mal dado no puede llevarse los datos por
             # delante desde el rol.
             - mariadb-data:/var/lib/mysql
+    mariadb-probe:
+        # La MISMA imagen que el servidor: ya trae socat y el cliente mariadb
+        # (comprobado: /usr/bin/socat y /usr/bin/mariadb). No hace falta escribir
+        # un binario ni construir una imagen propia para esto.
+        image: {{ mariadb_image }}
+        container_name: {{ mariadb_probe_container_name }}
+        restart: unless-stopped
+        network_mode: host
+        # entrypoint sobrescrito: aqui no se arranca ningun servidor, solo socat.
+        # Sin esto correria el entrypoint de MariaDB, que intentaria inicializar
+        # un segundo directorio de datos.
+        entrypoint: ["socat"]
+        command:
+            - "-T2"
+            - "TCP-LISTEN:{{ mariadb_probe_port }},fork,reuseaddr"
+            - "SYSTEM:/probe.sh"
+        # Como el usuario mysql y no como root: lo unico que necesita leer es su
+        # propio probe.cnf, que es suyo y esta en 0600.
+        user: "{{ mariadb_config_owner }}:{{ mariadb_config_group }}"
+        volumes:
+            - {{ mariadb_config_dir }}/probe.sh:/probe.sh:ro
+            - {{ mariadb_config_dir }}/probe.cnf:/probe.cnf:ro
+        depends_on:
+            - mariadb
 volumes:
     mariadb-data:

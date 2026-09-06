@@ -1,0 +1,23 @@
+#!/bin/sh
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/mariadb/templates/.
+#
+# Devuelve 200 solo si este nodo es primario escribible. La replica da 503 todo
+# el rato y a proposito: no es una averia, es lo que la sonda tiene que decir, y
+# HAProxy la muestra DOWN por eso.
+#
+# Un nodo que no responde a la consulta --MariaDB caida, disco lleno, demasiadas
+# conexiones-- tambien da 503, que es lo correcto: no sirve aunque tecnicamente
+# sea el primario.
+#
+# Las credenciales van en /probe.cnf (modo 0600), NO en el argv: docker top deja
+# la linea de ordenes de cualquier proceso a la vista de cualquiera que este en
+# la maquina. Es la misma leccion que ya costo una correccion con REDISCLI_AUTH
+# en el rol valkey.
+if mariadb --defaults-file=/probe.cnf -N -B -e \
+     "SELECT @@read_only + @@innodb_read_only" 2>/dev/null | grep -qx 0
+then
+    printf 'HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\nprimario'
+else
+    printf 'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 7\r\nConnection: close\r\n\r\nreplica'
+fi

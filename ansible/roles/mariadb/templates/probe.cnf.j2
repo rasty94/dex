@@ -1,0 +1,10 @@
+# Renderizado por Ansible. No editar aqui.
+#
+# Este fichero existe para que la contrasena NO viaje en el argv del cliente:
+# "mariadb -p<contrasena>" la deja legible con docker top mientras dura la
+# consulta, y la sonda consulta cada pocos segundos.
+[client]
+user = {{ mariadb_probe_user }}
+password = {{ mariadb_probe_password }}
+host = 127.0.0.1
+port = {{ mariadb_port }}
