@@ -1,0 +1,45 @@
+orchestrator_config_dir: /etc/orchestrator
+orchestrator_container_name: orchestrator
+
+# Fijado por DIGEST y no por etiqueta, que es la unica excepcion a la regla del
+# repositorio -- y lo es porque openarkcode/orchestrator NO publica etiquetas de
+# version en Docker Hub: solo "latest". Lo que la regla protege es la
+# inmutabilidad, y un digest la da mejor que una etiqueta.
+#
+# Para obtener uno nuevo:
+#   docker manifest inspect openarkcode/orchestrator:latest
+# y leer el digest del manifiesto de la plataforma que toque. Cambiarlo aqui es
+# una decision consciente: la ultima version de orchestrator es de 2022, asi que
+# un digest nuevo no trae correcciones, trae otra construccion de lo mismo.
+orchestrator_image: >-
+  openarkcode/orchestrator@sha256:789b9e7c093f3c3c2b2ff7fb5a01f4c3d85b42124213e93b765d23c10d58674a
+
+orchestrator_http_port: 3000
+orchestrator_raft_port: 10008
+
+# Ventanas de deteccion y recuperacion, explicitas. Los valores de fabrica son
+# razonables, pero un failover automatico con ventanas que nadie eligio es un
+# failover que nadie puede explicar despues.
+#
+#   InstancePollSeconds: cada cuanto pregunta a cada nodo.
+#   FailureDetectionPeriodBlockMinutes: cuanto tiempo NO vuelve a detectar el
+#     mismo fallo, para no encadenar detecciones sobre una averia que sigue.
+#   RecoveryPeriodBlockSeconds: cuanto espera antes de otra recuperacion sobre
+#     el mismo cluster. Corto encadena promociones; largo deja el par degradado.
+orchestrator_poll_seconds: 5
+orchestrator_failure_detection_block_minutes: 60
+orchestrator_recovery_block_seconds: 3600
+
+# Duplicado deliberado del default homonimo del rol mariadb (mismo valor
+# literal, "orchestrator"). No es un descuido: los defaults de un rol solo
+# estan disponibles para un host mientras ESE rol corre sobre el, y la tarea 6
+# pone "MariaDB" y "orchestrator" en tandas (plays) separadas -- confirmado en
+# la tarea 4 con dos jugadas de ansible-playbook, la segunda leyendo
+# hostvars[host].<default_de_otro_rol>: sale "undefined" aunque sea el mismo
+# host. Sin este default, la tanda de orchestrator fallaria con
+# "'mariadb_orchestrator_user' is undefined" incluso cuando el nombre de
+# usuario no ha cambiado en ningun sitio. Si algun dia mariadb_orchestrator_user
+# se declara distinto en el inventario, ese valor explicito gana a los dos
+# defaults por igual (son la variable de menor precedencia), asi que no hay
+# forma de que un cambio real quede a medias.
+mariadb_orchestrator_user: orchestrator  # noqa: var-naming[no-role-prefix] -- nombre compartido con el rol mariadb, a proposito (ver el comentario de arriba)

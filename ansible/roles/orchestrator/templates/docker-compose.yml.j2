@@ -1,0 +1,16 @@
+# Renderizado por Ansible. No editar aqui: los cambios se pierden en el
+# proximo despliegue. La plantilla esta en ansible/roles/orchestrator/templates/.
+services:
+    orchestrator:
+        image: {{ orchestrator_image }}
+        container_name: {{ orchestrator_container_name }}
+        restart: unless-stopped
+        # Red de host: los pares del raft se hablan entre maquinas por su IP
+        # real, igual que el bus de Valkey.
+        network_mode: host
+        volumes:
+            - {{ orchestrator_config_dir }}/orchestrator.conf.json:/etc/orchestrator.conf.json:ro
+            - {{ orchestrator_config_dir }}/tls:/etc/orchestrator/tls:ro
+            - orchestrator-data:/var/lib/orchestrator
+volumes:
+    orchestrator-data:

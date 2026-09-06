@@ -1,0 +1,30 @@
+{
+    "_comentario": "Renderizado por Ansible. No editar aqui: los cambios se pierden en el proximo despliegue. La plantilla esta en ansible/roles/orchestrator/templates/.",
+    "Debug": false,
+    "ListenAddress": ":{{ orchestrator_http_port }}",
+
+    "MySQLTopologyUser": "{{ mariadb_orchestrator_user }}",
+    "MySQLTopologyPassword": "{{ mariadb_orchestrator_password }}",
+    "MySQLTopologySSLCAFile": "/etc/orchestrator/tls/ca.crt",
+    "MySQLTopologySSLSkipVerify": false,
+    "MySQLTopologyUseMutualTLS": false,
+    "InstancePollSeconds": {{ orchestrator_poll_seconds }},
+
+    "BackendDB": "sqlite",
+    "SQLite3DataFile": "/var/lib/orchestrator/orchestrator.db",
+
+    "RaftEnabled": true,
+    "RaftDataDir": "/var/lib/orchestrator",
+    "RaftBind": "{{ ansible_host }}:{{ orchestrator_raft_port }}",
+    "DefaultRaftPort": {{ orchestrator_raft_port }},
+    "RaftNodes": [
+{% for h in groups['orchestrator'] %}
+        "{{ hostvars[h].ansible_host }}:{{ hostvars[h].orchestrator_raft_port | default(orchestrator_raft_port) }}"{{ "," if not loop.last }}
+{% endfor %}
+    ],
+
+    "FailureDetectionPeriodBlockMinutes": {{ orchestrator_failure_detection_block_minutes }},
+    "RecoveryPeriodBlockSeconds": {{ orchestrator_recovery_block_seconds }},
+    "RecoverMasterClusterFilters": ["*"],
+    "ApplyMySQLPromotionAfterMasterFailover": true
+}

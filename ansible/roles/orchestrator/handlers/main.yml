@@ -1,0 +1,7 @@
+# Mismo motivo que en los demas roles: compose no considera cambio el contenido
+# de un fichero montado por bind mount.
+- name: Reiniciar orchestrator
+  community.docker.docker_compose_v2:
+    project_src: "{{ orchestrator_config_dir }}"
+    state: present
+    recreate: always
