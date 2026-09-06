@@ -114,9 +114,19 @@
   #    bifurcacion posible cuando quien tiro el nodo fue uno mismo y se repone
   #    exactamente el estado que habia. Si orchestrator promovio al OTRO
   #    durante la ventana del reinicio, el otro sale en mariadb_escribibles y
-  #    gana la rama 1; este se queda huerfano, que es un caso ya documentado
-  #    (despliegue-ansible.md, "Lo que el operador tiene que hacer a mano").
-  #    Por eso la rama 2 va DESPUES de la 1 y no antes.
+  #    gana la rama 1 --SI CONTESTA--; este se queda huerfano, que es un caso
+  #    ya documentado (despliegue-ansible.md, "Lo que el operador tiene que
+  #    hacer a mano"). Por eso la rama 2 va DESPUES de la 1 y no antes.
+  #
+  #    Y por eso rama 2 exige ADEMAS que TODOS los nodos del grupo hayan
+  #    contestado (mariadb_todos_contestaron): si el otro nodo esta
+  #    UNREACHABLE --contenedor parado, host caido-- en la MISMA pasada en que
+  #    orchestrator lo promovio, mariadb_escribibles sale vacio igual que si
+  #    de verdad no escribiera nadie, y sin esta condicion la rama 2 pondria
+  #    read_only=OFF aqui con el OTRO nodo ya escribible: dos primarios. Si el
+  #    par esta mudo no hay forma de saber que el otro no escribe, asi que se
+  #    rehusa (cae al assert de "no se promueve solo" de mas abajo) --el lado
+  #    seguro, aunque cueste una ventana de indisponibilidad de mas.
   #
   # 3) NADIE ES ESCRIBIBLE Y ESTE NODO ES PRISTINO --primero del grupo, sin
   #    replicar y sin datos-- -> arranque inicial, alguien tiene que empezar.
@@ -140,8 +150,14 @@
          | default(mariadb_rama3_arranque_inicial, true) }}
   vars:
     mariadb_rama1_alguien_escribible: "{{ mariadb_escribibles | first | default('') }}"
+    mariadb_todos_contestaron: >-
+      {{ (mariadb_estados.results | selectattr('rc', 'defined')
+          | selectattr('rc', 'equalto', 0) | list | length)
+         == (groups['mariadb'] | length) }}
     mariadb_rama2_repone_lo_que_tiro: >-
-      {{ inventory_hostname if (mariadb_era_escribible_antes | bool) else '' }}
+      {{ inventory_hostname
+         if (mariadb_era_escribible_antes | bool and mariadb_todos_contestaron | bool)
+         else '' }}
     mariadb_rama3_arranque_inicial: >-
       {{ inventory_hostname
          if (inventory_hostname == (groups['mariadb'] | first)
@@ -218,7 +234,20 @@
   changed_when: true
   no_log: true
 
-- name: Los tres usuarios de servicio, en los dos nodos
+- name: Los cuatro usuarios de servicio, en los dos nodos
+  # Cuatro y no tres: "dex" se une a repl/probe/orchestrator aqui mismo. Al
+  # usuario de aplicacion lo crea el init de la imagen (MARIADB_USER/
+  # MARIADB_PASSWORD_FILE, ver el comentario de tasks/esperar.yml sobre la
+  # carrera que se corrigio), y SOLO en un despliegue limpio: un datadir a
+  # medias --el mismo escenario que esa carrera podia dejar, o cualquier otro
+  # dia en que el init no llegara a correr entero-- deja el usuario ausente
+  # PARA SIEMPRE y en silencio, sin ningun assert que lo note (la base "dex"
+  # si existe, asi que nada de lo que ya comprueba este rol lo detecta). Este
+  # CREATE USER es idempotente igual que los otros tres: en un despliegue
+  # limpio no hace nada (el usuario ya esta, con la misma contrasena), y en
+  # cualquier otro caso lo garantiza en vez de dejarlo a que el init de la
+  # imagen haya tenido la suerte de completarse.
+  #
   # NO solo en el primario: la version anterior de este comentario decia que
   # viajaban a la replica por el binlog, y en un par YA establecido es cierto
   # -- pero en un bootstrap de dos nodos DESDE CERO con "serial: 1" no lo es.
@@ -314,6 +343,13 @@
       GRANT SUPER, PROCESS, REPLICATION SLAVE, REPLICATION CLIENT, RELOAD,
         SLAVE MONITOR, REPLICATION SLAVE ADMIN, READ_ONLY ADMIN
         ON *.* TO '{{ mariadb_orchestrator_user }}'@'%';
+    - >-
+      CREATE USER IF NOT EXISTS '{{ mariadb_user }}'@'%'
+      IDENTIFIED BY '{{ dex_storage_password }}';
+      ALTER USER '{{ mariadb_user }}'@'%'
+      IDENTIFIED BY '{{ dex_storage_password }}';
+      GRANT ALL PRIVILEGES ON `{{ mariadb_database }}`.*
+        TO '{{ mariadb_user }}'@'%';
   changed_when: true
   no_log: true
 
