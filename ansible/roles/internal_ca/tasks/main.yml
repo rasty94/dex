@@ -1,3 +1,22 @@
+# La CA se ancla al inventario (internal_ca_dir en defaults/main.yml). Con
+# una lista de hosts en -i (host1,host2,) no hay fichero de inventario y
+# Ansible deja inventory_dir en la cadena "None": la CA caeria en
+# ./None/.internal-ca bajo el directorio actual, sin aviso. Comprobado.
+- name: La CA necesita un inventario de verdad al que anclarse
+  ansible.builtin.assert:
+    that:
+      - inventory_dir is defined
+      - inventory_dir | string | length > 0
+      - inventory_dir | string != 'None'
+    fail_msg: >-
+      inventory_dir no apunta a ningun fichero de inventario (vale
+      "{{ inventory_dir | default('indefinido') }}"). La CA interna se guarda
+      junto al inventario, asi que hace falta un -i con un fichero o un
+      directorio de verdad; con una lista de hosts, fija internal_ca_dir a
+      mano en el inventario o con -e.
+    success_msg: La CA se ancla en {{ internal_ca_dir }}.
+  run_once: true
+
 # La CA se genera en el control (delegate_to: localhost), una sola vez
 # (run_once) para toda la ejecucion: dex, el panel y Valkey confian en la
 # misma. La clave privada de la CA nunca se copia a un host gestionado; solo
