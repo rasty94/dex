@@ -41,6 +41,7 @@ jobs:
           if [ "fork-v$v" != "$GITHUB_REF_NAME" ]; then
             echo "galaxy.yml dice $v y la etiqueta es $GITHUB_REF_NAME"; exit 1
           fi
+          echo "galaxy.yml y la etiqueta coinciden: $v"
       - run: ansible-galaxy collection build ansible/ --output-path build/
       - name: Instalada en limpio, el playbook se resuelve con el inventario de ejemplo
         # --syntax-check comprueba estructura, YAML y que cada rol y playbook
