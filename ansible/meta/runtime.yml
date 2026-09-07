@@ -1,0 +1,5 @@
+---
+# 2.15 es lo mas antiguo que se ha considerado: los playbooks de coleccion
+# (rasty94.dex.site) existen desde 2.11, ignore_unreachable desde 2.7 y el
+# filtro split desde 2.11. Desarrollado y probado con 2.21.3.
+requires_ansible: ">=2.15.0"

@@ -4,3 +4,9 @@
 profile: production
 exclude_paths:
   - .venv/
+  # El enlace ansible_collections/rasty94/dex -> ../../.. hace que
+  # .collections/ se apunte a si mismo: cualquier herramienta que siga
+  # enlaces de directorio entra en bucle infinito recorriendolo. ansible-lint
+  # no lo sigue por defecto, pero excluirlo lo deja explicito y a salvo de
+  # que un cambio de comportamiento futuro lo intente.
+  - .collections/
