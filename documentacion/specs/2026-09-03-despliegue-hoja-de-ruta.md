@@ -20,14 +20,16 @@ El orden no es arbitrario: cada fase necesita que la anterior exista.
 | 2 | Roles `valkey`, `dex` y `dex_dashboard`, con el panel replicado | Especificada |
 | 3 | El balanceador: HAProxy y keepalived | Entregada |
 | 4 | MariaDB: despliegue y alta disponibilidad | Entregada |
-| 5 | La colección de Ansible publicable | Pendiente de spec |
+| 5 | La colección de Ansible publicable | Especificada |
 
 Las fases 1 y 2 están en
 [2026-09-03-despliegue-ansible-valkey-ha.md](2026-09-03-despliegue-ansible-valkey-ha.md),
 la 3 en
 [2026-09-04-balanceador-haproxy-keepalived.md](2026-09-04-balanceador-haproxy-keepalived.md)
-y la 4 en
-[2026-09-06-mariadb-alta-disponibilidad.md](2026-09-06-mariadb-alta-disponibilidad.md).
+la 4 en
+[2026-09-06-mariadb-alta-disponibilidad.md](2026-09-06-mariadb-alta-disponibilidad.md)
+y la 5 en
+[2026-09-07-coleccion-ansible.md](2026-09-07-coleccion-ansible.md).
 
 ## Decisiones ya tomadas
 
