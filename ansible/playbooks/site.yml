@@ -1,4 +1,9 @@
 # El orden importa: dex se niega a arrancar sin Valkey, y con razon.
+#
+# Los roles van por FQCN (rasty94.dex.<rol>) y solo por FQCN: es lo que hace
+# que este playbook sea el mismo desde el checkout (ansible.cfg resuelve la
+# coleccion al propio arbol) y con la coleccion instalada. Se invoca como
+# ansible-playbook rasty94.dex.site -i <inventario>.
 - name: CA interna
   # Antes que los demas: dex, el panel y valkey consumen el hecho
   # "internal_ca_cert" que publica este rol. loadbalancer entra aqui para que
@@ -12,7 +17,7 @@
   # clave privada de la CA-- en manos de root en la maquina de quien lanza el
   # playbook, que es justo lo contrario de lo que se quiere.
   hosts: dex:dex_dashboard:valkey:loadbalancer:mariadb:orchestrator
-  roles: [internal_ca]
+  roles: [rasty94.dex.internal_ca]
 
 - name: MariaDB
   # Antes que dex: dex no arranca sin almacenamiento. Y antes que orchestrator,
@@ -24,7 +29,7 @@
   hosts: mariadb
   serial: 1
   become: true
-  roles: [mariadb]
+  roles: [rasty94.dex.mariadb]
 
 - name: Orchestrator
   # Despues de MariaDB. El grupo incluye un host que NO es de base de datos --el
@@ -37,7 +42,7 @@
   hosts: orchestrator
   any_errors_fatal: true
   become: true
-  roles: [orchestrator]
+  roles: [rasty94.dex.orchestrator]
 
 - name: Valkey
   # Antes que Dex: dex se niega a arrancar sin Valkey cuando esta configurado,
@@ -55,19 +60,19 @@
   # ansible_become: false en sus hosts, que es una variable de conexion y gana
   # a esta directiva.
   become: true
-  roles: [valkey]
+  roles: [rasty94.dex.valkey]
 
 - name: Dex
   hosts: dex
   serial: 1        # de una en una: una actualizacion no deja el servicio abajo
   become: true
-  roles: [dex]
+  roles: [rasty94.dex.dex]
 
 - name: Panel de administracion
   hosts: dex_dashboard
   serial: 1
   become: true
-  roles: [dex_dashboard]
+  roles: [rasty94.dex.dex_dashboard]
 
 - name: Balanceador
   # Al final a proposito: HAProxy sondea /healthz de los dos servicios, y con
@@ -85,4 +90,4 @@
   hosts: loadbalancer
   serial: 1        # de uno en uno: la VIP se queda en el otro mientras tanto
   become: true
-  roles: [haproxy, keepalived]
+  roles: [rasty94.dex.haproxy, rasty94.dex.keepalived]
