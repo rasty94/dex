@@ -50,3 +50,25 @@ repos:
             # repositorio, porque lo busca en el directorio de trabajo y no en
             # el proyecto que el mismo detecta.
             additional_dependencies: [ansible]
+
+    - repo: local
+      hooks:
+          # Ninguna herramienta estandar impone el FQCN en los playbooks de
+          # una coleccion: "roles: [mariadb]" a secas pasa --syntax-check y
+          # ansible-lint en perfil production (comprobado en la tarea 2),
+          # porque ansible/roles/mariadb resuelve por directorio. "Solo
+          # rasty94.dex.<rol>" es una convencion de este repositorio, y este
+          # hook es lo unico que la impone.
+          #
+          # Es awk y no "grep -v", porque un grep -v que filtra por linea
+          # entera deja pasar una lista mixta como
+          # "roles: [rasty94.dex.mariadb, keepalived]": la linea contiene un
+          # FQCN valido, asi que grep -v la descarta entera y el nombre corto
+          # no se ve. Aqui se separa la lista por comas y se exige el FQCN
+          # elemento a elemento. Tambien evita "grep -P": en esta maquina el
+          # grep del PATH de un script no interactivo es BSD grep, sin -P.
+          - id: fqcn-en-playbooks
+            name: Los roles de los playbooks van por FQCN
+            language: system
+            files: ^ansible/playbooks/.*\.ya?ml$
+            entry: 'awk ''BEGIN{bad=0} /roles:[ \t]*\[/{line=$0; s=index(line,"["); e=index(line,"]"); inside=substr(line,s+1,e-s-1); n=split(inside,arr,","); for(i=1;i<=n;i++){gsub(/^[ \t]+|[ \t]+$/,"",arr[i]); if (arr[i] !~ /^rasty94\.dex\.[a-z_]+$/){print FILENAME":" FNR ": rol sin FQCN (rasty94.dex.<rol>): " arr[i]; bad=1}}} END{exit bad}'''
