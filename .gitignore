@@ -44,3 +44,8 @@ CLAUDE.md
 # converge local escribe su propia configuracion desechable en el worktree.
 /.internal-ca/
 /.converge/
+# La CA de cada despliegue vive junto a su inventario (internal_ca_dir) y es
+# privada: a cualquier profundidad, no solo en la raiz.
+.internal-ca/
+# Cache local de ansible-galaxy/ansible-lint (roles, modulos, colecciones descargadas).
+.ansible/

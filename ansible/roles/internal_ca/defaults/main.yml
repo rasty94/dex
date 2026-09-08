@@ -1,7 +1,14 @@
-# La clave privada de la CA no sale de esta maquina. Por defecto vive junto al
-# propio playbook, fuera de ansible/ para que un "git add ansible/" no la
-# arrastre nunca (ver el .gitignore de la raiz).
-internal_ca_dir: "{{ playbook_dir }}/../../.internal-ca"
+# La clave privada de la CA no sale del nodo de control. Vive junto al
+# INVENTARIO y no junto al playbook: la CA es del despliegue --de estas
+# maquinas, de este inventario--, no del codigo que lo despliega. Con la
+# coleccion instalada, playbook_dir cae dentro de ~/.ansible/collections y
+# ahi es donde iria a parar la clave con el ancla antigua. Dos despliegues con
+# dos inventarios tienen dos CA, que es lo correcto.
+#
+# Lo que la protege de un "git add" es el .gitignore de la raiz
+# (.internal-ca/ a cualquier profundidad) y el build_ignore de galaxy.yml:
+# nunca entra en el repositorio ni en el tarball de la coleccion.
+internal_ca_dir: "{{ inventory_dir }}/.internal-ca"
 internal_ca_key_path: "{{ internal_ca_dir }}/ca-key.pem"
 internal_ca_csr_path: "{{ internal_ca_dir }}/ca.csr"
 internal_ca_cert_path: "{{ internal_ca_dir }}/ca-cert.pem"

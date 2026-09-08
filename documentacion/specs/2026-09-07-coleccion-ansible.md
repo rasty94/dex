@@ -107,8 +107,11 @@ uso.
 un `../../..` que en la instalación no existe—: va en `build_ignore` (§4).
 
 Lo que **no** se hace: dejar `roles: [mariadb]` sin FQCN en los playbooks del repositorio
-«porque desde el checkout funciona». Serían dos formas de nombrar lo mismo, y
-`ansible-lint` en perfil `production` rechaza la corta.
+«porque desde el checkout funciona». Serían dos formas de nombrar lo mismo. Ninguna
+herramienta estándar lo impide —comprobado en las tareas 2 y 3: ni `--syntax-check` ni
+`ansible-lint` en perfil `production` rechazan la forma corta, porque `ansible/roles/mariadb`
+resuelve igual por directorio—; «solo FQCN» es una convención de este repositorio, y la
+tarea 5 la hace exigible con un hook local de `pre-commit`.
 
 ### 3.3 La versión es la etiqueta
 
@@ -179,10 +182,13 @@ tiene el otro.
 3. `ansible-playbook rasty94.dex.site -i ansible/inventories/ejemplo/hosts.yml --syntax-check`
    contra la colección **instalada**, no contra el checkout.
 
-El tercer paso es el que importa: renderiza el inventario de ejemplo contra la colección
-tal como la vería un usuario, y con eso no se puede volver a publicar un inventario de
-ejemplo que la colección no sepa desplegar — que es exactamente el `bind_address` sin
-loopback que la revisión final de la fase 4 cazó, y que ningún converge local había visto.
+El tercer paso es el que importa, pero no renderiza nada: `--syntax-check` comprueba
+estructura, YAML y que cada rol y cada playbook resuelvan por FQCN en la colección
+**instalada**, no en el checkout. Con eso se cazaría un rol o un playbook mal nombrados al
+empaquetar. Lo que no se cazaría es una plantilla mal escrita: el `bind_address` sin
+loopback que la revisión final de la fase 4 encontró solo sale renderizando de verdad, con
+`--check --diff` contra el inventario de ejemplo (tarea 4, paso 6) — eso exigiría Docker en
+CI y se queda como paso local.
 
 El tarball se adjunta a la release de GitHub como artefacto, sin más ceremonia: es la
 tercera forma de instalar (git, checkout, tarball) y sale gratis del paso 1.

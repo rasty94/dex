@@ -881,6 +881,147 @@ no lo deje sin dueño.
 
 ---
 
+### 28. 📦 La colección de Ansible publicable
+
+> Fase 5, y última, de la
+> [hoja de ruta del despliegue](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md).
+> Spec en
+> [2026-09-07-coleccion-ansible.md](documentacion/specs/2026-09-07-coleccion-ansible.md);
+> documentación de uso en
+> [despliegue-ansible.md](documentacion/despliegue-ansible.md) y en
+> [ansible/README.md](ansible/README.md).
+
+- [x] **`ansible/` es la colección `rasty94.dex`.** `galaxy.yml`, `meta/runtime.yml`,
+      `README.md` y `CHANGELOG.md` propios; `ansible-galaxy collection build ansible/`
+      produce `rasty94-dex-2.2.0.tar.gz` con los ocho roles, el playbook y el
+      inventario de ejemplo dentro, y sin `.collections`, `inventories/local` ni
+      ningún `.internal-ca`.
+- [x] **El checkout resuelve la colección sin instalar nada.** Un enlace simbólico
+      versionado, `ansible/.collections/ansible_collections/rasty94/dex → ../../..`,
+      más `collections_path` en `ansible.cfg` (que sustituye a `roles_path`): desde la
+      raíz del repositorio, `ansible-playbook rasty94.dex.site` resuelve al propio
+      árbol; instalada en otra máquina, al `~/.ansible/collections` de esa máquina. Un
+      solo nombre para las dos formas.
+- [x] **El playbook pasa a `playbooks/site.yml`, invocado como `rasty94.dex.site`**, y
+      cada tanda `roles:` va por FQCN (`rasty94.dex.mariadb`, `rasty94.dex.dex`…). "Solo
+      FQCN" es una convención de este repositorio, no una regla de ninguna herramienta
+      estándar (ver más abajo); la impone un hook local de `pre-commit`,
+      `fqcn-en-playbooks`.
+- [x] **`internal_ca_dir` se ancla en el inventario**
+      (`{{ inventory_dir }}/.internal-ca`), no en el repositorio — el único cambio de
+      comportamiento en un rol ya entregado, declarado como tal en el CHANGELOG con su
+      migración. Un `assert` en la primera tarea del rol exige un inventario de
+      verdad al que anclarse.
+- [x] **`release.yaml` gana el trabajo `coleccion`**: construye el tarball, comprueba
+      que la versión de `galaxy.yml` coincide con la etiqueta empujada, lo instala en
+      un directorio limpio y corre `--syntax-check` contra la colección instalada (no
+      el checkout) con el inventario de ejemplo. No publica: la colección se instala
+      desde este repositorio, no desde Ansible Galaxy.
+- [x] **Una sola versión de `ansible-lint`** (`26.8.0`) para el hook de `pre-commit` y
+      el `.venv` documentado — antes convivían dos.
+
+**Decisiones tomadas sobre la marcha, no en la spec original:**
+
+- **El bump de `ansible-lint` (`v25.9.2` → `v26.8.0`) se adelantó de la tarea 5 a la
+  tarea 1**, porque la versión vieja no podía convivir con el enlace `.collections`
+  (ver más abajo): nada de `--no-verify` para meter el enlace en el repositorio.
+- **La forma en bloque de `roles:` (cada rol en su propia `- rol`, debajo de
+  `roles:` sin nada más en la línea) no se soporta: se prohíbe.** El hook de FQCN solo
+  entiende `roles: [a, b]` en una sola línea; en vez de dejar pasar en silencio una
+  lista en bloque que nunca llega a mirar, una línea `roles:` vacía hace fallar el
+  hook con un mensaje que dice la única forma que sabe leer.
+
+**Lo que destapó probarlo** — la parte que vale:
+
+`ansible-lint` en su versión anclada por entonces (`v25.9.2`) entra en recursión sin
+control al descubrir ficheros con el enlace `.collections` puesto: reconstruye el árbol
+de colecciones y camina la propia colección como una raíz de lint adicional dentro de sí
+misma, sin aplicar `exclude_paths` contra el `.collections` anidado que aparece dentro de
+sí misma, y revienta con `OSError: [Errno 63] File name too long`, la ruta repetida
+~89 veces. `26.8.0` del `.venv`, con el mismo `ansible/.ansible-lint`, el mismo enlace y
+el mismo repositorio, no entra en recursión y pasa limpio: era un bug de la versión
+anclada, no del enlace ni de la configuración de la tarea.
+
+**Ninguna herramienta estándar impone "solo FQCN"**, y la spec (§3.2) afirmaba lo
+contrario. `roles: [mariadb]` a secas pasa `ansible-lint` en perfil `production` sin un
+solo aviso, porque `ansible/roles/mariadb` resuelve igual por directorio. Peor: con el
+playbook invocado por FQCN (`rasty94.dex.site`), Ansible añade implícitamente la propia
+colección (`rasty94.dex`) a la ruta de búsqueda de roles sueltos, así que ni siquiera
+`--syntax-check` distingue una tanda con FQCN de una sin él — el sabotaje que la tarea 2
+esperaba que fallara con «role not found» no falló. La garantía es de convención, no de
+sintaxis, y quien la hace exigible es el hook local `fqcn-en-playbooks`, no
+`ansible-lint` ni `--syntax-check`. La spec se corrigió para decirlo.
+
+**`--syntax-check` no renderiza ninguna plantilla.** Comprueba estructura, YAML y que
+cada rol y playbook por FQCN existan en la colección instalada — cazaría un rol o un
+playbook mal nombrados al empaquetar, que es lo que la tarea 4 demostró renombrando
+`roles/mariadb` a propósito (`[ERROR]: The role 'rasty94.dex.mariadb' was not found`).
+Lo que no cazaría es un `bind_address` mal escrito: eso sigue exigiendo `--check --diff`
+contra el inventario de ejemplo, que se queda fuera de CI porque
+`community.docker.docker_compose_v2` no es un modo de comprobación de verdad — el propio
+intento de demostrarlo en local levantó de verdad dos contenedores,
+`mariadb`/`mariadb-probe`, con los nombres por defecto del rol, en vez de simular nada;
+tuvieron que borrarse a mano junto con su volumen.
+
+**`inventory_dir` puede valer la cadena literal `"None"`.** Con `-i host1,host2,` (el
+inventario en línea, plugin `host_list`, sin fichero) `inventory_dir` no es un directorio
+real: es la cadena `"None"`, y sin el `assert` que la tarea 3 añadió, la CA interna
+caería en `./None/.internal-ca` bajo el directorio de lanzamiento, en silencio —
+protegida de un commit por el `.gitignore`, pero incumpliendo la intención de "vive junto
+al inventario" sin que nadie lo notara.
+
+**Un `-p` limpio no es un entorno limpio.** `ansible-galaxy collection install` resuelve
+las dependencias contra **todas** las rutas de colecciones configuradas, no solo la que
+recibe `-p`: si `community.crypto` ya está en `~/.ansible/collections`, no la vuelve a
+copiar («already installed, skipping»). Una instalación que parece limpia por tener un
+`-p` a un directorio vacío puede estar usando dependencias de fuera sin decirlo.
+
+**`tags` y `repository` son obligatorios en la práctica**, aunque `galaxy.yml` no los
+marque como tales: un `galaxy.yml` mínimo salta con `galaxy[tags]` (el perfil
+`production` de `ansible-lint` exige que al menos una etiqueta pertenezca a una lista
+cerrada de categorías — ninguna de las etiquetas que describen el propio despliegue lo
+es, hizo falta añadir `infrastructure`) y `galaxy[no-repository]`. Quitar
+`CHANGELOG.md` añade además `galaxy[no-changelog]`.
+
+**El primer intento del hook de FQCN, con `grep -v`, dejaba pasar un nombre corto junto
+a uno cualificado.** `grep -v` descarta la línea **entera** en cuanto encuentra un FQCN
+válido en ella, así que `roles: [rasty94.dex.mariadb, keepalived]` pasaba sin que nadie
+viera el `keepalived` sin cualificar: la línea ya tenía un FQCN, y ese bastaba para que
+`grep -v` la descartara completa. Se cambió a un `awk` que separa la lista por comas y
+exige el FQCN elemento a elemento, no línea a línea — y una revisión posterior encontró
+que ese mismo `awk`, con su patrón `/roles:[ \t]*\[/`, solo disparaba cuando el `[` iba
+en la misma línea que `roles:`, así que la forma en bloque (`roles:` y cada rol debajo,
+en su propia `- rol`) nunca se visitaba y pasaba en silencio; se corrigió prohibiéndola
+en vez de intentar parsearla.
+
+**`ansible-lint` tiene que correr desde la raíz del repositorio.** Desde dentro de
+`ansible/` no ve `ansible.cfg`, no resuelve el FQCN de los roles y los hallazgos
+cambian — comprobado antes de fijarlo así en la documentación y en el hook de
+`pre-commit`.
+
+**Lo que destapó la revisión final:** dos *Important*, uno por tarea. El primero, ya
+descrito arriba: `inventory_dir` vale `"None"` con una lista de hosts en `-i`, y la CA
+caería fuera del inventario sin ningún aviso — corregido con el `assert` de la tarea 3.
+El segundo: el hook de FQCN, tras su primera corrección (el `awk` elemento a elemento),
+seguía sin ver la forma en bloque de `roles:`, así que un rol sin cualificar dentro de
+esa forma pasaba el hook sin que ni el comentario ni el informe lo dijeran — corregido
+prohibiendo la forma en bloque en vez de intentar parsearla, con un mensaje de fallo que
+dice la única forma que el hook sabe leer.
+
+**Lo que destapó la revisión final de la fase 5** (opus, sobre la rama completa): cero
+*Critical*, cuatro *Important*, arreglados todos en una única tanda de arreglos. Los
+cuatro: el job `coleccion` de `release.yaml` publicaba la Release de GitHub aunque el
+job `artifacts` fallara — es el único job que la crea, y sin `needs: artifacts` una
+etiqueta con imágenes rotas quedaba publicada igual, con el tarball y sin imágenes;
+`build_ignore` no cubría `.internal-ca` fuera de `inventories/`, así que `-i
+ansible/hosts.yml` metía la clave privada de una CA real en el tarball; el mismo
+`build_ignore` tampoco excluía `.ansible/`, la caché que `ansible-galaxy`/`ansible-lint`
+dejan dentro de `ansible/`, así que un build local podía empaquetar la colección
+duplicada dentro de sí misma; y ni `ansible-lint` ni el hook `fqcn-en-playbooks` corrían
+en ningún workflow de CI, pese a que `CLAUDE.md` decía que CI lintea todo.
+
+---
+
 ## 🎁 Heredado del re-port, ya encendido
 
 > Lo que upstream construyó desde la divergencia y el re-port trajo apagado tras

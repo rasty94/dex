@@ -1,0 +1,57 @@
+---
+# La identidad de la coleccion. namespace y name forman el FQCN de cada rol
+# (rasty94.dex.mariadb). version es la MISMA cifra que la etiqueta fork-vX.Y.Z
+# del repositorio, sin el prefijo: una sola cadena de versiones para el
+# binario, la imagen Docker y la coleccion, y release.yaml falla si no
+# coinciden. La primera version con coleccion es la SIGUIENTE etiqueta.
+namespace: rasty94
+name: dex
+version: 2.2.0
+readme: README.md
+authors:
+  - rasty94
+description: >-
+  Despliegue en alta disponibilidad del fork rasty94/dex: dex, su panel de
+  administracion, Valkey, MariaDB y el balanceador.
+license:
+  - Apache-2.0
+tags:
+  # infrastructure es la categoria que exige el perfil production de
+  # ansible-lint (galaxy[tags]): una de una lista cerrada, no cualquier
+  # etiqueta. Las demas describen el despliegue mismo.
+  - infrastructure
+  - dex
+  - oidc
+  - docker
+  - mariadb
+  - valkey
+  - haproxy
+repository: https://github.com/rasty94/dex
+documentation: https://github.com/rasty94/dex/blob/master/documentacion/despliegue-ansible.md
+issues: https://github.com/rasty94/dex/issues
+dependencies:
+  community.docker: ">=5.2.1"
+  community.crypto: ">=3.3.0"
+# Lo que NO entra en el tarball. build_ignore no mira .gitignore: cada ruta
+# que el arbol de trabajo genera hay que declararla tambien aqui.
+build_ignore:
+  # El enlace que hace que el checkout se resuelva como la coleccion: dentro
+  # del paquete apuntaria a un ../../.. que no existe.
+  - .collections
+  # La cache que ansible-galaxy y ansible-lint crean dentro de ansible/ al
+  # correr desde ahi (p.ej. al resolver el enlace .collections). Sin esto,
+  # un build local mete la coleccion duplicada dentro de si misma.
+  - .ansible
+  # El converge de desarrollo fuera de ansible/, en la raiz del repositorio
+  # (spec S4); no forma parte de la coleccion publicable.
+  - .converge
+  # El converge de desarrollo dentro de la coleccion.
+  - inventories/local
+  # La CA de cada despliegue (ver internal_ca_dir): privada, nunca en un
+  # tarball. .internal-ca cubre "-i ansible/hosts.yml" (CA justo bajo
+  # ansible/); "*/.internal-ca" cubre "-i ansible/inventories/hosts.yml" y
+  # cualquier otra profundidad, porque el fnmatch de ansible-galaxy no trata
+  # "/" de forma especial: "*" tambien lo casa.
+  - .internal-ca
+  - "*/.internal-ca"
+  - .ansible-lint

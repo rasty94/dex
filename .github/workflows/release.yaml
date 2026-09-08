@@ -22,3 +22,40 @@ jobs:
       packages: write
       id-token: write
       security-events: write
+
+  coleccion:
+    name: Coleccion de Ansible
+    # Este job es el UNICO que crea la Release de GitHub (softprops/action-gh-release
+    # mas abajo); artifacts.yaml no la crea. Sin este needs, una etiqueta cuyas
+    # imagenes fallaran en el job artifacts quedaria publicada igual, con el
+    # tarball pero sin imagenes.
+    needs: artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # adjuntar el tarball a la release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - run: pip install ansible-core==2.21.3
+      - name: La version de galaxy.yml es la de la etiqueta
+        # Es la unica forma de que la cifra no se olvide: nada mas la lee.
+        run: |
+          v=$(python3 -c "import yaml; print(yaml.safe_load(open('ansible/galaxy.yml'))['version'])")
+          if [ "fork-v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "galaxy.yml dice $v y la etiqueta es $GITHUB_REF_NAME"; exit 1
+          fi
+          echo "galaxy.yml y la etiqueta coinciden: $v"
+      - run: ansible-galaxy collection build ansible/ --output-path build/
+      - name: Instalada en limpio, el playbook se resuelve con el inventario de ejemplo
+        # --syntax-check comprueba estructura, YAML y que cada rol y playbook
+        # existan por FQCN en la coleccion INSTALADA, no en el checkout. No
+        # renderiza plantillas: eso sigue siendo el --check --diff local.
+        run: |
+          ansible-galaxy collection install build/rasty94-dex-*.tar.gz -p inst/
+          ANSIBLE_COLLECTIONS_PATH=inst ansible-playbook rasty94.dex.site \
+            -i ansible/inventories/ejemplo/hosts.yml --syntax-check
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: build/rasty94-dex-*.tar.gz

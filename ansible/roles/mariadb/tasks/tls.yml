@@ -1,6 +1,6 @@
 # El material TLS no lo genera este rol: lo hace internal_ca y lo publica como
 # hechos para el mismo host, siempre que el playbook incluya a este grupo en su
-# tanda "CA interna" (ver ansible/playbooks/dex.yml). Aqui solo se copia.
+# tanda "CA interna" (ver ansible/playbooks/site.yml). Aqui solo se copia.
 #
 # El certificado del nodo necesita el nombre del balanceador entre sus SAN,
 # porque dex se conecta marcando ese nombre y la sesion TLS se negocia contra el
