@@ -198,7 +198,9 @@
       `include_role` dentro de `tasks:`.** Solo entiende `roles: [a, b]` en
       una línea; un `- role: x` bajo un `roles:` en bloque ya falla (la
       forma en bloque entera está prohibida, no se llega a mirar la lista),
-      así que el hueco real son esos dos módulos. Hoy no hace falta más:
+      así que el hueco real son esos dos módulos. Otro hueco real: `roles: [`
+      con el `]` en la línea siguiente pasa en silencio (el awk solo mira el
+      contenido entre corchetes de la misma línea). Hoy no hace falta más:
       `ansible/playbooks/site.yml` es el único playbook de la colección y no
       usa ninguno de los dos.
 
