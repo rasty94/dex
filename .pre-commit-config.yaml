@@ -79,8 +79,10 @@ repos:
             files: ^ansible/playbooks/.*\.ya?ml$
             entry: |
                 awk 'BEGIN{bad=0}
+                # linea de comentario (# tras espacios, del propio playbook): no se mira
+                /^[ \t]*#/{next}
                 # roles: en bloque (nada tras los dos puntos): forma prohibida, este hook no la lee
                 /^[ \t]*(- )?roles:[ \t]*$/{print FILENAME":" FNR ": roles: en bloque: usa roles: [a, b] en una linea, la unica forma que este hook sabe leer"; bad=1}
                 # roles: [a, b] en una linea: separa por comas y exige rasty94.dex.<rol> elemento a elemento
-                /roles:[ \t]*\[/{line=$0; s=index(line,"["); e=index(line,"]"); inside=substr(line,s+1,e-s-1); n=split(inside,arr,","); for(i=1;i<=n;i++){gsub(/^[ \t]+|[ \t]+$/,"",arr[i]); if (arr[i] !~ /^rasty94\.dex\.[a-z_]+$/){print FILENAME":" FNR ": rol sin FQCN (rasty94.dex.<rol>): " arr[i]; bad=1}}}
+                /roles:[ \t]*\[/{line=$0; s=index(line,"["); e=index(line,"]"); inside=substr(line,s+1,e-s-1); n=split(inside,arr,","); for(i=1;i<=n;i++){gsub(/^[ \t]+|[ \t]+$/,"",arr[i]); if (arr[i] !~ /^rasty94\.dex\.[a-z0-9_-]+$/){print FILENAME":" FNR ": rol que no es rasty94.dex.<rol>: " arr[i]; bad=1}}}
                 END{exit bad}'
