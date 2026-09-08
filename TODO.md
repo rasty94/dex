@@ -194,12 +194,13 @@
       rol, en vez de simularlos. Hace falta un entorno donde
       `docker_compose_v2` no arranque nada bajo `--check` antes de meter este
       render en un runner de GitHub Actions.
-- [ ] **El hook `fqcn-en-playbooks` de `pre-commit` no cubre `- role: foo`
-      suelto ni `import_role`/`include_role`.** Solo entiende
-      `roles: [a, b]` en una línea (y rechaza a propósito la forma en bloque,
-      en vez de dejarla pasar sin mirarla). Hoy no hace falta más:
+- [ ] **El hook `fqcn-en-playbooks` de `pre-commit` no cubre `import_role` ni
+      `include_role` dentro de `tasks:`.** Solo entiende `roles: [a, b]` en
+      una línea; un `- role: x` bajo un `roles:` en bloque ya falla (la
+      forma en bloque entera está prohibida, no se llega a mirar la lista),
+      así que el hueco real son esos dos módulos. Hoy no hace falta más:
       `ansible/playbooks/site.yml` es el único playbook de la colección y no
-      usa ninguna de esas dos formas.
+      usa ninguno de los dos.
 
 ### 4. 🔐 Autenticación Avanzada (Beyond TOTP)
 

@@ -889,7 +889,7 @@ no lo deje sin dueño.
 > [2026-09-07-coleccion-ansible.md](documentacion/specs/2026-09-07-coleccion-ansible.md);
 > documentación de uso en
 > [despliegue-ansible.md](documentacion/despliegue-ansible.md) y en
-> [ansible/README.md](../ansible/README.md).
+> [ansible/README.md](ansible/README.md).
 
 - [x] **`ansible/` es la colección `rasty94.dex`.** `galaxy.yml`, `meta/runtime.yml`,
       `README.md` y `CHANGELOG.md` propios; `ansible-galaxy collection build ansible/`
@@ -1007,6 +1007,18 @@ seguía sin ver la forma en bloque de `roles:`, así que un rol sin cualificar d
 esa forma pasaba el hook sin que ni el comentario ni el informe lo dijeran — corregido
 prohibiendo la forma en bloque en vez de intentar parsearla, con un mensaje de fallo que
 dice la única forma que el hook sabe leer.
+
+**Lo que destapó la revisión final de la fase 5** (opus, sobre la rama completa): cero
+*Critical*, cuatro *Important*, arreglados todos en una única tanda de arreglos. Los
+cuatro: el job `coleccion` de `release.yaml` publicaba la Release de GitHub aunque el
+job `artifacts` fallara — es el único job que la crea, y sin `needs: artifacts` una
+etiqueta con imágenes rotas quedaba publicada igual, con el tarball y sin imágenes;
+`build_ignore` no cubría `.internal-ca` fuera de `inventories/`, así que `-i
+ansible/hosts.yml` metía la clave privada de una CA real en el tarball; el mismo
+`build_ignore` tampoco excluía `.ansible/`, la caché que `ansible-galaxy`/`ansible-lint`
+dejan dentro de `ansible/`, así que un build local podía empaquetar la colección
+duplicada dentro de sí misma; y ni `ansible-lint` ni el hook `fqcn-en-playbooks` corrían
+en ningún workflow de CI, pese a que `CLAUDE.md` decía que CI lintea todo.
 
 ---
 

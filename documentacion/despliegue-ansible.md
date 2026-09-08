@@ -95,6 +95,13 @@ Todos los comandos de este documento asumen `.venv/bin/` por delante y que se la
 también de donde hay que correr `ansible-lint` — desde dentro de `ansible/` no ve
 `ansible.cfg`, no resuelve el FQCN y cambia los hallazgos.
 
+Si además hay una copia de `rasty94.dex` instalada en `~/.ansible/collections`,
+`ansible-lint` avisa "only the first one will be used" y resuelve contra la instalada,
+no contra el checkout — `ansible-playbook` sí toma el checkout, porque `ansible.cfg`
+antepone `collections_path` a las rutas por defecto y ahí solo está el enlace
+`.collections`. Para lintear el checkout con esa copia instalada presente:
+`ANSIBLE_COLLECTIONS_PATH=ansible/.collections ansible-lint ansible/`.
+
 ## El inventario y sus cuatro grupos
 
 Ejemplo completo en `ansible/inventories/ejemplo/hosts.yml` (con direcciones del rango
@@ -259,6 +266,13 @@ plugin `host_list`) `inventory_dir` vale la cadena `"None"`, y el rol se niega e
 primera tarea con un `assert` explícito en vez de dejar la CA caer en `./None/.internal-ca`
 en silencio. El mensaje de fallo dice cómo seguir: fijar `internal_ca_dir` a mano, por
 inventario o con `-e`.
+
+Con una lista de hosts sueltos (`-i host1,host2,`) contra `rasty94.dex.site` el
+resultado es "no hosts matched" en todas las tandas: los hosts de `host_list` no caen
+en ningún grupo con nombre (`dex`, `mariadb`…), solo en `all`/`ungrouped`, y cada
+`hosts:` del playbook nombra un grupo. El `assert` no protege entonces a `site.yml`
+—ese caso ni siquiera llega a ejecutar el rol—, sino al rol `internal_ca` invocado
+directamente o desde un playbook propio, donde `-i host1,host2,` sí es un uso real.
 
 ## Actualizar
 
@@ -897,7 +911,7 @@ primera vez que eso pase:
 ansible-galaxy collection install \
     'git+https://github.com/rasty94/dex.git#ansible/,fork-vX.Y.Z'
 ansible-galaxy collection list rasty94.dex
-# -> rasty94.dex   X.Y.Z, instalada desde el subdirectorio ansible/ del repositorio publico
+# -> rasty94.dex   X.Y.Z, instalada desde el subdirectorio ansible/ del repositorio público
 ```
 
 Si falla, lo primero que hay que mirar es la etiqueta: `ansible-galaxy` necesita que
