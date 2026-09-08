@@ -16,11 +16,16 @@ El orden no es arbitrario: cada fase necesita que la anterior exista.
 
 | Fase | Qué entrega | Estado |
 | --- | --- | --- |
-| 1 | `pkg/valkey` con standalone, sentinel y cluster | Especificada |
-| 2 | Roles `valkey`, `dex` y `dex_dashboard`, con el panel replicado | Especificada |
+| 1 | `pkg/valkey` con standalone, sentinel y cluster | Entregada |
+| 2 | Roles `valkey`, `dex` y `dex_dashboard`, con el panel replicado | Entregada |
 | 3 | El balanceador: HAProxy y keepalived | Entregada |
 | 4 | MariaDB: despliegue y alta disponibilidad | Entregada |
-| 5 | La colección de Ansible publicable | Especificada |
+| 5 | La colección de Ansible publicable | Entregada |
+
+Las cinco fases están entregadas: `ansible/` es la colección `rasty94.dex`, instalable
+desde este repositorio por git o por tarball, con el checkout funcionando igual que
+antes de empaquetar. Lo que queda es trabajo nuevo, no de esta hoja de ruta, y vive en
+[TODO.md](../../TODO.md).
 
 Las fases 1 y 2 están en
 [2026-09-03-despliegue-ansible-valkey-ha.md](2026-09-03-despliegue-ansible-valkey-ha.md),

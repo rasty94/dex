@@ -39,6 +39,13 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
   `mode tcp` con `balance first` y comprobación por el puerto del agente de
   sonda. Motivo: HAProxy no habla SQL, así que necesita una forma de saber cuál
   de los dos nodos de MariaDB es el primario sin tocar el protocolo.
+- `ansible/` es la colección `rasty94.dex`, fase 5 y última del despliegue.
+  Instalable desde este repositorio por git, fijada por etiqueta
+  (`type: git`, `version: fork-vX.Y.Z`, en un `requirements.yml`), o desde el
+  tarball adjunto a cada release; el checkout sigue funcionando igual que
+  antes de empaquetar. Motivo: nadie podía escribir
+  `ansible-galaxy collection install` y tener `rasty94.dex.mariadb` en su
+  propio proyecto sin clonar el fork entero.
 
 ### Cambiado
 
@@ -99,6 +106,20 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
   la conexión ya iba cifrada por el `MySQLTopologyUseMixedTLS` que la
   herramienta trae de fábrica sin escribirlo en ningún sitio; con `MutualTLS`
   explícito deja de depender de ese valor no documentado.
+- **`internal_ca_dir` se ancla en el inventario**
+  (`{{ inventory_dir }}/.internal-ca`), no en el repositorio. Es el único cambio
+  de comportamiento en un rol ya entregado al empaquetar. **Migración:** quien
+  desplegara desde el checkout con `.internal-ca/` en la raíz tiene que
+  moverlo junto a su inventario antes de volver a desplegar, o el rol emite
+  una CA nueva y reemite todos los certificados.
+- El playbook se renombra de `ansible/playbooks/dex.yml` a
+  `ansible/playbooks/site.yml` y se invoca como `rasty94.dex.site`; cada rol
+  pasa a nombrarse por FQCN (`rasty94.dex.mariadb`, `rasty94.dex.dex`…).
+- `ansible.cfg`: `roles_path` desaparece; entra `collections_path`, que
+  resuelve `rasty94.dex.*` contra el propio checkout sin instalar nada.
+
+Los cambios de la colección de Ansible por versión, a partir de aquí, están en su
+propio [`ansible/CHANGELOG.md`](ansible/CHANGELOG.md), no en este documento.
 
 ---
 

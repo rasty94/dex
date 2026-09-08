@@ -60,7 +60,7 @@ El inventario de ejemplo viene dentro de la colección instalada, en
 | Grupo | Qué hosts van | Variables obligatorias |
 | --- | --- | --- |
 | `dex` | los nodos que corren el servidor dex | `dex_issuer` (la URL del balanceador), `dex_storage` (tipo, host, puerto, base, usuario, `ssl_mode`) |
-| `dex_dashboard` | los nodos que corren el panel (normalmente los mismos que `dex`) | `dex_dashboard_base_url`, listas de administradores (`dex_dashboard_admin_emails`, `dex_dashboard_admin_groups`) |
+| `dex_dashboard` | los nodos que corren el panel (normalmente los mismos que `dex`) | `dex_dashboard_base_url` (obligatoria); `dex_dashboard_admin_emails`/`dex_dashboard_admin_groups` recomendadas — el default es `[]`, y sin ninguna de las dos el panel se despliega sin ningún administrador |
 | `valkey` | las máquinas con un `valkey-server` propio | `valkey_topology` (`standalone`, `sentinel` o `cluster`); `valkey_master_set` en `sentinel` |
 | `valkey_sentinel` | los votantes del quorum de sentinel (puede incluir un host del grupo `dex`) | — solo pertenencia al grupo |
 | `mariadb` | los nodos de base de datos | `mariadb_server_id` (identidad de replicación, un entero distinto por nodo), `mariadb_port` y `mariadb_probe_port` (los lee el rol `haproxy` desde otra tanda) |
@@ -73,13 +73,25 @@ sin esas SAN adicionales, Go rechaza el certificado por nombre y el servicio no 
 
 ## Ejecutar
 
+**Copia el inventario de ejemplo fuera de la colección antes de tocarlo.** Vive
+instalado dentro de `~/.ansible/collections/ansible_collections/rasty94/dex/inventories/ejemplo/`,
+y ese directorio se sobrescribe en la próxima actualización de la colección. Además,
+`internal_ca_dir` se ancla junto al inventario (`-i` que uses): apuntar `-i` al que
+viaja dentro de la colección instalada dejaría la CA del despliegue mezclada con las
+colecciones y borrada con ellas, justo lo que sacar `internal_ca_dir` del repositorio
+quería evitar.
+
 ```bash
-ansible-playbook rasty94.dex.site -i inventario/hosts.yml
+cp -r ~/.ansible/collections/ansible_collections/rasty94/dex/inventories/ejemplo ./mi-inventario
+ansible-playbook rasty94.dex.site -i mi-inventario/hosts.yml
 ```
 
 La CA interna del despliegue se crea en `<directorio del inventario>/.internal-ca/` la
 primera vez que se ejecuta. Hay que guardarla: es la que firma todos los certificados
-del despliegue, y perderla obliga a reemitirlos todos.
+del despliegue, y perderla obliga a reemitirlos todos. `internal_ca_dir` exige un
+inventario de verdad —un fichero o directorio pasado a `-i`—: con una lista de hosts
+suelta (`-i host1,host2,`) el rol se niega con un `assert` explícito, y hay que fijar
+`internal_ca_dir` a mano en ese caso.
 
 ## Documentación completa
 

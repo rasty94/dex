@@ -8,7 +8,7 @@
 > sesiones e identidades, MFA nativo— está decidido y encendido; también en
 > [DONE.md](DONE.md).
 >
-> Última actualización: 2026-09-06
+> Última actualización: 2026-09-08
 > Imagen Docker: `ghcr.io/rasty94/dex:latest`
 > Repositorio: <https://github.com/rasty94/dex>
 
@@ -172,15 +172,34 @@
       está: dex se niega a arrancar, que es lo correcto, pero hay que reintentar en vez de
       darlo por muerto. Sigue abierta con el rol de Ansible desplegado: ver
       [despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
-- [ ] **Fase 5 del despliegue en alta disponibilidad: la colección de Ansible
-      publicable**, con sus decisiones ya tomadas pero sin spec propia todavía —las
-      fases 1 a 4 están en [DONE.md](DONE.md)—, ver la
-      [hoja de ruta](documentacion/specs/2026-09-03-despliegue-hoja-de-ruta.md). Al
-      final porque no se puede empaquetar lo que aún no existe.
-      - **El camino `ent` con MariaDB queda fuera y no soportado**: el feature flag
-        `DEX_ENT_ENABLED` (apagado por defecto) usa `atlas`, que hace sondeo de
-        versión, y MariaDB devuelve una cadena compuesta
-        (`5.5.5-10.11.2-MariaDB`) que atlas no interpreta como MySQL.
+- [ ] **El camino `ent` con MariaDB queda fuera y no soportado**: el feature flag
+      `DEX_ENT_ENABLED` (apagado por defecto) usa `atlas`, que hace sondeo de
+      versión, y MariaDB devuelve una cadena compuesta
+      (`5.5.5-10.11.2-MariaDB`) que atlas no interpreta como MySQL.
+- [ ] **`meta/argument_specs.yml` por rol de la colección `rasty94.dex`.** Es la
+      documentación formal de cada variable y da validación en tiempo de
+      ejecución; hoy esa documentación vive en los comentarios de
+      `defaults/main.yml` de cada rol, que es donde quien edita la variable la
+      lee. Quedó fuera de la fase 5 a propósito: son ocho roles y decenas de
+      variables, y ninguna de ellas cambia por empaquetar.
+- [ ] **CI no renderiza el inventario de ejemplo de la colección, solo hace
+      `--syntax-check`.** `--syntax-check` comprueba estructura, YAML y que
+      cada rol y el playbook resuelvan por FQCN en la colección instalada; no
+      renderiza ninguna plantilla, así que un `bind_address` o un `server`
+      mal escritos no los cazaría. Se quedó fuera de CI (tarea 4, paso 6) por
+      lo que la propia tarea demostró al intentarlo: `--check --diff` con
+      `community.docker.docker_compose_v2` no es un modo de comprobación de
+      verdad para ese módulo — el intento real levantó dos contenedores
+      `mariadb`/`mariadb-probe` de verdad, con los nombres por defecto del
+      rol, en vez de simularlos. Hace falta un entorno donde
+      `docker_compose_v2` no arranque nada bajo `--check` antes de meter este
+      render en un runner de GitHub Actions.
+- [ ] **El hook `fqcn-en-playbooks` de `pre-commit` no cubre `- role: foo`
+      suelto ni `import_role`/`include_role`.** Solo entiende
+      `roles: [a, b]` en una línea (y rechaza a propósito la forma en bloque,
+      en vez de dejarla pasar sin mirarla). Hoy no hace falta más:
+      `ansible/playbooks/site.yml` es el único playbook de la colección y no
+      usa ninguna de esas dos formas.
 
 ### 4. 🔐 Autenticación Avanzada (Beyond TOTP)
 

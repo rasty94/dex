@@ -32,7 +32,8 @@ completa está en
 
 - **Ansible**, con las colecciones `community.docker` y `community.crypto` (esta
   última genera la CA interna con `openssl_privatekey`/`openssl_csr`/
-  `x509_certificate`).
+  `x509_certificate`). Son `dependencies` de `ansible/galaxy.yml`: se instalan solas
+  junto con la colección.
 - **El paquete Python `requests`.** Lo necesita
   `community.docker.docker_container_exec`, que el rol `valkey` usa para preguntar por
   el master de sentinel y para formar y comprobar el cluster. Sin él el módulo falla
@@ -40,17 +41,48 @@ completa está en
   repositorio lo documentaba hasta que la verificación de la Task 11 lo encontró en
   vivo.
 
-Esta rama **no instala Ansible en la máquina**: vive en un venv dentro del propio
-árbol de trabajo (`.venv/`, en `.gitignore`), para no tocar el intérprete de Python del
-sistema. Así se montó y así hay que reproducirlo:
+`ansible/` es la colección `rasty94.dex` (fase 5 del despliegue, entregada; spec en
+[2026-09-07-coleccion-ansible.md](specs/2026-09-07-coleccion-ansible.md)). Hay dos
+formas de tenerla, y las dos invocan el mismo playbook con el mismo nombre
+(`rasty94.dex.site`) y los mismos roles por FQCN (`rasty94.dex.mariadb`,
+`rasty94.dex.dex`…):
+
+**Instalada, sin este repositorio.** Fijada por etiqueta, en un `requirements.yml`:
+
+```yaml
+collections:
+  - name: https://github.com/rasty94/dex.git#ansible/
+    type: git
+    version: fork-v2.2.0
+```
+
+```bash
+ansible-galaxy collection install -r requirements.yml
+```
+
+O desde el tarball adjunto a la release de GitHub:
+`ansible-galaxy collection install rasty94-dex-2.2.0.tar.gz`.
+
+**Desde el checkout**, que es como se prueba todo en esta rama y como converge el
+entorno local. Esta rama **no instala Ansible en la máquina**: vive en un venv dentro
+del propio árbol de trabajo (`.venv/`, en `.gitignore`), para no tocar el intérprete de
+Python del sistema. Así se montó y así hay que reproducirlo:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install ansible-core==2.21.3 ansible-lint==26.8.0 requests
 # Las dos colecciones estan declaradas en ansible/requirements.yml
-.venv/bin/ansible-galaxy collection install \
-    -r ansible/requirements.yml -p .venv/ansible_collections
+.venv/bin/ansible-galaxy collection install -r ansible/requirements.yml
 ```
+
+Sin `-p`: van a `~/.ansible/collections`, compartido con cualquier otro proyecto de
+Ansible en la máquina, no al árbol de trabajo. Lo que sí es del árbol de trabajo es
+`ansible/.collections/ansible_collections/rasty94/dex`, un enlace simbólico versionado
+que apunta a `../../..` (el propio `ansible/`). Con ese enlace y con `collections_path`
+en el `ansible.cfg` de la raíz, cualquier comando `ansible-playbook`/`ansible-lint`
+lanzado **desde la raíz del repositorio** resuelve `rasty94.dex.*` contra el propio
+checkout, sin instalar nada de la colección. `roles_path` no existe en `ansible.cfg`:
+los roles se nombran por FQCN y solo por FQCN, en el checkout igual que instalados.
 
 Ese `ansible/requirements.yml` es la lista de colecciones en forma de fichero en vez de
 en prosa; el hook de `ansible-lint` de `pre-commit` **no** se apoya en él —lo explica su
@@ -58,19 +90,22 @@ propio comentario en `.pre-commit-config.yaml`— sino en el paquete `ansible` c
 `additional_dependencies`, porque `ansible-lint` busca el `requirements.yml` en el
 directorio de trabajo y no en el proyecto que detecta.
 
-Todos los comandos de este documento asumen `.venv/bin/` por delante y esta variable
-de entorno, que junta las colecciones del venv con las que ya hubiera en el perfil del
-usuario:
-
-```bash
-export ANSIBLE_COLLECTIONS_PATH=.venv/ansible_collections:~/.ansible/collections
-```
+Todos los comandos de este documento asumen `.venv/bin/` por delante y que se lanzan
+**desde la raíz del repositorio**: es de ahí de donde `ansible.cfg` se recoge solo, y
+también de donde hay que correr `ansible-lint` — desde dentro de `ansible/` no ve
+`ansible.cfg`, no resuelve el FQCN y cambia los hallazgos.
 
 ## El inventario y sus cuatro grupos
 
 Ejemplo completo en `ansible/inventories/ejemplo/hosts.yml` (con direcciones del rango
 de documentación RFC 5737, para que nadie las confunda con una máquina real) y sus
 secretos en `ansible/inventories/ejemplo/group_vars/all.yml`.
+
+**Con la colección instalada, copia ese inventario fuera de ella antes de usarlo.**
+Vive dentro de `~/.ansible/collections/ansible_collections/rasty94/dex/inventories/ejemplo/`,
+y apuntar `-i` ahí escribiría `internal_ca_dir` —que se ancla junto al inventario— dentro
+de esa misma ruta: la próxima actualización de la colección se la lleva por delante,
+justo lo que sacar la CA del repositorio quería evitar.
 
 - **`valkey`** — las máquinas que corren un `valkey-server` propio. Llevan
   `valkey_topology` (`standalone`, `sentinel` o `cluster`) y, en sentinel,
@@ -207,12 +242,40 @@ para todo lo que pase por el fichero de configuración de dex (`dex_storage_pass
 propio `group_vars/all.yml` de ejemplo. `dex_dashboard_oidc_client_secret` viaja igual
 en el `config.yaml` del panel y tiene el mismo problema.
 
+**La CA interna vive junto al inventario, no junto al código.** `internal_ca_dir` vale
+`{{ inventory_dir }}/.internal-ca` — antes se anclaba en el propio repositorio
+(`playbook_dir`), y con la colección instalada eso la hubiera mandado a
+`~/.ansible/collections`, mezclada con las colecciones y borrada con ellas. Cada
+inventario tiene su propia CA, que es lo correcto: dos despliegues con dos inventarios
+no comparten certificados. **Migración:** quien tuviera un despliegue hecho desde el
+checkout con `.internal-ca/` en la raíz del repositorio tiene que moverlo junto a su
+inventario antes de volver a desplegar, o el rol emite una CA nueva y reemite todos los
+certificados. El directorio está en `.gitignore` (a cualquier profundidad, no solo en la
+raíz) y fuera del tarball de la colección (`build_ignore`), así que un `git add` o un
+`ansible-galaxy collection build` no lo arrastran nunca.
+
+`internal_ca_dir` exige un inventario de verdad: con `-i host1,host2,` (sin fichero, el
+plugin `host_list`) `inventory_dir` vale la cadena `"None"`, y el rol se niega en su
+primera tarea con un `assert` explícito en vez de dejar la CA caer en `./None/.internal-ca`
+en silencio. El mensaje de fallo dice cómo seguir: fijar `internal_ca_dir` a mano, por
+inventario o con `-e`.
+
 ## Actualizar
 
-El playbook (`ansible/playbooks/dex.yml`) ordena las tandas por dependencia — `CA
-interna` → `Valkey` → `Dex` → `Panel` — y cada una de las tres últimas lleva
-`serial: 1`: los hosts de cada grupo se actualizan de uno en uno, para que una
-actualización no deje el servicio entero abajo a la vez.
+El playbook (`ansible/playbooks/site.yml`, invocado como `rasty94.dex.site`) ordena las
+tandas por dependencia — `CA interna` → `MariaDB` → `Orchestrator` → `Valkey` → `Dex` →
+`Panel` → `Balanceador` — y cada una de las de aplicación lleva `serial: 1`: los hosts
+de cada grupo se actualizan de uno en uno, para que una actualización no deje el
+servicio entero abajo a la vez.
+
+Cada rol se invoca por FQCN (`rasty94.dex.mariadb`, `rasty94.dex.dex`…), en el checkout
+igual que instalado: no hay ninguna forma corta documentada. Es una convención de este
+repositorio, no una regla que imponga ninguna herramienta estándar —ni `--syntax-check`
+ni `ansible-lint` en perfil `production` rechazan `roles: [mariadb]` a secas, porque
+`ansible/roles/mariadb` resuelve igual por directorio—; lo único que la hace exigible es
+el hook local de `pre-commit` `fqcn-en-playbooks`, y solo entiende `roles: [a, b]` en una
+sola línea: la forma en bloque (`roles:` con cada rol debajo, en su propia `- rol`) no la
+lee y está prohibida a propósito, para que no pase en silencio.
 
 La imagen se fija por variable (`dex_image`) a una etiqueta `fork-vX.Y.Z`, **nunca
 `latest`**: con `serial: 1` sobre varios hosts, una etiqueta móvil puede cambiar de
@@ -537,11 +600,6 @@ con el paso A (`SET GLOBAL read_only = OFF` en el nodo correcto) y volver a desp
   una cadena compuesta del tipo `5.5.5-10.11.2-MariaDB` que atlas no interpreta como
   MySQL. El camino soportado con MariaDB es `storage/sql` (el de por defecto), verificado
   contra 10.11 y 11.4.
-- **La fase 5** — la colección de Ansible publicable —, con sus decisiones ya tomadas
-  pero sin spec propia todavía, en la
-  [hoja de ruta](specs/2026-09-03-despliegue-hoja-de-ruta.md). Las fases 3 y 4 —el
-  balanceador y MariaDB en alta disponibilidad— ya están entregadas, cada una con su
-  propia spec.
 
 ## Verificación manual entre máquinas
 
@@ -589,7 +647,7 @@ cada orden, y por eso escriben `ssh <host-N>` en su propia línea en vez de dela
 
 ```bash
 # Desplegar sentinel (grupos valkey y valkey_sentinel del inventario)
-.venv/bin/ansible-playbook -i <inv>/hosts.yml ansible/playbooks/dex.yml
+.venv/bin/ansible-playbook rasty94.dex.site -i <inv>/hosts.yml
 
 # Quién es el master ahora mismo, preguntando a cualquier sentinel. El puerto
 # de control es TLS-only y lleva requirepass, así que hace falta --tls y la
@@ -613,7 +671,7 @@ docker exec -e REDISCLI_AUTH valkey-sentinel \
 
 # El punto que importa: repetir el playbook y confirmar que el master sigue
 # siendo el promocionado, no el primer host del grupo valkey del inventario
-.venv/bin/ansible-playbook -i <inv>/hosts.yml ansible/playbooks/dex.yml
+.venv/bin/ansible-playbook rasty94.dex.site -i <inv>/hosts.yml
 ssh <host-sentinel-1>
 docker exec -e REDISCLI_AUTH valkey-sentinel \
     valkey-cli --tls --cacert /etc/valkey/tls/ca.crt \
@@ -629,7 +687,7 @@ que lo delata: el failover se deshace en el siguiente despliegue.
 
 ```bash
 # Con valkey_topology: cluster en el grupo valkey del inventario
-.venv/bin/ansible-playbook -i <inv>/hosts.yml ansible/playbooks/dex.yml
+.venv/bin/ansible-playbook rasty94.dex.site -i <inv>/hosts.yml
 
 # Estado del cluster desde cualquier nodo (TLS + contraseña por REDISCLI_AUTH,
 # con el read/export del paso 0)
@@ -827,3 +885,22 @@ verificable en una sola máquina:
 SELECT @@rpl_semi_sync_master_wait_point;
 -- -> AFTER_SYNC, no el AFTER_COMMIT de fabrica de MariaDB
 ```
+
+### 8. Instalar la colección por `git+https://` público, de verdad
+
+Pendiente hasta que se empuje la primera etiqueta `fork-vX.Y.Z` con la colección dentro
+—`release.yaml` la construye y la comprueba en CI contra un clon local en cada
+etiqueta, pero nadie ha instalado todavía desde el repositorio público de verdad—. La
+primera vez que eso pase:
+
+```bash
+ansible-galaxy collection install \
+    'git+https://github.com/rasty94/dex.git#ansible/,fork-vX.Y.Z'
+ansible-galaxy collection list rasty94.dex
+# -> rasty94.dex   X.Y.Z, instalada desde el subdirectorio ansible/ del repositorio publico
+```
+
+Si falla, lo primero que hay que mirar es la etiqueta: `ansible-galaxy` necesita que
+`fork-vX.Y.Z` exista de verdad en el remoto, y que `ansible/galaxy.yml` en ese commit
+lleve la misma cifra de versión —lo que comprueba `release.yaml` antes de construir
+nada—.
