@@ -25,6 +25,11 @@ jobs:
 
   coleccion:
     name: Coleccion de Ansible
+    # Este job es el UNICO que crea la Release de GitHub (softprops/action-gh-release
+    # mas abajo); artifacts.yaml no la crea. Sin este needs, una etiqueta cuyas
+    # imagenes fallaran en el job artifacts quedaria publicada igual, con el
+    # tarball pero sin imagenes.
+    needs: artifacts
     runs-on: ubuntu-latest
     permissions:
       contents: write   # adjuntar el tarball a la release
