@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	api "github.com/dexidp/dex/api/v2"
 	"github.com/dexidp/dex/server/tokens"
 )
@@ -127,15 +130,18 @@ func (d *dashboard) renderList(w http.ResponseWriter, r *http.Request, name, tit
 }
 
 // friendlyGRPCError turns the common failures into something an operator can
-// act on. The rest is passed through verbatim.
+// act on. The rest is passed through verbatim. The class of failure comes from
+// the gRPC code; the message only picks the explanation within a class.
 func friendlyGRPCError(err error) string {
+	code := status.Code(err)
+	if code == codes.Unauthenticated {
+		return "dex refused the API token. Check dex.token in the dashboard config against the gRPC API's token."
+	}
+	if code == codes.Unavailable {
+		return "Cannot reach dex's gRPC API. Check dex.grpcAddress and that the API is enabled."
+	}
 	msg := err.Error()
 	switch {
-	case strings.Contains(msg, "authorization token is not provided"),
-		strings.Contains(msg, "invalid authorization token"):
-		return "dex refused the API token. Check dex.token in the dashboard config against the gRPC API's token."
-	case strings.Contains(msg, "connection refused"), strings.Contains(msg, "Unavailable"):
-		return "Cannot reach dex's gRPC API. Check dex.grpcAddress and that the API is enabled."
 	case strings.Contains(msg, "api_connectors_crud"):
 		return "Connector listing is gated behind dex's api_connectors_crud feature flag, which is off."
 	case strings.Contains(msg, "api_sessions_identities_crud"):
@@ -154,7 +160,8 @@ func friendlyGRPCError(err error) string {
 		return "This user's password comes from dex's config file, and dex cannot delete those. " +
 			"The erasure stopped there, but it had already ended the user's sessions and revoked their tokens. " +
 			"The identity record itself is still present. Remove the user from the config file to finish."
-	case strings.Contains(msg, "wire-format"), strings.Contains(msg, "cannot parse invalid"):
+	case strings.Contains(msg, "wire-format"), strings.Contains(msg, "cannot parse invalid"),
+		strings.Contains(msg, "illegal base64 data"):
 		return "That is not a valid subject. Copy the sub claim from the user's ID token verbatim."
 	}
 	return msg
