@@ -94,12 +94,13 @@
       el primario en solo lectura sin que orchestrator ni una segunda pasada del
       playbook lo reparen solos — paso A de
       [despliegue-ansible.md](documentacion/despliegue-ansible.md#lo-que-el-operador-tiene-que-hacer-a-mano).
-- [ ] **HAProxy con `timeout server 1h` en `be_mysql`, sin `option clitcpka`/
-      `srvtcpka` de por medio, ni un `connMaxLifetime` explícito en el lado de
-      dex.** Una conexión del pool de `database/sql` puede quedar viva más de una
-      hora sin que nadie la cierre por ninguno de los dos lados si el tráfico es
-      escaso; una keepalive TCP en HAProxy o un `connMaxLifetime` menor que 1h en
-      dex acotarían esa ventana en vez de depender solo del timeout de HAProxy.
+- [ ] **Con MySQL/MariaDB, dex ignora `maxOpenConns` y `connMaxLifetime`.** Solo el
+      camino de Postgres de `storage/sql/config.go` los aplica; el de MySQL fija
+      `maxIdleConns` y nada más, sin avisar. Medido: `connMaxLifetime: 2` deja la
+      conexión viva a los 15 s. Hoy no hace daño —por defecto `maxIdleConns` vale 0 y no
+      queda ninguna conexión ociosa, medido—, pero quien ajuste el pool para MariaDB no
+      consigue lo que pide. Es código de upstream: candidato a llevárselo antes que a
+      parchearlo aquí.
 
 ### 3. ☁️ Ecosistema Cloud Native e Integraciones
 
