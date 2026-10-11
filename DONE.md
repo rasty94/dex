@@ -545,6 +545,13 @@ sentinel.
   - **El re-port había perdido un pin del bloque C.** El `Makefile`, que es lo que usa CI, lintaba con 2.4.0 mientras `pre-commit` iba en 2.13.1. Y el toolchain estaba en tres versiones a la vez (1.25.8 en `go.mod`, 1.25 en CI y 1.26.4 en la imagen): CI nunca había compilado lo que se publicaba.
   - **`web.tlsCiphers` no sirve en nuestro despliegue.** Con Ansible, dex sirve HTTP detrás de HAProxy, así que la opción de upstream no tenía efecto ahí; el ajuste correspondiente fue `ssl-default-bind-*` en el rol `haproxy`. Además, los nombres de curva de dex son los de Go (`CurveP256`) y los de HAProxy los de OpenSSL (`P-256`).
   - **Vaciar una lista no se puede tratar igual en grupos que en clientes.** En clientes, el panel acepta con una nota que una lista vaciada no cambie. En grupos eso dejaría un permiso puesto sin avisar, así que se rechaza: es la primera vez que la limitación de protobuf toca autorización (ver la revisión de la API en [TODO.md](TODO.md)).
+  - **`go test` y lint no son lo que corre CI.** El primer CI del merge falló en
+    `make verify`: el generador de ent usa `golang.org/x/tools`, y la v0.49.0 tampoco lee
+    el export data de Go 1.27.2 (el mismo cambio de formato que rompía golangci-lint).
+    Se arregló con x/tools 0.50.0, una sola línea. Al repetir `make verify` en local salió
+    un segundo fallo que CI habría encontrado después: `examples/go.mod` tenía que seguir
+    a `api/v2` en x/net. Antes de un push que toque dependencias o el toolchain hay que
+    pasar `make verify`, no solo los tests.
   - **El `protoc` de `bin/` es x86_64 y aquí no hay Rosetta.** `api.pb.go` se regeneró con los mismos pins en arm64; que el resto de ficheros generados saliera idéntico confirmó las herramientas. Pendiente que el `Makefile` descargue el binario de la arquitectura de la máquina.
 - [x] **Publicada `fork-v2.2.0` (2026-10-11), sobre el master de octubre.** Sustituye a
   `fork-v2.1.0`, que nunca llegó a subir y se borró en local. El inventario de ejemplo
