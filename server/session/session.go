@@ -35,6 +35,7 @@ type Manager struct {
 	Now       func() time.Time
 	Logger    *slog.Logger
 	IssuerURL oauth2.IssuerURL
+	Metrics   *Metrics // fork: nil counts nothing
 }
 
 // Enabled reports whether sessions are configured.
@@ -177,6 +178,7 @@ func (m *Manager) ValidSession(ctx context.Context, w http.ResponseWriter, r *ht
 	if reason := expiryReason(session, m.Now()); reason != "" {
 		m.Logger.InfoContext(ctx, "auth session expired",
 			"session_id", session.ID, "user_id", session.UserID, "reason", reason)
+		m.Metrics.sessionExpired(reason)
 		if err := m.Storage.DeleteAuthSession(ctx, session.ID); err != nil {
 			m.Logger.DebugContext(ctx, "failed to delete expired auth session", "err", err)
 		}
@@ -271,6 +273,7 @@ func (m *Manager) CreateOrUpdateAuthSession(ctx context.Context, r *http.Request
 	if err := m.Storage.CreateAuthSession(ctx, newSession); err != nil {
 		return fmt.Errorf("create auth session: %w", err)
 	}
+	m.Metrics.sessionCreated()
 
 	m.Logger.DebugContext(ctx, "created new auth session",
 		"session_id", newSession.ID, "user_id", userID, "client_id", authReq.ClientID)

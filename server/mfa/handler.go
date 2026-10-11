@@ -44,6 +44,7 @@ type Handler struct {
 	DefaultMFAChain []string
 	Now             func() time.Time
 	Connectors      *connectors.Cache
+	Metrics         *Metrics // fork: nil counts nothing
 }
 
 // renderError renders a user-facing HTML error page.

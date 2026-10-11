@@ -258,6 +258,19 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 		}
 	}
 
+	// Fork: second-factor and browser-session metrics. A failed registration
+	// leaves them nil, which counts nothing rather than failing the server.
+	var mfaMetrics *mfa.Metrics
+	if c.PrometheusRegistry != nil {
+		var err error
+		if mfaMetrics, err = mfa.NewMetrics(c.PrometheusRegistry); err != nil {
+			s.logger.Warn("failed to register MFA metrics", "err", err)
+		}
+		if s.sessions.Metrics, err = session.NewMetrics(c.PrometheusRegistry); err != nil {
+			s.logger.Warn("failed to register session metrics", "err", err)
+		}
+	}
+
 	for _, h := range []router.Handler{
 		s.discovery,
 		&grants.Handler{
@@ -332,6 +345,7 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 			DefaultMFAChain: c.DefaultMFAChain,
 			Now:             rc.now,
 			Connectors:      s.connectors,
+			Metrics:         mfaMetrics,
 		},
 		&consent.Handler{
 			Storage:      s.storage,
@@ -416,6 +430,7 @@ func (s *Server) startGarbageCollection(ctx context.Context, frequency time.Dura
 				if r, err := s.storage.GarbageCollect(ctx, now()); err != nil {
 					s.logger.ErrorContext(ctx, "garbage collection failed", "err", err)
 				} else if !r.IsEmpty() {
+					s.sessions.Metrics.Collected(r.AuthSessions)
 					s.logger.InfoContext(ctx, "garbage collection run, delete auth",
 						"requests", r.AuthRequests, "auth_codes", r.AuthCodes,
 						"device_requests", r.DeviceRequests, "device_tokens", r.DeviceTokens,

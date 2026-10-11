@@ -12,6 +12,22 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 
 ## [Unreleased]
 
+### Añadido
+
+- **Métricas de MFA y de sesiones de navegador** (solo en el fork):
+  `dex_mfa_verifications_total{method,result}` cuenta cada comprobación de un segundo
+  factor; `dex_auth_sessions_created_total` y `dex_auth_sessions_expired_total{reason}`
+  (`idle`, `absolute`, `collected`) cuentan el ciclo de vida de las sesiones. Un código
+  TOTP erróneo devuelve 200, así que la métrica HTTP no lo distingue: este contador es
+  el único sitio donde se ve alguien probando códigos, y el endpoint TOTP **no tiene
+  limitador de intentos**. Una alerta razonable:
+  `rate(dex_mfa_verifications_total{result="failure"}[5m]) > 0.2`.
+- **`/readyz` en el panel**: 503 si no llega a la API de dex (o dex rechaza su token) o
+  a Valkey. El rol `haproxy` lo usa como sonda en lugar de `/healthz`.
+- **Aviso de recuperaciones de orchestrator sin confirmar**: una línea
+  `ORCHESTRATOR RECOVERY NEEDS ACK` en el log del contenedor, con la orden para
+  confirmarla.
+
 ## [2.2.0] — 2026-10-11
 
 ### Añadido
