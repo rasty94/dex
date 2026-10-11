@@ -68,15 +68,6 @@
       spec de la fase 4 (§4.3) decide no correr: seguridad antes que
       disponibilidad. Paso del operador, con la orden exacta, en
       [despliegue-ansible.md](documentacion/despliegue-ansible.md#lo-que-el-operador-tiene-que-hacer-a-mano).
-- [ ] **`RecoveryPeriodBlockSeconds: 3600` de orchestrator bloquea una segunda
-      promoción de MariaDB dentro de la hora** si la anterior no está confirmada,
-      aunque el fallo nuevo sea sobre el nodo contrario y legítimo. Medido: **2 min
-      34 s** bloqueado hasta un `ack-all-recoveries` manual; confirmada de
-      antemano, la promoción siguiente tardó los mismos **~3 s** de siempre. No se
-      baja el valor a ciegas: encadenar promociones sin ninguna ventana de por
-      medio es el riesgo contrario. Candidato: acuse automático, o una alarma
-      sobre `api/audit-recovery` cuando aparezca una recuperación con
-      `Acknowledged: false`.
 - [ ] **El primario viejo de MariaDB que vuelve tras un failover queda
       huérfano.** Sin `read_only=OFF` (punto de arriba) y sin replicar:
       orchestrator no lo reengancha, y el rol tampoco porque no clona sobre datos
