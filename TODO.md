@@ -8,7 +8,7 @@
 > sesiones e identidades, MFA nativo— está decidido y encendido; también en
 > [DONE.md](DONE.md).
 >
-> Última actualización: 2026-09-08
+> Última actualización: 2026-10-11
 > Imagen Docker: `ghcr.io/rasty94/dex:latest`
 > Repositorio: <https://github.com/rasty94/dex>
 
@@ -50,6 +50,89 @@
       mira nada. Desbloqueada el 2026-09-03 con `git commit --amend -s` y un force-push;
       DCO ✅, Snyk ✅, sin conflictos. Esperando revisión. La lección no es el DCO: un PR
       abierto hay que volver a mirarlo, no solo abrirlo.
+      **Superado por upstream (revisado el 2026-10-11):** `901d6d29` (2026-09-24) cambia el
+      mismo `alg` a `"RS256"` al subir go-oidc a 3.21, sin pasar por nuestro PR. Queda
+      cerrarlo con una nota que enlace su commit, y para eso hace falta permiso, porque es
+      escribir en el repo público. Nuestro fixture sigue con el fallo: ver la sincronización
+      de abajo.
+
+---
+
+## 🔄 Sincronización con upstream — pendiente
+
+> Revisado el 2026-10-11: **53 commits** de `upstream/master` (hasta `ef96b8ad`) que no
+> están en `master` desde la base `ab64ed77` (2026-08-06), sin ninguno aplicado. Aquí
+> va solo lo que upstream tiene **mejor** que nosotros; lo que no nos toca (la
+> refactorización de `signer/rotation.go`, los ajustes de `conformance`) no se apunta.
+> Un `git merge-tree` en seco da conflicto en solo cuatro ficheros: `api/v2/api.pb.go`
+> (se regenera), `go.mod`, `go.sum` y `cmd/dex/serve_test.go`, donde los dos lados
+> añadieron tests. La primera opción es un merge, como el bloque F, no ir eligiendo
+> commits sueltos.
+
+- [ ] **gRPC con dos vulnerabilidades que nos alcanzan.** `govulncheck ./...` las marca
+      como alcanzables desde nuestro código: GO-2026-6443 (panic por una petición sin
+      `:authority`/`Host`, arreglada en 1.82.2) y GO-2026-6348 (OOM por fragmentar
+      frames DATA de HTTP/2, arreglada en 1.83.1). Estamos en `grpc v1.82.1`, y en
+      `v1.82.0` en `api/v2/go.mod`; upstream ya está en `v1.84.0` en los dos. Por ahí entra
+      la API de gestión (`5557`), así que esto va primero aunque el resto espere.
+- [ ] **Vulnerabilidades que upstream tampoco ha cerrado.** El mismo `govulncheck`
+      encuentra doce más en la stdlib (`net/http`, `crypto/tls`, `net/textproto` y
+      `html/template`, este último usado por el login y por el panel) y en
+      `golang.org/x/net v0.57.0`. Se arreglan en Go 1.27.2 y x/net 0.60.0, y upstream va
+      por 1.27.1 y 0.59.0. Ojo: el análisis corrió con el Go local (1.27.1), pero la
+      imagen se compila con `golang:1.26.4`, así que la rama 1.26 hay que mirarla aparte.
+      Este punto **no** se cubre con el merge.
+- [ ] **El toolchain está desalineado consigo mismo.** `go.mod` dice `go 1.25.8`, CI
+      instala 1.25 y el `Dockerfile` compila con 1.26.4: tres versiones distintas, y la
+      imagen publicada no la ha compilado nunca CI. Upstream lo tiene todo en 1.27
+      (`go 1.27.0` en `go.mod`, CI y `golang:1.27.1-alpine3.24`).
+- [ ] **CI lintea con golangci-lint 2.4.0.** El bloque C de [DONE.md](DONE.md) dejó los
+      tres pins en 2.13.1, pero el re-port lo perdió en el `Makefile`, que es el que usa CI:
+      `pre-commit` va en 2.13.1, `Makefile` en 2.4.0 y el binario de `bin/` en 2.10.1.
+      Upstream pone 2.13.1 en el `Makefile` y cambia el instalador a
+      `golangci-lint.run/install.sh`.
+- [ ] **Refresh tokens rechazados devuelven `invalid_request`.** `refreshLookupError`
+      ([server/grants/refresh.go](server/grants/refresh.go)) contesta `invalid_request`
+      cuando el token no existe o está caducado. RFC 6749 §5.2 pide `invalid_grant`, y los
+      clientes miran ese código para lanzar un login nuevo, así que con `invalid_request`
+      se quedan atascados. Upstream `6a242200`; además, el «not found» se registra a nivel
+      info.
+- [ ] **El conector OIDC ignora `rootCAs` si hay `providerDiscoveryOverrides`.**
+      `getProvider` ([connector/oidc/oidc.go](connector/oidc/oidc.go)) crea el proveedor
+      con `context.Background()`, que pierde el cliente HTTP con la CA propia, y el JWKS
+      se valida contra las raíces del sistema. Rompe un IdP con CA privada que además
+      sobrescriba endpoints. Upstream `ee3dd331`.
+- [ ] **TLS del servidor web sin cifrados ni curvas configurables.** Nosotros fijamos la
+      lista `allowedTLSCiphers` en `serve.go`; upstream añade `web.tlsCiphers` y
+      `web.tlsCurvePreferences` (con las curvas híbridas post-cuánticas ML-KEM), los valida
+      en `Validate` y rechaza los cifrados de TLS 1.3 porque no son configurables (`9955b44d`,
+      `4ccb2bd2`, `c8d4482f`). Al traerlo, documentarlo en `documentacion/` y en el rol de
+      Ansible si este expone `web:`.
+- [ ] **Contraseñas sin grupos en la API.** Upstream añade `Password.groups = 5` y
+      `UpdatePasswordReq.new_groups = 4`, normalizados (ordenados, sin duplicados, sin
+      vacíos) (`cf3fd9af`, `48690eeb`, `a1c8a418`). Tiene la misma trampa que
+      `UpdateClient`: los grupos se reemplazan pero no se vacían. Los números de campo
+      quedan cogidos para cualquier cosa nuestra en esos mensajes. Cuando entre, el panel
+      podrá enseñar y editar grupos de los usuarios locales.
+- [ ] **El GC de Kubernetes falla si otra réplica ya ha borrado el objeto.** Con varias
+      réplicas sobre almacenamiento `kubernetes`, un `ErrNotFound` cuenta como error del GC
+      (`785a6068`). Afecta poco a nuestro despliegue (Valkey y SQL), pero cuesta poco traerlo.
+- [ ] **El log de «login successful» no dice el cliente.** Upstream añade `client_id`
+      (`d249ff9b`). Viene bien para el visor de intentos de login de la sección 6.
+- [ ] **El `Dockerfile` descarga gomplate con `wget` desde GitHub.** Upstream lo copia de
+      `ghcr.io/hairyhenderson/gomplate:v5.2.0@sha256:…` (`fbcc48cb`), así que queda fijado
+      por digest y Dependabot lo vigila; también borra `scripts/update-gomplate`. Las bases
+      `alpine:3.24.2` y `distroless` también tienen digest nuevo.
+- [ ] **Dependencias por detrás.** Además de gRPC: x/crypto 0.54→0.57, go-jose
+      4.1.4→4.1.5, goxmldsig 1.6.0→1.6.1 (firma SAML), etree 1.7→1.8.1, go-oidc
+      3.19→3.21, webauthn 0.17.4→0.18.2, etcd 3.6→3.7, go-sqlite3, mysql, openbao y
+      protobuf. **go-oidc 3.21 y webauthn 0.18 rompen tests nuestros**: el fixture de
+      `connector/oidc/oidc_test.go` sigue publicando `"alg": jwk.Algorithm` (lo de
+      #4986), y los tests MFA usan `127.0.0.1` como RP ID (cinco usos en
+      `server/mfa/*_test.go`), que webauthn 0.18 rechaza. Upstream lo arregla en `901d6d29`.
+- [ ] **OpenShift: `clientSecretFile`.** Lee el secreto de un token de service account
+      montado como volumen (`1db0699c` y siguientes). No lo usamos, pero viene con el merge
+      sin coste.
 
 ---
 
@@ -259,3 +342,40 @@
       robada: para terminar *una* sesión sin tocar la configuración sigue habiendo que
       borrar la clave a mano en Valkey. Falta la lista de sesiones abiertas del propio
       panel y un botón por fila.
+
+### 7. 🧭 Revisión de cómo funciona la API gRPC
+
+> La API de gestión ha ido creciendo a base de añadidos: lo de upstream, lo del re-port y
+> lo que fue pidiendo el panel, y cada pieza sigue su propia convención. Antes de
+> añadirle más campos (los grupos de contraseñas de upstream, la paginación de la
+> sección 6) toca revisar el conjunto y fijar unas reglas. La salida es un documento en
+> `documentacion/` con las convenciones y una lista de cambios, no un refactor directo.
+> Restricción: `api/v2/api.proto` es compartido con upstream, así que todo lo que se
+> cambie tiene que seguir siendo compatible en el cable y no puede ocupar números de
+> campo que upstream vaya a usar, o cada sincronización acabará en conflicto.
+
+- [ ] **Errores sin código gRPC.** `server/apiserver` devuelve 96 errores con
+      `errors.New`/`fmt.Errorf` y ni un `status.Error`, así que todos llegan como
+      `codes.Unknown`. Un argumento inválido, un fallo de almacenamiento y un permiso
+      denegado no se distinguen salvo leyendo el texto. Lo de «no existe» y «ya existe»
+      va por otro lado, en booleanos `not_found`/`already_exists` dentro de la respuesta
+      (17 en el proto), y de esos depende el panel
+      ([cmd/dex-dashboard/dex.go](cmd/dex-dashboard/dex.go)). Decidir si se pasa a
+      `codes.InvalidArgument`/`NotFound`/`Internal` sin romper los booleanos que upstream
+      sigue usando.
+- [ ] **Tres formas de vaciar un campo.** Las listas repetidas no se pueden vaciar,
+      porque una lista vacía no viaja por protobuf: pasa en `UpdateClient` y, cuando
+      entre, en `UpdatePasswordReq.new_groups`. Otros campos son `optional`
+      (`backchannel_logout_uri`, `refresh_token_lifetime`), y `new_grant_types` va
+      envuelto en un mensaje. Elegir una forma (wrapper, `optional` o `FieldMask`) para
+      todo lo nuevo, y decidir si las listas que ya existen necesitan poder vaciarse.
+- [ ] **Validación y normalización desiguales.** Upstream normaliza los grupos de
+      contraseña (ordena, quita duplicados y rechaza vacíos); falta mirar si `redirect_uris`,
+      `trusted_peers`, scopes de conector y demás listas se tratan igual, y si la
+      validación vive en la API o se repite en el panel.
+- [ ] **Listados sin paginar.** `List*` devuelve todo de una vez; es el bloqueo de la
+      paginación del panel (sección 6). Ver si cabe `page_size`/`page_token` sin chocar
+      con upstream.
+- [ ] **Autorización y auditoría por método.** Comprobar que cada RPC, también las del
+      re-port (sesiones, identidades, MFA y purga RGPD), pasa por el mismo control de
+      token con nombre y deja `caller` en la auditoría, y que no hay ninguna que se lo salte.
