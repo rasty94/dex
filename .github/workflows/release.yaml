@@ -52,9 +52,14 @@ jobs:
         # --syntax-check comprueba estructura, YAML y que cada rol y playbook
         # existan por FQCN en la coleccion INSTALADA, no en el checkout. No
         # renderiza plantillas: eso sigue siendo el --check --diff local.
+        # ANSIBLE_COLLECTIONS_PATH tambien en el install: el ansible.cfg del repo
+        # resuelve rasty94.dex contra el checkout, galaxy la da por instalada y no
+        # copia nada a inst/. Asi ademas instala alli community.docker y
+        # community.crypto, que el --syntax-check necesita para resolver modulos.
         run: |
+          export ANSIBLE_COLLECTIONS_PATH=inst
           ansible-galaxy collection install build/rasty94-dex-*.tar.gz -p inst/
-          ANSIBLE_COLLECTIONS_PATH=inst ansible-playbook rasty94.dex.site \
+          ansible-playbook rasty94.dex.site \
             -i ansible/inventories/ejemplo/hosts.yml --syntax-check
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
