@@ -80,11 +80,11 @@ backend be_dex
 backend be_dashboard
     mode http
     balance roundrobin
-    # Aviso, y no es un descuido: el /healthz del panel devuelve 200 SIEMPRE,
-    # sin mirar si su conexion gRPC con dex o Valkey responden
-    # (cmd/dex-dashboard/main.go). Saca de rotacion un proceso muerto, no uno
-    # ciego. Es una sonda de vida, no de disponibilidad, y no puede ser otra
-    # cosa mientras la entrada del TODO siga abierta.
+    # /readyz y no /healthz: el segundo solo dice que el proceso vive. /readyz
+    # da 503 si el panel no llega a la API gRPC de dex (o dex rechaza su token)
+    # o a Valkey, que es cuando todas sus paginas fallarian
+    # (cmd/dex-dashboard/main.go). Con dex caido, todos los paneles salen de
+    # rotacion a la vez, y es lo correcto: ninguno podria servir.
     option httpchk
     http-check send meth GET uri {{ haproxy_dashboard_health_path }}
 {% for h in groups['dex_dashboard'] %}

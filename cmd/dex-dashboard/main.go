@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	dexvalkey "github.com/dexidp/dex/pkg/valkey"
@@ -77,6 +78,7 @@ func run() error {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
+	mux.HandleFunc("/readyz", readyz(dex, vk, logger))
 	mux.HandleFunc("/", auth.requireAdmin(d.handleIndex))
 	mux.HandleFunc("/clients", auth.requireAdmin(d.handleClients))
 	mux.HandleFunc("/connectors", auth.requireAdmin(d.handleConnectors))
@@ -219,4 +221,35 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// readyz is the readiness probe: 200 only when every page could work. /healthz
+// says the process is alive; this says it can serve, which is what a load
+// balancer needs before sending traffic. It reaches dex with the panel's own
+// token, so a revoked or mistyped token fails it too: every page would fail.
+// The body names the failing dependency and nothing more, since the probe is
+// reachable through the balancer; the error itself goes to the log.
+func readyz(dex *dexClient, vk *dexvalkey.Client, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		var failed []string
+		if _, err := dex.version(ctx); err != nil {
+			logger.Warn("readiness: dex gRPC API failed", "err", err)
+			failed = append(failed, "dex")
+		}
+		if vk != nil {
+			if err := vk.Do(ctx, vk.B().Ping().Build()).Error(); err != nil {
+				logger.Warn("readiness: valkey failed", "err", err)
+				failed = append(failed, "valkey")
+			}
+		}
+		if len(failed) > 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintln(w, "not ready:", strings.Join(failed, ", "))
+			return
+		}
+		fmt.Fprintln(w, "ok")
+	}
 }

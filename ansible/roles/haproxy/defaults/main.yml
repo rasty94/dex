@@ -50,8 +50,10 @@ haproxy_ssl_curves: ""
 haproxy_dex_issuer: "{{ hostvars[groups['dex'][0]].dex_issuer }}"
 haproxy_dex_health_path: "{{ (haproxy_dex_issuer | urlsplit('path')) | regex_replace('/$', '') }}/healthz"
 
-# El /healthz del panel cuelga de la raiz de su propio puerto, no del baseURL.
-haproxy_dashboard_health_path: /healthz
+# La sonda de disponibilidad del panel, no la de vida (/healthz): ver el
+# comentario de be_dashboard en haproxy.cfg.j2. Cuelga de la raiz de su propio
+# puerto, no del baseURL.
+haproxy_dashboard_health_path: /readyz
 
 # El nombre por el que se publica el panel. El reparto es por cabecera Host y
 # no por ruta: ver el comentario largo de haproxy.cfg.j2. Sale del baseURL, con

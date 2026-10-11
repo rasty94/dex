@@ -602,13 +602,10 @@ con el paso A (`SET GLOBAL read_only = OFF` en el nodo correcto) y volver a desp
 
 ## Qué NO cubre este despliegue
 
-- **La sonda de disponibilidad del panel sigue sin decir la verdad.** El `/healthz` del
-  panel ([cmd/dex-dashboard/main.go:75](../cmd/dex-dashboard/main.go#L75)) devuelve 200
-  siempre, sin mirar si su conexión gRPC con dex responde ni si Valkey responde. Sirve
-  como sonda de vida — el proceso está arriba — pero no de disponibilidad: un
-  balanceador que solo mire esta ruta puede seguir mandando tráfico a un panel cuyas
-  páginas van a fallar todas. Sigue siendo una entrada abierta del TODO; este rol no la
-  cierra, solo la hereda.
+- **Que el panel reintente cuando Valkey no está al arrancar.** HAProxy sondea el
+  `/readyz` del panel, que da 503 si no llega a dex o a Valkey, así que no le manda
+  tráfico a un panel ciego. Pero si Valkey no responde al **arrancar**, el panel sale
+  con error en vez de esperar; lo levanta el `restart` del contenedor, no él mismo.
 - **`ent` con MariaDB no está soportado.** El feature flag `DEX_ENT_ENABLED` (apagado
   por defecto) usa `atlas`, que hace sondeo de versión del servidor; MariaDB devuelve
   una cadena compuesta del tipo `5.5.5-10.11.2-MariaDB` que atlas no interpreta como
