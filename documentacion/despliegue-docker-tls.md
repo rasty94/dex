@@ -4,6 +4,10 @@
 
 Esta guía cubre el despliegue completo de Dex como proveedor OIDC federado con Keystone, incluyendo HTTPS con certificados propios.
 
+Aquí dex termina el TLS él mismo. En el despliegue con Ansible no: allí lo termina
+HAProxy, dex sirve HTTP en claro detrás, y la política TLS se fija en el rol `haproxy`
+(`haproxy_ssl_min_ver`, `haproxy_ssl_ciphers`, `haproxy_ssl_curves`), no en `web:`.
+
 ---
 
 ## Requisitos
@@ -144,6 +148,16 @@ web:
     https: 0.0.0.0:5554
     tlsCert: /etc/dex/server-cert.pem
     tlsKey: /etc/dex/server-key.pem
+    # Opcional: política TLS del HTTPS. Sin estas claves dex usa su lista de
+    # cifrados por defecto y las curvas de Go. tlsCiphers solo afecta a TLS 1.2:
+    # los cifrados de TLS 1.3 no se configuran y dex rechaza la config si se
+    # listan. Los nombres son los de Go (CurveP256, no P-256 como en OpenSSL).
+    # No se aplica al gRPC, que sigue con su lista fija.
+    # tlsMinVersion: "1.2"
+    # tlsCiphers:
+    #     - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+    #     - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+    # tlsCurvePreferences: [X25519MLKEM768, X25519, CurveP256]
     http: 0.0.0.0:5556
     # Cabeceras de seguridad recomendadas:
     headers:

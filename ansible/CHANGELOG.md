@@ -9,6 +9,14 @@ Primera versión como colección. Los ocho roles (`internal_ca`, `valkey`, `dex`
 `dex_dashboard`, `haproxy`, `keepalived`, `mariadb`, `orchestrator`) y el playbook
 `site.yml`, tal como se entregaron en las fases 1 a 4 del despliegue.
 
+### Añadido
+
+- **Política TLS del balanceador.** `haproxy_ssl_min_ver`, `haproxy_ssl_ciphers` y
+  `haproxy_ssl_curves`, vacías por defecto, se traducen a `ssl-default-bind-*` en el
+  `global` de HAProxy. Es donde termina el TLS en este despliegue: los
+  `web.tlsCiphers`/`web.tlsCurvePreferences` que dex trae de upstream no tienen efecto
+  aquí, porque dex sirve HTTP detrás del balanceador.
+
 ### Cambiado
 
 - **`internal_ca_dir` se ancla en el inventario** (`{{ inventory_dir }}/.internal-ca`)
