@@ -572,6 +572,21 @@ sentinel.
   `type=match`, probadas ejecutando en local la `metadata-action` fijada con un push
   simulado de la etiqueta. Como con la 2.2.0 no había salido ningún artefacto, la
   etiqueta se movió al commit arreglado en vez de sacar una 2.2.1 vacía.
+  El segundo intento publicó las imágenes y falló en el job de la colección, el
+  siguiente paso que nunca se había ejecutado: `ansible-galaxy install -p inst/` decía
+  «Nothing to do», porque el `ansible.cfg` del repo resuelve `rasty94.dex` contra el
+  checkout, y el playbook, buscando solo en `inst/`, no la encontraba. Como las imágenes
+  ya existían, mover la etiqueta otra vez las habría sobrescrito con otro digest; en su
+  lugar la release se completó a mano desde un worktree en la etiqueta, repitiendo los
+  pasos del workflow ya arreglado (galaxy.yml contra la etiqueta, build, instalación
+  limpia con sus dependencias, `--syntax-check`) y adjuntando el tarball con
+  `gh release create --verify-tag`. El tarball descargado de la release es idéntico al
+  construido, y las dos imágenes arrancan con go1.27.2 y el commit `206f452d`.
+  Queda una marca de todo esto: las imágenes 2.2.0 dicen
+  `v0.1.0-20261011195910-206f452d` en `dex version`, porque `scripts/git-version` solo
+  reconocía etiquetas `v*`. Arreglado para la siguiente, sin reconstruir estas.
+  **La lección: un pipeline que nunca ha llegado al final no está probado, por mucho
+  que cada pieza lo esté.** Cada fallo tapaba el siguiente paso.
 
 > Nota: era la última contribución prevista al repo público —a partir de ahí los arreglos
 > se quedaban en el fork—, pero la purga RGPD resultó lo bastante grave para hacer una
