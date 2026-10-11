@@ -124,6 +124,10 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
   deja de exigir contraseña al editar: vacía, se conserva.
 - `web.tlsCiphers` y `web.tlsCurvePreferences` (de upstream), para cuando dex termina
   TLS él mismo. Con Ansible, la política TLS va en el rol `haproxy`.
+- **La API gRPC devuelve códigos de error**: `InvalidArgument`, `NotFound`,
+  `AlreadyExists`, `FailedPrecondition`, `Unimplemented` o `Internal`, donde antes todo
+  llegaba como `Unknown`. El mensaje y los booleanos `not_found`/`already_exists` no
+  cambian. Convenciones en `documentacion/api-grpc-convenciones.md`.
 - Toolchain: Go 1.27.2 en `go.mod`, CI y la imagen; golangci-lint 2.14.0. El módulo
   `api/v2` pasa a exigir Go 1.26.
 
