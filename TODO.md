@@ -34,17 +34,6 @@
 ### 1. 📊 Telemetría
 
 - [ ] Trazabilidad distribuida (OpenTelemetry) para peticiones hacia OpenStack.
-- [ ] **Ni el MFA nativo ni las sesiones de navegador exportan una sola
-      métrica.** Las dos cosas se encendieron en este fork y las dos son
-      material de alarma: un segundo factor fallido no lo cuenta nadie, y no
-      hay forma de saber cuántas sesiones se abren, cuántas caducan por
-      inactividad y cuántas las cierra alguien a mano. Lo que hay es
-      `dex_login_rate_limited_total`, `dex_login_rate_limit_backend_errors_total`
-      y las cinco de Keystone; el patrón está escrito dos veces
-      ([server/server.go:242](server/server.go#L242) y
-      [connector/keystone/metrics.go](connector/keystone/metrics.go)), así que
-      esto es seguir el que ya existe, no inventar nada.
-
 ### 2. 🚀 Rendimiento y Alta Disponibilidad (HA)
 
 > **El estado compartido entre réplicas está entregado** — Valkey opcional
@@ -110,17 +99,10 @@
       que cada redirección y cada enlace de plantilla la lleven. Lo que destapó
       probarlo: quitar el prefijo en el balanceador arregla la **entrada** y no la
       salida — el callback completa y el panel redirige a `/`, sin prefijo.
-- [ ] **Sondas que digan la verdad.** El orden de arranque está resuelto por dentro
-      —`newAuthenticatorWithRetry` en [main.go:62](cmd/dex-dashboard/main.go#L62) reintenta
-      el discovery, así que el panel puede levantarse antes que dex— pero las sondas no
-      sirven para lo que un orquestador necesita: el `/healthz` del panel
-      ([main.go:75](cmd/dex-dashboard/main.go#L75)) devuelve 200 siempre, sin mirar si la
-      conexión gRPC con dex o el Valkey de las sesiones responden. Como sonda de vida está
-      bien; como sonda de disponibilidad miente, y el orquestador manda tráfico a un panel
-      donde todas las páginas van a fallar. Falta además decir qué hacer cuando Valkey no
-      está: dex se niega a arrancar, que es lo correcto, pero hay que reintentar en vez de
-      darlo por muerto. Sigue abierta con el rol de Ansible desplegado: ver
-      [despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
+- [ ] **Que el panel reintente cuando Valkey no está al arrancar.** La sonda de
+      disponibilidad ya existe (`/readyz`, ver [DONE.md](DONE.md), sección 31), pero si
+      Valkey no responde al **arrancar**, el panel sale con error en vez de esperar, como sí
+      espera a dex (`newAuthenticatorWithRetry`). Hoy lo levanta el `restart` del contenedor.
 - [ ] **El camino `ent` con MariaDB queda fuera y no soportado**: el feature flag
       `DEX_ENT_ENABLED` (apagado por defecto) usa `atlas`, que hace sondeo de
       versión, y MariaDB devuelve una cadena compuesta
@@ -160,6 +142,14 @@
 > WebAuthn completo, más sus RPC de gestión. Su convivencia con el segundo factor de
 > Keystone está resuelta y en [DONE.md](DONE.md). Queda lo que sí es trabajo nuevo.
 
+- [ ] **🔴 El endpoint TOTP no tiene limitador de intentos.** Lo dice el propio código de
+      upstream (`server/mfa/totp.go`, «TODO(nabokihms): this endpoint should be protected
+      with a rate limit»): un código de 6 dígitos con ventana de 30 s ±1 paso, sin límite,
+      se puede adivinar por fuerza bruta. Hoy al menos se cuenta
+      (`dex_mfa_verifications_total{result="failure"}`, sección 31 de [DONE.md](DONE.md)).
+      El fork ya tiene un limitador de login compartido en Valkey (`server/ratelimit`)
+      que serviría con otra clave (usuario + autenticador). Es lo más urgente de esta
+      sección.
 - [ ] **Passkeys sin contraseña para Keystone.** Esto sí es trabajo nuevo: WebAuthn de
       upstream es un segundo factor, no un primer factor, así que el login sin contraseña
       contra Keystone sigue sin base.
