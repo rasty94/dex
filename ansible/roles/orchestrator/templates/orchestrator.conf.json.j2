@@ -36,5 +36,13 @@
     "FailureDetectionPeriodBlockMinutes": {{ orchestrator_failure_detection_block_minutes }},
     "RecoveryPeriodBlockSeconds": {{ orchestrator_recovery_block_seconds }},
     "RecoverMasterClusterFilters": ["*"],
-    "ApplyMySQLPromotionAfterMasterFailover": true
+    "ApplyMySQLPromotionAfterMasterFailover": true,
+
+    "_comentario_hooks": "La alarma de una recuperacion sin confirmar. Hasta que alguien la confirma, RecoveryPeriodBlockSeconds bloquea otra promocion en el mismo cluster, aunque el fallo nuevo sea legitimo, y nada lo avisa: medido en la fase 4, 2 min 34 s bloqueado hasta un ack manual. No se confirma sola a proposito (encadenar promociones sin ventana es el riesgo contrario); se GRITA en el log del contenedor, con la orden exacta. Va a /proc/1/fd/2 y no a la salida del echo: orchestrator se traga stdout y stderr de sus hooks, y solo lo que se escribe en la salida de su PID 1 llega a docker logs. Comprobado con un failover real contra la imagen fijada.",
+    "PostFailoverProcesses": [
+        "echo 'ORCHESTRATOR RECOVERY NEEDS ACK: {failureType} on {failedHost}:{failedPort}, promoted {successorHost}:{successorPort}. Until acknowledged, another recovery on this cluster stays blocked for up to {{ orchestrator_recovery_block_seconds }}s. Check the topology, then: curl http://{{ ansible_host }}:{{ orchestrator_http_port }}/api/ack-all-recoveries?comment=REASON' > /proc/1/fd/2"
+    ],
+    "PostUnsuccessfulFailoverProcesses": [
+        "echo 'ORCHESTRATOR RECOVERY FAILED: {failureType} on {failedHost}:{failedPort}, nothing was promoted. Details: curl http://{{ ansible_host }}:{{ orchestrator_http_port }}/api/audit-recovery' > /proc/1/fd/2"
+    ]
 }

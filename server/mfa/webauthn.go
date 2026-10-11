@@ -266,6 +266,7 @@ func (h *Handler) handleWebAuthnLoginFinish(w http.ResponseWriter, r *http.Reque
 	credential, err := provider.wan.FinishLogin(user, *session, r)
 	if err != nil {
 		h.Logger.ErrorContext(ctx, "webauthn login failed", "err", err)
+		h.Metrics.verified("webauthn", false)
 		writeJSONError(w, http.StatusUnauthorized, "Authentication failed.")
 		return
 	}
@@ -296,10 +297,12 @@ func (h *Handler) handleWebAuthnLoginFinish(w http.ResponseWriter, r *http.Reque
 	if credential.Authenticator.CloneWarning {
 		h.Logger.ErrorContext(ctx, "webauthn: signature counter regression, possible cloned authenticator — rejecting",
 			"user_id", mfa.authReq.Claims.UserID, "connector_id", mfa.authReq.ConnectorID, "authenticator_id", mfa.authenticatorID)
+		h.Metrics.verified("webauthn", false)
 		writeJSONError(w, http.StatusUnauthorized, "Authentication failed.")
 		return
 	}
 
+	h.Metrics.verified("webauthn", true)
 	h.writeCompleteMFAStepResponse(w, r, mfa)
 }
 

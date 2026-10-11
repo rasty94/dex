@@ -80,11 +80,11 @@ backend be_dex
 backend be_dashboard
     mode http
     balance roundrobin
-    # Aviso, y no es un descuido: el /healthz del panel devuelve 200 SIEMPRE,
-    # sin mirar si su conexion gRPC con dex o Valkey responden
-    # (cmd/dex-dashboard/main.go). Saca de rotacion un proceso muerto, no uno
-    # ciego. Es una sonda de vida, no de disponibilidad, y no puede ser otra
-    # cosa mientras la entrada del TODO siga abierta.
+    # /readyz y no /healthz: el segundo solo dice que el proceso vive. /readyz
+    # da 503 si el panel no llega a la API gRPC de dex (o dex rechaza su token)
+    # o a Valkey, que es cuando todas sus paginas fallarian
+    # (cmd/dex-dashboard/main.go). Con dex caido, todos los paneles salen de
+    # rotacion a la vez, y es lo correcto: ninguno podria servir.
     option httpchk
     http-check send meth GET uri {{ haproxy_dashboard_health_path }}
 {% for h in groups['dex_dashboard'] %}
@@ -112,14 +112,15 @@ frontend fe_mysql
     bind :{{ haproxy_mysql_port }}
     mode tcp
     option tcplog
-    # 1h, y no los 60 s de "defaults". Un pool de conexiones no es trafico HTTP:
-    # dex abre conexiones y las deja OCIOSAS entre peticiones --database/sql sin
-    # connMaxLifetime--, asi que con el timeout de fabrica HAProxy corta por
-    # abajo cualquier conexion del pool que pase un minuto sin usarse y dex se
-    # encuentra conexiones muertas en la siguiente peticion (un error por cada
-    # conexion caducada, hasta que el pool se renueva). El timeout largo tiene
-    # que estar en los DOS lados de la sesion tcp: cortar solo uno deja la mitad
-    # colgando.
+    # 1h, y no los 60 s de "defaults", por si el pool de dex guarda conexiones
+    # ociosas. Por defecto NO guarda ninguna: con MySQL, dex fuerza
+    # maxIdleConns a 0 (dexidp/dex#1608) y cierra cada conexion al soltarla
+    # --medido: 0 conexiones de dex en MariaDB tras 30 peticiones--. Si alguien
+    # pone maxIdleConns, las ociosas viven hasta que este timeout las corta,
+    # porque con MySQL dex ignora connMaxLifetime (solo lo aplica en Postgres);
+    # el driver detecta la conexion cortada al reutilizarla y abre otra. El
+    # timeout tiene que estar en los DOS lados de la sesion tcp: cortar solo
+    # uno deja la mitad colgando.
     timeout client 1h
     default_backend be_mysql
 

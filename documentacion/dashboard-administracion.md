@@ -685,7 +685,8 @@ va a integrar una aplicación.
 | `/export` | sí + escritura + login reciente | Descarga la configuración en YAML |
 | `/logout` | sí + CSRF | Cierra la sesión (`POST`) |
 | `/callback` | no | Retorno del login OIDC |
-| `/healthz` | no | Sonda de vida |
+| `/healthz` | no | Sonda de vida: el proceso está arriba |
+| `/readyz` | no | Sonda de disponibilidad: 503 si no llega a la API de dex (o dex rechaza su token) o a Valkey. Es la que usa HAProxy |
 
 ---
 

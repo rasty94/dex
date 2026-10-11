@@ -34,17 +34,6 @@
 ### 1. 📊 Telemetría
 
 - [ ] Trazabilidad distribuida (OpenTelemetry) para peticiones hacia OpenStack.
-- [ ] **Ni el MFA nativo ni las sesiones de navegador exportan una sola
-      métrica.** Las dos cosas se encendieron en este fork y las dos son
-      material de alarma: un segundo factor fallido no lo cuenta nadie, y no
-      hay forma de saber cuántas sesiones se abren, cuántas caducan por
-      inactividad y cuántas las cierra alguien a mano. Lo que hay es
-      `dex_login_rate_limited_total`, `dex_login_rate_limit_backend_errors_total`
-      y las cinco de Keystone; el patrón está escrito dos veces
-      ([server/server.go:242](server/server.go#L242) y
-      [connector/keystone/metrics.go](connector/keystone/metrics.go)), así que
-      esto es seguir el que ya existe, no inventar nada.
-
 ### 2. 🚀 Rendimiento y Alta Disponibilidad (HA)
 
 > **El estado compartido entre réplicas está entregado** — Valkey opcional
@@ -68,15 +57,6 @@
       spec de la fase 4 (§4.3) decide no correr: seguridad antes que
       disponibilidad. Paso del operador, con la orden exacta, en
       [despliegue-ansible.md](documentacion/despliegue-ansible.md#lo-que-el-operador-tiene-que-hacer-a-mano).
-- [ ] **`RecoveryPeriodBlockSeconds: 3600` de orchestrator bloquea una segunda
-      promoción de MariaDB dentro de la hora** si la anterior no está confirmada,
-      aunque el fallo nuevo sea sobre el nodo contrario y legítimo. Medido: **2 min
-      34 s** bloqueado hasta un `ack-all-recoveries` manual; confirmada de
-      antemano, la promoción siguiente tardó los mismos **~3 s** de siempre. No se
-      baja el valor a ciegas: encadenar promociones sin ninguna ventana de por
-      medio es el riesgo contrario. Candidato: acuse automático, o una alarma
-      sobre `api/audit-recovery` cuando aparezca una recuperación con
-      `Acknowledged: false`.
 - [ ] **El primario viejo de MariaDB que vuelve tras un failover queda
       huérfano.** Sin `read_only=OFF` (punto de arriba) y sin replicar:
       orchestrator no lo reengancha, y el rol tampoco porque no clona sobre datos
@@ -94,12 +74,13 @@
       el primario en solo lectura sin que orchestrator ni una segunda pasada del
       playbook lo reparen solos — paso A de
       [despliegue-ansible.md](documentacion/despliegue-ansible.md#lo-que-el-operador-tiene-que-hacer-a-mano).
-- [ ] **HAProxy con `timeout server 1h` en `be_mysql`, sin `option clitcpka`/
-      `srvtcpka` de por medio, ni un `connMaxLifetime` explícito en el lado de
-      dex.** Una conexión del pool de `database/sql` puede quedar viva más de una
-      hora sin que nadie la cierre por ninguno de los dos lados si el tráfico es
-      escaso; una keepalive TCP en HAProxy o un `connMaxLifetime` menor que 1h en
-      dex acotarían esa ventana en vez de depender solo del timeout de HAProxy.
+- [ ] **Con MySQL/MariaDB, dex ignora `maxOpenConns` y `connMaxLifetime`.** Solo el
+      camino de Postgres de `storage/sql/config.go` los aplica; el de MySQL fija
+      `maxIdleConns` y nada más, sin avisar. Medido: `connMaxLifetime: 2` deja la
+      conexión viva a los 15 s. Hoy no hace daño —por defecto `maxIdleConns` vale 0 y no
+      queda ninguna conexión ociosa, medido—, pero quien ajuste el pool para MariaDB no
+      consigue lo que pide. Es código de upstream: candidato a llevárselo antes que a
+      parchearlo aquí.
 
 ### 3. ☁️ Ecosistema Cloud Native e Integraciones
 
@@ -118,17 +99,10 @@
       que cada redirección y cada enlace de plantilla la lleven. Lo que destapó
       probarlo: quitar el prefijo en el balanceador arregla la **entrada** y no la
       salida — el callback completa y el panel redirige a `/`, sin prefijo.
-- [ ] **Sondas que digan la verdad.** El orden de arranque está resuelto por dentro
-      —`newAuthenticatorWithRetry` en [main.go:62](cmd/dex-dashboard/main.go#L62) reintenta
-      el discovery, así que el panel puede levantarse antes que dex— pero las sondas no
-      sirven para lo que un orquestador necesita: el `/healthz` del panel
-      ([main.go:75](cmd/dex-dashboard/main.go#L75)) devuelve 200 siempre, sin mirar si la
-      conexión gRPC con dex o el Valkey de las sesiones responden. Como sonda de vida está
-      bien; como sonda de disponibilidad miente, y el orquestador manda tráfico a un panel
-      donde todas las páginas van a fallar. Falta además decir qué hacer cuando Valkey no
-      está: dex se niega a arrancar, que es lo correcto, pero hay que reintentar en vez de
-      darlo por muerto. Sigue abierta con el rol de Ansible desplegado: ver
-      [despliegue-ansible.md](documentacion/despliegue-ansible.md#qué-no-cubre-este-despliegue).
+- [ ] **Que el panel reintente cuando Valkey no está al arrancar.** La sonda de
+      disponibilidad ya existe (`/readyz`, ver [DONE.md](DONE.md), sección 31), pero si
+      Valkey no responde al **arrancar**, el panel sale con error en vez de esperar, como sí
+      espera a dex (`newAuthenticatorWithRetry`). Hoy lo levanta el `restart` del contenedor.
 - [ ] **El camino `ent` con MariaDB queda fuera y no soportado**: el feature flag
       `DEX_ENT_ENABLED` (apagado por defecto) usa `atlas`, que hace sondeo de
       versión, y MariaDB devuelve una cadena compuesta
@@ -168,6 +142,14 @@
 > WebAuthn completo, más sus RPC de gestión. Su convivencia con el segundo factor de
 > Keystone está resuelta y en [DONE.md](DONE.md). Queda lo que sí es trabajo nuevo.
 
+- [ ] **🔴 El endpoint TOTP no tiene limitador de intentos.** Lo dice el propio código de
+      upstream (`server/mfa/totp.go`, «TODO(nabokihms): this endpoint should be protected
+      with a rate limit»): un código de 6 dígitos con ventana de 30 s ±1 paso, sin límite,
+      se puede adivinar por fuerza bruta. Hoy al menos se cuenta
+      (`dex_mfa_verifications_total{result="failure"}`, sección 31 de [DONE.md](DONE.md)).
+      El fork ya tiene un limitador de login compartido en Valkey (`server/ratelimit`)
+      que serviría con otra clave (usuario + autenticador). Es lo más urgente de esta
+      sección.
 - [ ] **Passkeys sin contraseña para Keystone.** Esto sí es trabajo nuevo: WebAuthn de
       upstream es un segundo factor, no un primer factor, así que el login sin contraseña
       contra Keystone sigue sin base.

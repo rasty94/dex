@@ -180,6 +180,7 @@ func (h *Handler) handleTOTPVerify(w http.ResponseWriter, r *http.Request, ctx c
 
 		ok, counter := validateTOTPCode(generated.Secret(), code, h.Now(), secret.LastUsedCounter)
 		if !ok {
+			h.Metrics.verified("totp", false)
 			h.renderTOTPPage(secret, true, totpProvider.issuer, authReq.ConnectorID, w, r)
 			return
 		}
@@ -203,6 +204,7 @@ func (h *Handler) handleTOTPVerify(w http.ResponseWriter, r *http.Request, ctx c
 			return old, nil
 		}); err != nil {
 			if errors.Is(err, errTOTPReplay) || errors.Is(err, errTOTPNotEnrolled) {
+				h.Metrics.verified("totp", false)
 				h.renderTOTPPage(secret, true, totpProvider.issuer, authReq.ConnectorID, w, r)
 				return
 			}
@@ -211,6 +213,7 @@ func (h *Handler) handleTOTPVerify(w http.ResponseWriter, r *http.Request, ctx c
 			return
 		}
 
+		h.Metrics.verified("totp", true)
 		redirectURL, err := h.CompleteStep(ctx, authReq, authenticatorID)
 		if err != nil {
 			h.Logger.ErrorContext(ctx, "failed to complete MFA step", "err", err)

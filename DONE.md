@@ -1145,6 +1145,39 @@ Lo que destapó:
   contra un puerto cerrado. Y el fallo solo salió en la pasada completa: el test filtrado
   que se corrió primero no lo incluía.
 
+### 31. 🩺 Fiabilidad en producción (2026-10-11)
+
+- [x] **`/readyz` en el panel**, y HAProxy la usa en vez de `/healthz`: 503 si no llega a la
+      API gRPC de dex (con su propio token, así que también cae si dex lo rechaza) o a
+      Valkey, nombrando la dependencia pero no el error. En vivo: con Valkey parado da 503
+      «valkey» y `/healthz` sigue en 200; al volver Valkey, vuelve a 200 sin reiniciar.
+- [x] **Métricas de MFA y de sesiones**, solo en el fork: `dex_mfa_verifications_total`,
+      `dex_auth_sessions_created_total` y `dex_auth_sessions_expired_total`. Los tipos van en
+      ficheros propios; en los de upstream, 10 líneas añadidas y ninguna cambiada.
+- [x] **Aviso de recuperaciones de orchestrator sin confirmar**: hooks que escriben
+      `ORCHESTRATOR RECOVERY NEEDS ACK` en el log del contenedor, con la orden exacta.
+- [x] **El pool de dex contra MariaDB, medido y documentado** en vez de acotado.
+
+Lo que destapó:
+
+- **El pool que había que acotar no existía.** La tarea pedía `connMaxLifetime` o
+  keepalive para conexiones ociosas que vivirían más de una hora a través de HAProxy, y el
+  comentario de `be_mysql` justificaba el timeout de 1h con ellas. Medido: por defecto dex
+  no deja ninguna (0 conexiones tras 30 peticiones), porque con MySQL fuerza
+  `maxIdleConns` a 0. Y detrás, un fallo de upstream: **con MySQL, dex ignora
+  `connMaxLifetime` y `maxOpenConns`**, que solo aplica a Postgres. Con `connMaxLifetime: 2`
+  la conexión seguía viva a los 15 s. Queda en el TODO como candidato a llevarles.
+- **orchestrator se traga la salida de sus hooks.** De tres variantes probadas con un
+  failover real (stdout, stderr y `/proc/1/fd/2`), solo la última llega a `docker logs`.
+  Con un `echo` normal la alarma habría existido en la configuración y en ningún sitio más.
+- **El endpoint TOTP no tiene limitador**, y un código erróneo devuelve 200, así que ni la
+  métrica HTTP lo veía. Ahora se cuenta; el limitador sigue pendiente y está marcado como
+  lo más urgente de la sección 4 del TODO.
+- **Un replay de TOTP lo para la validación, no la escritura.** El sabotaje de la rama de
+  replay dentro de la actualización de almacenamiento no hizo fallar el test: el replay
+  secuencial lo rechaza antes `validateTOTPCode`, y esa rama solo atrapa dos envíos
+  simultáneos. Queda escrito en el test, que no la ejercita.
+
 ---
 
 ## 🎁 Heredado del re-port, ya encendido
