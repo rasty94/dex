@@ -35,7 +35,7 @@ func TestSentinelResolvesTheMaster(t *testing.T) {
 
 	// Writing proves it found the master and not a replica: a replica refuses
 	// writes with READONLY.
-	if err := c.Do(t.Context(), c.B().Set().Key(c.Key("probe")).Value("v").Ex(time.Minute).Build()).Error(); err != nil {
+	if err := c.Do(t.Context(), c.B().Set().Key(c.HashKey("test", "probe")).Value("v").Ex(time.Minute).Build()).Error(); err != nil {
 		t.Errorf("write through sentinel: %v", err)
 	}
 }
