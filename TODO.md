@@ -14,24 +14,6 @@
 
 ---
 
-## 📦 Pendiente de publicar
-
-- [ ] **Empujar la etiqueta `fork-v2.1.0`.** Está creada en local sobre el merge del
-      TLS mutuo de Valkey —se movió ahí a propósito, para que la primera imagen
-      publicada no lleve el bus del cluster sin autenticar—, y
-      hasta que suba, [ansible/inventories/ejemplo/group_vars/all.yml](ansible/inventories/ejemplo/group_vars/all.yml)
-      fija `ghcr.io/rasty94/dex:fork-v2.1.0`, una imagen que todavía no existe. El push
-      del tag dispara `release.yaml`, que la construye y la publica en GHCR: por eso se
-      hace aparte y con permiso, no de corrido con el `master`.
-      Lo que destapó la revisión: el inventario llevaba pinchada `fork-v2.0.0`, 75
-      commits por detrás, así que el ejemplo documentado desplegaba un binario anterior
-      a todo Valkey. El rol le escribía `addresses`, `mode` y `masterSet` y el propio
-      campo lápida de `pkg/valkey` los rechazaba. Un pin correcto en la forma —etiqueta
-      inmutable, nunca `latest`— apuntando al sitio equivocado no lo delata nadie:
-      solo aparece comparando el tag con `git describe`.
-
----
-
 ## ⏳ En manos de otros
 
 > Lo enviado a upstream. Nada de esto bloquea al fork: el arreglo ya está aquí. La

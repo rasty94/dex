@@ -12,6 +12,8 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-10-11
+
 ### Añadido
 
 - Roles de Ansible `haproxy` y `keepalived`: la entrada del despliegue. HAProxy
@@ -147,6 +149,9 @@ propio [`ansible/CHANGELOG.md`](ansible/CHANGELOG.md), no en este documento.
 ---
 
 ## [2.1.0] — 2026-09-04
+
+> No llegó a publicarse: la etiqueta se quedó en local y su contenido sale con la
+> 2.2.0, que además trae los arreglos de seguridad de octubre.
 
 Estado compartido en Valkey y despliegue en alta disponibilidad con Ansible. Un
 proceso suelto sigue funcionando exactamente igual que antes: todo lo de aquí se

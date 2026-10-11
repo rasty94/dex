@@ -3,7 +3,7 @@
 Solo lo que cambia en la colección. El registro del fork entero está en la raíz del
 repositorio.
 
-## [2.2.0] — sin publicar
+## [2.2.0] — 2026-10-11
 
 Primera versión como colección. Los ocho roles (`internal_ca`, `valkey`, `dex`,
 `dex_dashboard`, `haproxy`, `keepalived`, `mariadb`, `orchestrator`) y el playbook

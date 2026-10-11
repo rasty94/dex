@@ -546,6 +546,15 @@ sentinel.
   - **`web.tlsCiphers` no sirve en nuestro despliegue.** Con Ansible, dex sirve HTTP detrás de HAProxy, así que la opción de upstream no tenía efecto ahí; el ajuste correspondiente fue `ssl-default-bind-*` en el rol `haproxy`. Además, los nombres de curva de dex son los de Go (`CurveP256`) y los de HAProxy los de OpenSSL (`P-256`).
   - **Vaciar una lista no se puede tratar igual en grupos que en clientes.** En clientes, el panel acepta con una nota que una lista vaciada no cambie. En grupos eso dejaría un permiso puesto sin avisar, así que se rechaza: es la primera vez que la limitación de protobuf toca autorización (ver la revisión de la API en [TODO.md](TODO.md)).
   - **El `protoc` de `bin/` es x86_64 y aquí no hay Rosetta.** `api.pb.go` se regeneró con los mismos pins en arm64; que el resto de ficheros generados saliera idéntico confirmó las herramientas. Pendiente que el `Makefile` descargue el binario de la arquitectura de la máquina.
+- [x] **Publicada `fork-v2.2.0` (2026-10-11), sobre el master de octubre.** Sustituye a
+  `fork-v2.1.0`, que nunca llegó a subir y se borró en local. El inventario de ejemplo
+  pasa a fijar `fork-v2.2.0`, y `galaxy.yml` ya decía 2.2.0, que es lo que comprueba
+  `release.yaml`.
+  Lo que destapó: **una etiqueta que espera el push se pudre.** La 2.1.0 se movió a
+  propósito el 4 de septiembre para no publicar Valkey sin autenticar, y cinco semanas
+  después habría salido con dos vulnerabilidades de gRPC alcanzables y sin los arreglos
+  de octubre. Lo que se publica se decide al publicar, mirando el master de ese momento,
+  no se deja preparado en una etiqueta.
 
 > Nota: era la última contribución prevista al repo público —a partir de ahí los arreglos
 > se quedaban en el fork—, pero la purga RGPD resultó lo bastante grave para hacer una
