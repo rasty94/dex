@@ -24,6 +24,11 @@ PROTOC_VERSION             = 29.3
 PROTOC_GEN_GO_VERSION      = 1.36.5
 PROTOC_GEN_GO_GRPC_VERSION = 1.5.1
 
+# Release asset names per machine: protoc says aarch_64, the Go plugins arm64.
+BIN_ARM            = $(filter arm64 aarch64,$(shell uname -m))
+PROTOC_ARCH        = $(if $(BIN_ARM),aarch_64,x86_64)
+PLUGIN_ARCH        = $(if $(BIN_ARM),arm64,amd64)
+
 KIND_VERSION    = 0.22.0
 KIND_NODE_IMAGE = "kindest/node:v1.25.3@sha256:cd248d1438192f7814fbca8fede13cfe5b9918746dfa12583976158a834fd5c5"
 KIND_TMP_DIR    = "$(PWD)/bin/test/dex-kind-kubeconfig"
@@ -81,22 +86,22 @@ go-mod-tidy: ## Run go mod tidy for all targets.
 bin/protoc:
 	@mkdir -p bin/protoc
 ifeq ($(shell uname | tr A-Z a-z), darwin)
-	curl -L https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-osx-x86_64.zip > bin/protoc.zip
+	curl -L https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-osx-$(PROTOC_ARCH).zip > bin/protoc.zip
 endif
 ifeq ($(shell uname | tr A-Z a-z), linux)
-	curl -L https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip > bin/protoc.zip
+	curl -L https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-$(PROTOC_ARCH).zip > bin/protoc.zip
 endif
 	unzip bin/protoc.zip -d bin/protoc
 	rm bin/protoc.zip
 
 bin/protoc-gen-go:
 	@mkdir -p bin
-	curl -L https://github.com/protocolbuffers/protobuf-go/releases/download/v${PROTOC_GEN_GO_VERSION}/protoc-gen-go.v${PROTOC_GEN_GO_VERSION}.$(shell uname | tr A-Z a-z).amd64.tar.gz | tar -zOxf - protoc-gen-go > ./bin/protoc-gen-go
+	curl -L https://github.com/protocolbuffers/protobuf-go/releases/download/v${PROTOC_GEN_GO_VERSION}/protoc-gen-go.v${PROTOC_GEN_GO_VERSION}.$(shell uname | tr A-Z a-z).$(PLUGIN_ARCH).tar.gz | tar -zOxf - protoc-gen-go > ./bin/protoc-gen-go
 	@chmod +x ./bin/protoc-gen-go
 
 bin/protoc-gen-go-grpc:
 	@mkdir -p bin
-	curl -L https://github.com/grpc/grpc-go/releases/download/cmd/protoc-gen-go-grpc/v${PROTOC_GEN_GO_GRPC_VERSION}/protoc-gen-go-grpc.v${PROTOC_GEN_GO_GRPC_VERSION}.$(shell uname | tr A-Z a-z).amd64.tar.gz | tar -zOxf - ./protoc-gen-go-grpc > ./bin/protoc-gen-go-grpc
+	curl -L https://github.com/grpc/grpc-go/releases/download/cmd/protoc-gen-go-grpc/v${PROTOC_GEN_GO_GRPC_VERSION}/protoc-gen-go-grpc.v${PROTOC_GEN_GO_GRPC_VERSION}.$(shell uname | tr A-Z a-z).$(PLUGIN_ARCH).tar.gz | tar -zOxf - ./protoc-gen-go-grpc > ./bin/protoc-gen-go-grpc
 	@chmod +x ./bin/protoc-gen-go-grpc
 
 ##@ Verify
