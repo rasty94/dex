@@ -265,39 +265,21 @@
       borrar la clave a mano en Valkey. Falta la lista de sesiones abiertas del propio
       panel y un botón por fila.
 
-### 7. 🧭 Revisión de cómo funciona la API gRPC
+### 7. 🧭 API gRPC — lo que dejó abierto la revisión
 
-> La API de gestión ha ido creciendo a base de añadidos: lo de upstream, lo del re-port y
-> lo que fue pidiendo el panel, y cada pieza sigue su propia convención. Antes de
-> añadirle más campos (los grupos de contraseñas de upstream, la paginación de la
-> sección 6) toca revisar el conjunto y fijar unas reglas. La salida es un documento en
-> `documentacion/` con las convenciones y una lista de cambios, no un refactor directo.
-> Restricción: `api/v2/api.proto` es compartido con upstream, así que todo lo que se
-> cambie tiene que seguir siendo compatible en el cable y no puede ocupar números de
-> campo que upstream vaya a usar, o cada sincronización acabará en conflicto.
+> La revisión está hecha: las convenciones, en
+> [documentacion/api-grpc-convenciones.md](documentacion/api-grpc-convenciones.md), y
+> los códigos de error, entregados (ver [DONE.md](DONE.md), sección 29). Aquí queda lo
+> que no se aplicó, porque tocaría ficheros de upstream o porque no corría prisa.
 
-- [ ] **Errores sin código gRPC.** `server/apiserver` devuelve 96 errores con
-      `errors.New`/`fmt.Errorf` y ni un `status.Error`, así que todos llegan como
-      `codes.Unknown`. Un argumento inválido, un fallo de almacenamiento y un permiso
-      denegado no se distinguen salvo leyendo el texto. Lo de «no existe» y «ya existe»
-      va por otro lado, en booleanos `not_found`/`already_exists` dentro de la respuesta
-      (17 en el proto), y de esos depende el panel
-      ([cmd/dex-dashboard/dex.go](cmd/dex-dashboard/dex.go)). Decidir si se pasa a
-      `codes.InvalidArgument`/`NotFound`/`Internal` sin romper los booleanos que upstream
-      sigue usando.
-- [ ] **Tres formas de vaciar un campo.** Las listas repetidas no se pueden vaciar,
-      porque una lista vacía no viaja por protobuf: pasa en `UpdateClient` y, cuando
-      entre, en `UpdatePasswordReq.new_groups`. Otros campos son `optional`
-      (`backchannel_logout_uri`, `refresh_token_lifetime`), y `new_grant_types` va
-      envuelto en un mensaje. Elegir una forma (wrapper, `optional` o `FieldMask`) para
-      todo lo nuevo, y decidir si las listas que ya existen necesitan poder vaciarse.
-- [ ] **Validación y normalización desiguales.** Upstream normaliza los grupos de
-      contraseña (ordena, quita duplicados y rechaza vacíos); falta mirar si `redirect_uris`,
-      `trusted_peers`, scopes de conector y demás listas se tratan igual, y si la
-      validación vive en la API o se repite en el panel.
-- [ ] **Listados sin paginar.** `List*` devuelve todo de una vez; es el bloqueo de la
-      paginación del panel (sección 6). Ver si cabe `page_size`/`page_token` sin chocar
-      con upstream.
-- [ ] **Autorización y auditoría por método.** Comprobar que cada RPC, también las del
-      re-port (sesiones, identidades, MFA y purga RGPD), pasa por el mismo control de
-      token con nombre y deja `caller` en la auditoría, y que no hay ninguna que se lo salte.
+- [ ] **El panel sigue casando por texto.** `friendlyGRPCError` busca subcadenas del
+      mensaje. Ahora que llegan códigos, lo que depende de la clase de error
+      (`Unimplemented` para un feature flag, `FailedPrecondition` para lo estático) puede
+      mirar el código, y dejar el texto solo para elegir la explicación.
+- [ ] **La API no valida las listas de clientes.** `CreateClient`/`UpdateClient` guardan
+      URIs de redirección vacías, mal formadas o repetidas; solo el formulario del panel
+      lo impide, y quien tenga el token se lo salta. Arreglarlo es tocar `clients.go`, que
+      es de upstream: candidato a llevárselo antes que a parchearlo aquí.
+- [ ] **Normalización desigual.** Upstream normaliza los grupos de contraseña (ordena,
+      quita duplicados, rechaza vacíos) y nada más: ni las listas de cliente ni los
+      scopes de conector. El mismo razonamiento que el punto anterior.
