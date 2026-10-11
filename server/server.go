@@ -258,10 +258,27 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 		}
 	}
 
+	// Fork: TOTP codes get their own limiter and budget. Six digits need a far
+	// smaller one than a password, and sharing the login limiter's would let
+	// one exhaust the other.
+	mfaLimiter := ratelimit.New(c.MFARateLimit, rc.now)
+	mfaLimiter.SetSharedStore(c.Valkey)
+
 	// Fork: second-factor and browser-session metrics. A failed registration
 	// leaves them nil, which counts nothing rather than failing the server.
 	var mfaMetrics *mfa.Metrics
 	if c.PrometheusRegistry != nil {
+		if mfaLimiter != nil {
+			rejected := prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "dex_mfa_rate_limited_total",
+				Help: "Number of TOTP codes refused by the MFA rate limiter, without being checked.",
+			})
+			if err := c.PrometheusRegistry.Register(rejected); err == nil {
+				mfaLimiter.SetRejectedCounter(rejected)
+			} else {
+				s.logger.Warn("failed to register MFA rate limit metric", "err", err)
+			}
+		}
 		var err error
 		if mfaMetrics, err = mfa.NewMetrics(c.PrometheusRegistry); err != nil {
 			s.logger.Warn("failed to register MFA metrics", "err", err)
@@ -346,6 +363,7 @@ func (s *Server) mount(routes router.Mux, c Config, rc resolvedConfig) {
 			Now:             rc.now,
 			Connectors:      s.connectors,
 			Metrics:         mfaMetrics,
+			Limiter:         mfaLimiter,
 		},
 		&consent.Handler{
 			Storage:      s.storage,

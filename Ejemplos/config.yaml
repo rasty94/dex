@@ -94,6 +94,15 @@ web:
 #   attempts: 10
 #   window: 1m
 
+# Lo mismo para los códigos TOTP del MFA nativo, por usuario y autenticador (sin
+# la IP: quien adivina ya tiene la contraseña). Un acierto pone el contador a cero;
+# agotado, incluso el código correcto recibe 429. Apagado si no se pone. Valores
+# por defecto con enabled: true: 5 fallos cada 15m.
+# mfaRateLimit:
+#   enabled: true
+#   attempts: 5
+#   window: 15m
+
 # Configuration for telemetry
 telemetry:
     http: 0.0.0.0:5558

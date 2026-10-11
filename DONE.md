@@ -1170,13 +1170,50 @@ Lo que destapó:
 - **orchestrator se traga la salida de sus hooks.** De tres variantes probadas con un
   failover real (stdout, stderr y `/proc/1/fd/2`), solo la última llega a `docker logs`.
   Con un `echo` normal la alarma habría existido en la configuración y en ningún sitio más.
-- **El endpoint TOTP no tiene limitador**, y un código erróneo devuelve 200, así que ni la
-  métrica HTTP lo veía. Ahora se cuenta; el limitador sigue pendiente y está marcado como
-  lo más urgente de la sección 4 del TODO.
+- **El endpoint TOTP no tiene limitador.** Ahora se cuenta; el limitador quedó como lo
+  más urgente de la sección 4 del TODO (cerrado en la sección 32). **Corrección:** aquí
+  y en el CHANGELOG se dijo que un código erróneo devolvía 200 y que por eso la métrica
+  HTTP no lo veía. Es falso: devuelve 401 (`TOTPVerify` escribe la cabecera), así que un
+  ataque ya aparecía como 401 en `/mfa/totp`. Salió al escribir los tests del limitador,
+  que esperaban 200 y recibieron 401.
 - **Un replay de TOTP lo para la validación, no la escritura.** El sabotaje de la rama de
   replay dentro de la actualización de almacenamiento no hizo fallar el test: el replay
   secuencial lo rechaza antes `validateTOTPCode`, y esa rama solo atrapa dos envíos
   simultáneos. Queda escrito en el test, que no la ejercita.
+
+### 32. 🔐 Límite de intentos para los códigos TOTP (2026-10-11)
+
+- [x] **`mfaRateLimit`**, con el formato de `loginRateLimit` y apagado por defecto (decisión
+      del usuario: mismo comportamiento que el de login). Encendido: 5 fallos cada 15
+      minutos por usuario y autenticador, compartido en Valkey si lo hay; un acierto
+      resetea; agotado, el código correcto también recibe 429 sin comprobarse. Rechazos en
+      `dex_mfa_rate_limited_total`. Limitador propio, no el de login: compartir presupuesto
+      dejaría que uno agotara el otro.
+      Verificado en vivo con el binario local, conector `mock`, MFA y `attempts: 3`: tres
+      códigos erróneos en tres logins nuevos dan 401, y el cuarto, con el código bueno
+      calculado a partir del secreto en el sqlite, da 429; `dex_mfa_rate_limited_total` 1 y
+      la línea `mfa rate limit exceeded` en el log. Control con el limitador apagado: el
+      mismo código bueno entra (302 a la aplicación), así que el 429 era el limitador.
+      Tests saboteados: sin la comprobación, sin el reset y con la clave por login.
+
+Lo que destapó:
+
+- **Una afirmación falsa del bloque anterior.** Se dijo que un TOTP erróneo devolvía 200 y
+  que la métrica HTTP no lo veía; devuelve 401. Corregido en la sección 31 y en el
+  CHANGELOG. Lo cazó un test que esperaba lo que se había afirmado.
+- **La clave no lleva la IP, a propósito.** La del login sí (IP + usuario), para que un
+  atacante no bloquee a todos desde una IP. Aquí quien adivina ya pasó la contraseña:
+  con la IP en la clave, rotar de dirección daría presupuesto nuevo. El precio es que un
+  atacante con la contraseña puede bloquear el TOTP de ese usuario durante 15 minutos.
+  Tampoco lleva el ID del login: el test con la clave por login falla, porque abrir
+  logins nuevos es gratis.
+- **Sin `defaultMFAChain` no hay MFA.** Con un autenticador TOTP configurado pero sin
+  cadena por defecto ni en el cliente, el primer intento de la prueba en vivo emitió el
+  código sin pedir segundo factor. No es un fallo, pero sorprende: la configuración
+  parece activar MFA y no lo hace.
+- **Docker no estaba disponible**, así que la prueba en vivo se hizo con el binario y no
+  contra `Ejemplos/dashboard`; el limitador es código del servidor y el panel no
+  interviene.
 
 ---
 

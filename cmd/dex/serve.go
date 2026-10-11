@@ -463,6 +463,22 @@ func runServe(options serveOptions) error {
 		}
 		serverConfig.LoginRateLimit.Window = loginRateLimitWindow
 	}
+	if c.MFARateLimit.Enabled {
+		serverConfig.MFARateLimit.Enabled = true
+		serverConfig.MFARateLimit.Attempts = 5
+		serverConfig.MFARateLimit.Window = 15 * time.Minute
+		if c.MFARateLimit.Attempts != 0 {
+			serverConfig.MFARateLimit.Attempts = c.MFARateLimit.Attempts
+		}
+		if c.MFARateLimit.Window != "" {
+			window, err := time.ParseDuration(c.MFARateLimit.Window)
+			if err != nil {
+				return fmt.Errorf("invalid config value %q for mfa rate limit window: %v", c.MFARateLimit.Window, err)
+			}
+			serverConfig.MFARateLimit.Window = window
+		}
+		logger.Info("config mfa rate limit", "attempts", serverConfig.MFARateLimit.Attempts, "window", serverConfig.MFARateLimit.Window)
+	}
 	if c.MFATrust.Enabled {
 		// The cookie carries a live provider token, so refuse to start rather
 		// than write one in the clear.

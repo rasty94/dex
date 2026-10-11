@@ -11,6 +11,7 @@ import (
 	"github.com/dexidp/dex/server/connectors"
 	"github.com/dexidp/dex/server/internal"
 	"github.com/dexidp/dex/server/oauth2"
+	"github.com/dexidp/dex/server/ratelimit"
 	"github.com/dexidp/dex/server/router"
 	"github.com/dexidp/dex/server/templates"
 	"github.com/dexidp/dex/storage"
@@ -44,7 +45,8 @@ type Handler struct {
 	DefaultMFAChain []string
 	Now             func() time.Time
 	Connectors      *connectors.Cache
-	Metrics         *Metrics // fork: nil counts nothing
+	Metrics         *Metrics           // fork: nil counts nothing
+	Limiter         *ratelimit.Limiter // fork: TOTP attempts; nil allows everything
 }
 
 // renderError renders a user-facing HTML error page.

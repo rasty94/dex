@@ -142,14 +142,6 @@
 > WebAuthn completo, más sus RPC de gestión. Su convivencia con el segundo factor de
 > Keystone está resuelta y en [DONE.md](DONE.md). Queda lo que sí es trabajo nuevo.
 
-- [ ] **🔴 El endpoint TOTP no tiene limitador de intentos.** Lo dice el propio código de
-      upstream (`server/mfa/totp.go`, «TODO(nabokihms): this endpoint should be protected
-      with a rate limit»): un código de 6 dígitos con ventana de 30 s ±1 paso, sin límite,
-      se puede adivinar por fuerza bruta. Hoy al menos se cuenta
-      (`dex_mfa_verifications_total{result="failure"}`, sección 31 de [DONE.md](DONE.md)).
-      El fork ya tiene un limitador de login compartido en Valkey (`server/ratelimit`)
-      que serviría con otra clave (usuario + autenticador). Es lo más urgente de esta
-      sección.
 - [ ] **Passkeys sin contraseña para Keystone.** Esto sí es trabajo nuevo: WebAuthn de
       upstream es un segundo factor, no un primer factor, así que el login sin contraseña
       contra Keystone sigue sin base.

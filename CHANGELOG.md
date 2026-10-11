@@ -17,11 +17,17 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
 - **Métricas de MFA y de sesiones de navegador** (solo en el fork):
   `dex_mfa_verifications_total{method,result}` cuenta cada comprobación de un segundo
   factor; `dex_auth_sessions_created_total` y `dex_auth_sessions_expired_total{reason}`
-  (`idle`, `absolute`, `collected`) cuentan el ciclo de vida de las sesiones. Un código
-  TOTP erróneo devuelve 200, así que la métrica HTTP no lo distingue: este contador es
-  el único sitio donde se ve alguien probando códigos, y el endpoint TOTP **no tiene
-  limitador de intentos**. Una alerta razonable:
-  `rate(dex_mfa_verifications_total{result="failure"}[5m]) > 0.2`.
+  (`idle`, `absolute`, `collected`) cuentan el ciclo de vida de las sesiones. Una
+  alerta razonable: `rate(dex_mfa_verifications_total{result="failure"}[5m]) > 0.2`.
+- **`mfaRateLimit`: límite de intentos para los códigos TOTP** (solo en el fork). Sin él,
+  el endpoint TOTP de upstream acepta intentos sin límite y un código de 6 dígitos se
+  puede adivinar por fuerza bruta. Mismo formato que `loginRateLimit` y, como él,
+  **apagado por defecto**: hay que poner `enabled: true`. Con él encendido, el valor por
+  defecto es 5 fallos cada 15 minutos por usuario y autenticador, sin mirar la IP (quien
+  adivina ya tiene la contraseña y puede abrir logins desde donde quiera); un acierto
+  pone el contador a cero; con Valkey configurado, el presupuesto se comparte entre
+  réplicas. Agotado, incluso el código correcto recibe 429 sin comprobarse. Los rechazos
+  se cuentan en `dex_mfa_rate_limited_total`.
 - **`/readyz` en el panel**: 503 si no llega a la API de dex (o dex rechaza su token) o
   a Valkey. El rol `haproxy` lo usa como sonda en lugar de `/healthz`.
 - **Aviso de recuperaciones de orchestrator sin confirmar**: una línea

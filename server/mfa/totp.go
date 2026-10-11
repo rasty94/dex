@@ -170,6 +170,16 @@ func (h *Handler) handleTOTPVerify(w http.ResponseWriter, r *http.Request, ctx c
 			return
 		}
 
+		// Fork: six digits are guessable without a budget. The key leaves the
+		// address out on purpose: whoever is guessing already has the password
+		// and can start a login from anywhere.
+		limitKey := "mfa\x00" + authReq.ConnectorID + "\x00" + authReq.Claims.UserID + "\x00" + authenticatorID
+		if !h.Limiter.Allow(ctx, limitKey) {
+			h.Logger.WarnContext(ctx, "mfa rate limit exceeded", "user_id", authReq.Claims.UserID, "authenticator_id", authenticatorID)
+			h.renderError(r, w, http.StatusTooManyRequests, "Too many attempts. Please try again later.")
+			return
+		}
+
 		code := r.FormValue("totp")
 		generated, err := otp.NewKeyFromURL(secret.Secret)
 		if err != nil {
@@ -214,6 +224,7 @@ func (h *Handler) handleTOTPVerify(w http.ResponseWriter, r *http.Request, ctx c
 		}
 
 		h.Metrics.verified("totp", true)
+		h.Limiter.Reset(ctx, limitKey)
 		redirectURL, err := h.CompleteStep(ctx, authReq, authenticatorID)
 		if err != nil {
 			h.Logger.ErrorContext(ctx, "failed to complete MFA step", "err", err)

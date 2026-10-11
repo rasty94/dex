@@ -80,6 +80,10 @@ type Config struct {
 	// the password grant. Disabled by default.
 	LoginRateLimit ratelimit.Config
 
+	// MFARateLimit throttles failed TOTP codes, per user and authenticator.
+	// Disabled by default.
+	MFARateLimit ratelimit.Config
+
 	// Valkey is the shared store, or nil when everything stays in process.
 	Valkey *dexvalkey.Client
 
