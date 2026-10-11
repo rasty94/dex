@@ -240,6 +240,8 @@ func runServe(options serveOptions) error {
 
 	// Appended after authentication so only accepted calls are recorded.
 	unaryInterceptors = append(unaryInterceptors, newAuditInterceptor(logger))
+	// Innermost, so the audit log and the metrics see the code it assigns.
+	unaryInterceptors = append(unaryInterceptors, newErrorCodeInterceptor())
 
 	if len(unaryInterceptors) > 0 {
 		grpcOptions = append(grpcOptions, grpc.ChainUnaryInterceptor(unaryInterceptors...))

@@ -1027,6 +1027,47 @@ dejan dentro de `ansible/`, así que un build local podía empaquetar la colecci
 duplicada dentro de sí misma; y ni `ansible-lint` ni el hook `fqcn-en-playbooks` corrían
 en ningún workflow de CI, pese a que `CLAUDE.md` decía que CI lintea todo.
 
+### 29. 🧭 Revisión de la API gRPC (2026-10-11)
+
+Era la sección 7 del TODO. Alcance decidido: un documento de convenciones y los códigos
+de error; vaciar campos y paginar se aplican solo a lo nuevo.
+
+- [x] **Convenciones** en
+      [documentacion/api-grpc-convenciones.md](documentacion/api-grpc-convenciones.md):
+      lo nuestro fuera de los ficheros de upstream; campos propios en mensajes suyos, a
+      partir del 1000; `optional` o lista envuelta para lo que haya que vaciar, sin
+      `FieldMask`; validación en la API; paginación desde el principio en listados nuevos.
+- [x] **Códigos de error.** Un interceptor en `cmd/dex/grpc_codes.go`, el más interno de
+      la cadena, convierte el `Unknown` de siempre en `InvalidArgument`, `NotFound`,
+      `AlreadyExists`, `FailedPrecondition`, `Unimplemented` o `Internal`, sin tocar el
+      mensaje ni los booleanos `not_found`/`already_exists`. No toca ningún fichero de
+      `server/apiserver`, así que no añade conflictos con upstream.
+      Verificado en vivo contra `Ejemplos/dashboard`: campo que falta → `InvalidArgument`;
+      contraseña estática → `FailedPrecondition`; `sub` basura → `InvalidArgument`;
+      cliente inexistente → `NotFound`; token malo → `Unauthenticated` intacto. El panel
+      repite sus 13 comprobaciones sin cambios, y el log de auditoría muestra el código.
+      Los cuatro tests saboteados fallan: sin la regla de validación, con un interceptor
+      que no pone código, con uno que pisa el que ya venía y con el recorrido roto.
+
+Lo que destapó:
+
+- **Clasificar por mensaje solo es seguro si algo lo vigila.** Los handlers aplanan los
+  errores con `%v` y pierden el tipo, así que el interceptor tiene que leer el texto. Lo
+  que lo sostiene es `TestEveryAPIServerMessageIsClassified`, que recorre el AST de
+  `server/apiserver` y falla si un mensaje construido allí acabaría en `Internal`. Si
+  upstream añade uno nuevo, el aviso llega en el merge y no en producción. En su primera
+  pasada ya encontró `errIdentityUnchanged`, un centinela que nunca sale del handler y
+  que ahora figura excluido con su motivo. El test también exige un mínimo de 40
+  mensajes, para no pasar en verde sobre un recorrido roto.
+- **Había un cuarto estilo de error**, el nuestro: `ReloadConfigResp` devuelve `success`
+  y `error` con la llamada en OK. Se queda por compatibilidad, pero la convención lo
+  descarta para lo nuevo.
+- **La auditoría cubre las 32 RPCs por casualidad de nombres.** Todas las que cambian
+  estado empiezan por un prefijo de `mutatingPrefixes`; una nueva con otro verbo
+  (`Purge…`) pasaría sin registrarse. Queda escrito en las convenciones.
+- **La validación de clientes vive en el panel, no en la API**: quien tenga el token
+  guarda URIs vacías o mal formadas. Queda en el TODO como candidato a upstream.
+
 ---
 
 ## 🎁 Heredado del re-port, ya encendido
