@@ -562,6 +562,16 @@ sentinel.
   después habría salido con dos vulnerabilidades de gRPC alcanzables y sin los arreglos
   de octubre. Lo que se publica se decide al publicar, mirando el master de ese momento,
   no se deja preparado en una etiqueta.
+  Y lo que destapó el primer intento: **el pipeline de release no había funcionado nunca
+  con las etiquetas del fork.** Las reglas de `metadata-action` son las de upstream y
+  solo etiquetan por semver; `fork-vX.Y.Z` no lo es, así que no salía ninguna etiqueta de
+  imagen y el push fallaba con «tag is needed when pushing to registry». La release de
+  `fork-v2.0.0` falló igual el 2 de septiembre, y su imagen nunca existió en GHCR: lo
+  único publicado eran `latest` y `master`, desde el CI de master. Nadie lo vio porque
+  un workflow en rojo tras una etiqueta no avisa a nadie. Se arregló con reglas
+  `type=match`, probadas ejecutando en local la `metadata-action` fijada con un push
+  simulado de la etiqueta. Como con la 2.2.0 no había salido ningún artefacto, la
+  etiqueta se movió al commit arreglado en vez de sacar una 2.2.1 vacía.
 
 > Nota: era la última contribución prevista al repo público —a partir de ahí los arreglos
 > se quedaban en el fork—, pero la purga RGPD resultó lo bastante grave para hacer una
