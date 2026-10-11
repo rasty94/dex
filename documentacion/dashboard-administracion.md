@@ -245,6 +245,14 @@ ese proveedor**. Dex no los crea, no los borra y no guarda sus contraseñas: sol
 la autenticación y traduce el resultado a claims. Ni este panel ni ningún otro sobre
 la API de Dex puede gestionarlos.
 
+Los usuarios locales sí llevan **grupos**, que llegan al claim `groups` del token y
+pueden dar acceso al propio panel. Se editan en el mismo formulario que la contraseña,
+que puede dejarse vacía para conservarla. La API de Dex los reemplaza pero no los vacía
+—una lista vacía no viaja en protobuf—, así que quitar el último grupo se rechaza con
+un error en vez de aparentar que funcionó: dejarlo en silencio mantendría un permiso que
+el administrador cree haber quitado. Para dejar a un usuario sin grupos, borrarlo y
+crearlo de nuevo.
+
 Lo que sí se puede hacer con ellos, y llegará en la fase 2, es **revocar sus sesiones**.
 
 ---

@@ -17,7 +17,7 @@ own users against dex itself.
 | Overview | dex version, counts of clients, local users and connectors |
 | Clients | OAuth2 clients, their type and redirect URIs |
 | Connectors | configured connectors (id, type, name) |
-| Local users | dex's password DB |
+| Local users | dex's password DB, with each user's groups |
 | Sessions | a user's refresh tokens, looked up by `sub` |
 
 **Nothing here can change dex's state.** Writes are phase two of the plan in

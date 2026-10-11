@@ -3,6 +3,15 @@
 global
     log stdout format raw local0
     maxconn 4096
+{% if haproxy_ssl_min_ver %}
+    ssl-default-bind-options ssl-min-ver {{ haproxy_ssl_min_ver }}
+{% endif %}
+{% if haproxy_ssl_ciphers %}
+    ssl-default-bind-ciphers {{ haproxy_ssl_ciphers }}
+{% endif %}
+{% if haproxy_ssl_curves %}
+    ssl-default-bind-curves {{ haproxy_ssl_curves }}
+{% endif %}
 
 defaults
     log     global

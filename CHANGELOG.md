@@ -117,6 +117,25 @@ el remote `upstream`: numerar igual colisionaría en cuanto publiquen la siguien
   pasa a nombrarse por FQCN (`rasty94.dex.mariadb`, `rasty94.dex.dex`…).
 - `ansible.cfg`: `roles_path` desaparece; entra `collections_path`, que
   resuelve `rasty94.dex.*` contra el propio checkout sin instalar nada.
+- **Refresh tokens rechazados devuelven `invalid_grant`**, no `invalid_request`, como
+  pide RFC 6749 §5.2 (de upstream). Un cliente que esperase `invalid_request` para
+  lanzar un login nuevo tiene que mirar `invalid_grant`.
+- El panel edita los **grupos de los usuarios locales**, y el formulario de usuario
+  deja de exigir contraseña al editar: vacía, se conserva.
+- `web.tlsCiphers` y `web.tlsCurvePreferences` (de upstream), para cuando dex termina
+  TLS él mismo. Con Ansible, la política TLS va en el rol `haproxy`.
+- Toolchain: Go 1.27.2 en `go.mod`, CI y la imagen; golangci-lint 2.14.0. El módulo
+  `api/v2` pasa a exigir Go 1.26.
+
+### Seguridad
+
+- Sincronizado con upstream hasta `ef96b8ad`: gRPC 1.84 cierra GO-2026-6443 (panic por
+  una petición sin `:authority`) y GO-2026-6348 (OOM por fragmentación HTTP/2), las dos
+  alcanzables desde la API de gestión. El conector OIDC deja de validar el JWKS contra
+  las raíces del sistema cuando hay `providerDiscoveryOverrides`.
+- Go 1.27.2 y `golang.org/x/net` 0.60.0 cierran doce vulnerabilidades más de HTTP/2,
+  `net/http`, `crypto/tls`, `net/textproto` y `html/template` que upstream todavía
+  arrastra.
 
 Los cambios de la colección de Ansible por versión, a partir de aquí, están en su
 propio [`ansible/CHANGELOG.md`](ansible/CHANGELOG.md), no en este documento.

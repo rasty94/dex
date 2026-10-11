@@ -20,6 +20,16 @@
     <input type="text" id="username" name="username" value="{{ .Username }}">
   </fieldset>
 
+  <fieldset>
+    <label class="f" for="groups">Groups</label>
+    <textarea id="groups" name="groups">{{ range .Groups }}{{ . }}&#10;{{ end }}</textarea>
+    {{ if .Groups }}<input type="hidden" name="had_groups" value="1">{{ end }}
+    <div class="hint">One group per line. They reach applications in the token's
+      <code>groups</code> claim, and they can grant access to this dashboard.
+      {{ if .Editing }}dex can replace them but not remove the last one: to leave the user
+      without groups, delete and recreate it.{{ end }}</div>
+  </fieldset>
+
   {{ if not .Editing }}
   <fieldset>
     <label class="f" for="user_id">User ID</label>
@@ -31,17 +41,18 @@
 
   <fieldset>
     <label class="f" for="password">{{ if .Editing }}New password{{ else }}Password{{ end }}</label>
-    <input type="password" id="password" name="password" required {{ if .Editing }}autofocus{{ end }}>
-    <div class="hint">Hashed with bcrypt in the dashboard. The plaintext never reaches dex.</div>
+    <input type="password" id="password" name="password" {{ if not .Editing }}required{{ end }} autocomplete="new-password">
+    <div class="hint">{{ if .Editing }}Leave empty to keep the current password. {{ end }}Hashed
+      with bcrypt in the dashboard. The plaintext never reaches dex.</div>
   </fieldset>
 
   <fieldset>
     <label class="f" for="password_confirm">Repeat password</label>
-    <input type="password" id="password_confirm" name="password_confirm" required>
+    <input type="password" id="password_confirm" name="password_confirm" {{ if not .Editing }}required{{ end }} autocomplete="new-password">
   </fieldset>
 
   <div class="actions">
-    <button type="submit" class="btn btn-primary">{{ if .Editing }}Change password{{ else }}Create user{{ end }}</button>
+    <button type="submit" class="btn btn-primary">{{ if .Editing }}Save changes{{ else }}Create user{{ end }}</button>
     <a class="btn" href="/users">Cancel</a>
   </div>
 </form>

@@ -2,7 +2,7 @@ ARG BASE_IMAGE=alpine
 
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.9.0@sha256:c64defb9ed5a91eacb37f96ccc3d4cd72521c4bd18d5442905b95e2226b0e707 AS xx
 
-FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine3.22@sha256:727cfc3c40be55cd1bc9a4a059406b28a059857e3be752aa9d09531e12c20c56 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS builder
 
 COPY --from=xx / /
 
@@ -35,31 +35,21 @@ RUN make release-binary
 
 RUN xx-verify /go/bin/dex && xx-verify /go/bin/dex-dashboard && xx-verify /go/bin/docker-entrypoint
 
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS stager
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS stager
 
 RUN mkdir -p /var/dex
 RUN mkdir -p /etc/dex
 COPY config.docker.yaml config.dashboard.docker.yaml /etc/dex/
 
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS gomplate
-
-ARG TARGETOS
-ARG TARGETARCH
-ARG TARGETVARIANT
-
-ENV GOMPLATE_VERSION=v5.2.0
-
-RUN wget -O /usr/local/bin/gomplate \
-    "https://github.com/hairyhenderson/gomplate/releases/download/${GOMPLATE_VERSION}/gomplate_${TARGETOS:-linux}-${TARGETARCH:-amd64}${TARGETVARIANT}" \
-    && chmod +x /usr/local/bin/gomplate
+FROM ghcr.io/hairyhenderson/gomplate:v5.2.0@sha256:991ce1b8a1307fa32f9b8050a7b339697464664236cfddb1c4079df4aa5f1cd4 AS gomplate
 
 # For Dependabot to detect base image versions
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS alpine
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS alpine
 
 FROM alpine AS user-setup
 RUN addgroup -g 1001 -S dex && adduser -u 1001 -S -G dex -D -H -s /sbin/nologin dex
 
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6 AS distroless
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 AS distroless
 
 FROM $BASE_IMAGE
 
@@ -88,7 +78,7 @@ COPY --from=builder /go/bin/dex-dashboard /usr/local/bin/dex-dashboard
 COPY --from=builder /go/bin/docker-entrypoint /usr/local/bin/docker-entrypoint
 COPY --from=builder /usr/local/src/dex/web /srv/dex/web
 
-COPY --from=gomplate /usr/local/bin/gomplate /usr/local/bin/gomplate
+COPY --from=gomplate /gomplate /usr/local/bin/gomplate
 
 # Browser sessions are on in this image. The fork ships the session, logout and
 # "remember me" pages, and dex's own MFA refuses to start without them. The
