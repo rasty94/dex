@@ -119,14 +119,20 @@ token en claro. La clave con la que se indexa es un hash SHA-256 del token, nunc
 el token mismo — ni en Valkey ni en la caché local aparece el valor que un
 usuario podría reutilizar para autenticarse.
 
-Un `cacheTTL` que no se puede interpretar como duración, o que no es positivo, es
-un error de arranque: dex se niega a arrancar y dice qué valor no entendió, en vez
-de arrancar sin caché en silencio.
+Un `cacheTTL` que no se puede interpretar como duración, o que no es positivo, hace
+que el conector no se abra, con un error que dice qué valor no entendió, en vez de
+funcionar sin caché en silencio. Lo mismo con `cacheShared: true` sin
+`valkey.addresses` en `dex.yaml`: pedir una caché compartida y obtener en silencio una
+local por proceso es justo el tipo de diferencia que solo se descubre en un incidente.
 
-Con `cacheShared: true` y sin `valkey.address` configurado en `dex.yaml`, dex
-también se niega a arrancar: pedir una caché compartida y obtener en silencio una
-local por proceso es justo el tipo de diferencia que solo se descubre en un
-incidente.
+> **Ojo: que el conector no se abra no siempre para dex.** Con el feature flag
+> `continue_on_connector_failure`, que viene **encendido** por defecto, dex registra
+> `server: Failed to open connector` a nivel `ERROR` y **arranca sin Keystone**: el
+> resto de conectores sigue funcionando y el login por Keystone desaparece de la
+> pantalla. Para que un error de configuración del conector impida arrancar, poner
+> `DEX_CONTINUE_ON_CONNECTOR_FAILURE=false`. Comprobado con `cacheTTL: "5min"`: con el
+> flag por defecto dex arranca y deja el error en el log; con `false` sale con
+> `invalid cacheTTL "5min"`.
 
 ### Qué pasa si Valkey deja de responder
 

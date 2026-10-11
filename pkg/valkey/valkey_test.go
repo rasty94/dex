@@ -38,8 +38,8 @@ func TestNewPingsAndPrefixes(t *testing.T) {
 	}
 	defer c.Close()
 
-	if got := c.Key("rl:abc"); got != "dex:rl:abc" {
-		t.Errorf("Key = %q, want dex:rl:abc", got)
+	if got := c.HashKey("rl", "abc"); !strings.HasPrefix(got, "dex:rl:") {
+		t.Errorf("HashKey = %q, want it under dex:rl:", got)
 	}
 }
 
@@ -130,7 +130,7 @@ func TestStandaloneIsStillTheDefault(t *testing.T) {
 	}
 	defer c.Close()
 
-	if err := c.Do(t.Context(), c.B().Set().Key(c.Key("k")).Value("v").Build()).Error(); err != nil {
+	if err := c.Do(t.Context(), c.B().Set().Key(c.HashKey("test", "k")).Value("v").Build()).Error(); err != nil {
 		t.Errorf("set against a standalone server: %v", err)
 	}
 }

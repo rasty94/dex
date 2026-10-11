@@ -29,17 +29,6 @@
 
 ---
 
-## 🔄 Sincronización con upstream — pendiente
-
-> La de octubre (hasta `ef96b8ad`) está cerrada como bloque H en [DONE.md](DONE.md).
-
-- [ ] **`make generate-proto` no funciona en un Mac con Apple Silicon.** `bin/protoc`,
-      `bin/protoc-gen-go` y `bin/protoc-gen-go-grpc` se descargan siempre en x86_64, y
-      sin Rosetta no arrancan («Bad CPU type»). En el bloque H se regeneró con los mismos
-      pins en arm64 a mano. Que el `Makefile` elija la arquitectura con `uname -m`.
-
----
-
 ## 🚀 Futuras Mejoras (Propuestas)
 
 ### 1. 📊 Telemetría
@@ -67,17 +56,6 @@
       los tests, no implementa la invalidación asistida por servidor que necesita.
       Activarla evitaría un viaje de red por cada lectura de caché compartida, a
       costa de esa dependencia con los tests.
-- [ ] `Client.Key` en `pkg/valkey/valkey.go` no tiene más uso que su propio
-      test: cada componente que necesita una clave pasa por `HashKey`. Un
-      ayudante de clave sin hashear y sin usuarios invita a que alguien meta un
-      secreto en el nombre de una clave donde no toca. Retirarlo, o darle un
-      uso real, antes de que alguien lo use mal.
-- [ ] La afirmación de que dex se niega a arrancar con un `cacheTTL` inválido
-      no es cierta con el feature flag `continue_on_connector_failure` activo
-      (su valor por defecto): ahí el conector falla, dex lo registra y arranca
-      igual sin él. La documentación del conector Keystone y el CHANGELOG
-      deberían decirlo explícitamente en vez de dar a entender que el arranque
-      siempre se detiene.
 - [ ] **Un primario de MariaDB que reinicia vuelve en solo lectura, y nada lo
       repone solo.** `read_only=ON` en el arranque es de fichero, no un estado que
       orchestrator recuerde: tras un `docker start` o un reinicio del primario,
@@ -122,14 +100,6 @@
       hora sin que nadie la cierre por ninguno de los dos lados si el tráfico es
       escaso; una keepalive TCP en HAProxy o un `connMaxLifetime` menor que 1h en
       dex acotarían esa ventana en vez de depender solo del timeout de HAProxy.
-- [ ] **El assert de `mariadb_bind_address` (rol `mariadb`) no tolera espacios
-      tras la coma ni direcciones IPv6 (`::`, `::1`).** `'127.0.0.1' in (valor |
-      split(','))` es una comparación de cadena exacta: `"127.0.0.1, 10.0.0.1"`
-      (con espacio) o un bind por `::` no se reconocen como "incluye el
-      loopback" y el assert falla aunque el valor sea funcionalmente correcto.
-      Falla en el lado seguro (no arranca en vez de arrancar mal), así que no es
-      urgente, pero merece un `trim` por elemento y una nota sobre IPv6 si algún
-      despliegue lo necesita.
 
 ### 3. ☁️ Ecosistema Cloud Native e Integraciones
 
@@ -254,10 +224,6 @@
 > los códigos de error, entregados (ver [DONE.md](DONE.md), sección 29). Aquí queda lo
 > que no se aplicó, porque tocaría ficheros de upstream o porque no corría prisa.
 
-- [ ] **El panel sigue casando por texto.** `friendlyGRPCError` busca subcadenas del
-      mensaje. Ahora que llegan códigos, lo que depende de la clase de error
-      (`Unimplemented` para un feature flag, `FailedPrecondition` para lo estático) puede
-      mirar el código, y dejar el texto solo para elegir la explicación.
 - [ ] **La API no valida las listas de clientes.** `CreateClient`/`UpdateClient` guardan
       URIs de redirección vacías, mal formadas o repetidas; solo el formulario del panel
       lo impide, y quien tenga el token se lo salta. Arreglarlo es tocar `clients.go`, que

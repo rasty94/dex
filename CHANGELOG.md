@@ -239,11 +239,14 @@ réplicas cuando hay más de una.
   nunca borraba, asi que crecia sin limite mientras el proceso viviera. Afecta
   tambien a despliegues de una sola replica.
 - Un `cacheTTL` mal escrito en el conector Keystone desactivaba la cache en
-  silencio. Ahora dex no arranca y dice cual es el valor que no entiende. Lo
-  mismo si `cacheTTL` no es positivo.
-- `cacheShared: true` sin `valkey.addresses` configurado tambien es ahora un error
-  de arranque, en vez de una cache local silenciosa donde se esperaba una
+  silencio. Ahora el conector no se abre y el error dice cual es el valor que no
+  entiende. Lo mismo si `cacheTTL` no es positivo.
+- `cacheShared: true` sin `valkey.addresses` configurado tambien impide abrir el
+  conector, en vez de una cache local silenciosa donde se esperaba una
   compartida.
+- En los dos casos dex solo se niega a arrancar con
+  `DEX_CONTINUE_ON_CONNECTOR_FAILURE=false`. Con el valor por defecto (`true`)
+  arranca sin el conector Keystone y deja el error en el log (`ERROR`).
 
 ### Seguridad
 

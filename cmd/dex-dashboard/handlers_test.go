@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	api "github.com/dexidp/dex/api/v2"
 )
@@ -98,10 +101,25 @@ func TestRenderListShowsTheError(t *testing.T) {
 		t.Fatalf("newDashboard: %v", err)
 	}
 
+	// A real client against a port nothing listens on, so the error has the
+	// shape gRPC gives it, code included, and not a string that merely looks
+	// like one.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+	dc, err := newDexClient(DexConfig{GRPCAddress: addr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dc.Close()
+
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/clients", nil)
 	d.renderList(rr, req, "clients.html", "Clients", "clients", func() (any, error) {
-		return nil, errUnavailable{}
+		return dc.listPasswords(req.Context())
 	})
 
 	if rr.Code != http.StatusOK {
@@ -112,25 +130,24 @@ func TestRenderListShowsTheError(t *testing.T) {
 	}
 }
 
-type errUnavailable struct{}
-
-func (errUnavailable) Error() string {
-	return "rpc error: code = Unavailable desc = connection refused"
-}
-
 func TestFriendlyGRPCError(t *testing.T) {
 	tests := []struct {
-		in   string
+		in   error
 		want string
 	}{
-		{"rpc error: code = Unauthenticated desc = invalid authorization token", "refused the API token"},
-		{"rpc error: code = Unavailable desc = connection refused", "Cannot reach dex"},
-		{"api_connectors_crud feature flag is not enabled", "feature flag"},
-		{"rpc error: code = Unknown desc = proto: cannot parse invalid wire-format data", "not a valid subject"},
-		{"something else entirely", "something else entirely"},
+		// The class comes from the code, whatever the message says.
+		{status.Error(codes.Unauthenticated, "invalid authorization token"), "refused the API token"},
+		{status.Error(codes.Unauthenticated, "metadata is not provided"), "refused the API token"},
+		{status.Error(codes.Unavailable, "connection refused"), "Cannot reach dex"},
+		{status.Error(codes.Unavailable, `dial tcp: lookup dex on 127.0.0.11:53: no such host`), "Cannot reach dex"},
+		// Within a class, or from a dex that still answers Unknown, the text picks.
+		{staticErr("api_connectors_crud feature flag is not enabled"), "feature flag"},
+		{staticErr("rpc error: code = Unknown desc = proto: cannot parse invalid wire-format data"), "not a valid subject"},
+		{status.Error(codes.InvalidArgument, "illegal base64 data at input byte 2"), "not a valid subject"},
+		{staticErr("something else entirely"), "something else entirely"},
 	}
 	for _, tc := range tests {
-		if got := friendlyGRPCError(staticErr(tc.in)); !strings.Contains(got, tc.want) {
+		if got := friendlyGRPCError(tc.in); !strings.Contains(got, tc.want) {
 			t.Errorf("friendlyGRPCError(%q) = %q, want it to mention %q", tc.in, got, tc.want)
 		}
 	}

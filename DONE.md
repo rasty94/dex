@@ -1109,6 +1109,42 @@ Lo que destapó:
 - **La validación de clientes vive en el panel, no en la API**: quien tenga el token
   guarda URIs vacías o mal formadas. Queda en el TODO como candidato a upstream.
 
+### 30. 🧹 Pendientes rápidos (2026-10-11)
+
+- [x] **`make generate-proto` en Apple Silicon.** El `Makefile` elige con `uname -m` el
+      asset de protoc (`aarch_64`) y de sus plugins (`arm64`). Con `bin/` vacío baja los
+      tres en arm64 y la regeneración deja el árbol igual; en x86_64 las URL son las de
+      siempre.
+- [x] **`Client.Key` retirado de `pkg/valkey`.** No tenía más uso que sus tests, y un
+      ayudante de clave sin hashear invitaba a meter un secreto en el nombre de una clave.
+- [x] **Lo de `cacheTTL`, documentado como es.** Comprobado en vivo: con
+      `continue_on_connector_failure` en su valor por defecto, un `cacheTTL: "5min"` (o
+      `cacheShared` sin Valkey) deja el error en el log a nivel `ERROR` y dex arranca sin
+      Keystone; solo con `DEX_CONTINUE_ON_CONNECTOR_FAILURE=false` se niega a arrancar. La
+      guía de Keystone y el CHANGELOG decían lo segundo sin matizar.
+- [x] **El assert de `mariadb_bind_address`, con el mensaje correcto.**
+- [x] **El panel distingue la clase de error por el código gRPC**: `Unauthenticated` y
+      `Unavailable` por código; el texto solo elige la explicación dentro de una clase.
+
+Lo que destapó:
+
+- **La tarea del `bind_address` partía de una premisa falsa.** Pedía que el assert
+  tolerase espacios tras la coma e IPv6 porque esos valores eran «funcionalmente
+  correctos». Medido contra `mariadb:11.4`, ninguno lo es: con `"127.0.0.1, 127.0.0.2"`
+  MariaDB aborta al arrancar, y con `::` o `::1` arranca pero no contesta por
+  127.0.0.1, que es por donde el rol habla con su nodo. El assert hacía bien en
+  rechazarlos; aflojarlo habría cambiado un fallo claro por un contenedor que no arranca.
+  Lo único mal era el mensaje: con un espacio decía que faltaba 127.0.0.1. Ahora un assert
+  previo lo explica. La primera medición, además, salió mal: 12 segundos no bastan,
+  porque el entrypoint inicializa con la red apagada, y había que esperar a
+  «ready for connections» con el puerto.
+- **Un test que fingía la forma del error.** `TestRenderListShowsTheError` usaba un tipo
+  cuyo `Error()` imitaba el texto de gRPC sin llevar código; en cuanto el panel miró el
+  código, dejó de pasar. Era el doble el que estaba mal, no el código: se comprobó que el
+  panel no envuelve con `%v` ningún error de dex. Ahora el test usa un cliente gRPC real
+  contra un puerto cerrado. Y el fallo solo salió en la pasada completa: el test filtrado
+  que se corrió primero no lo incluía.
+
 ---
 
 ## 🎁 Heredado del re-port, ya encendido

@@ -137,11 +137,6 @@ func firstNonEmpty(a, b string) string {
 	return b
 }
 
-// Key namespaces a key that carries nothing secret.
-func (c *Client) Key(name string) string {
-	return c.prefix + name
-}
-
 // HashKey namespaces a key derived from something that must not appear in the
 // store: a Keystone token, a username, a session id.
 func (c *Client) HashKey(kind, secret string) string {

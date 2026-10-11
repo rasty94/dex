@@ -37,6 +37,19 @@
 # loopback, el nodo arranca sin escuchar ahi y el fallo aparece tres tareas mas
 # tarde como "mariadb-admin ping" que nunca contesta, o como un agente de sonda
 # que da 503 para siempre. El mensaje de aqui dice cual es la causa.
+- name: El bind_address no lleva espacios
+  # Comprobado contra mariadb:11.4: "127.0.0.1, 10.0.0.1" aborta el arranque.
+  # Sin este assert, el de abajo lo rechaza diciendo que falta 127.0.0.1, que
+  # si esta.
+  ansible.builtin.assert:
+    that:
+      - "' ' not in mariadb_bind_address"
+    fail_msg: >-
+      mariadb_bind_address vale "{{ mariadb_bind_address }}" y lleva espacios.
+      MariaDB 11.4 aborta al arrancar con un espacio tras la coma: escribe la
+      lista seguida, "127.0.0.1,{{ ansible_host | default('<ip-privada>') }}".
+    success_msg: mariadb_bind_address no lleva espacios.
+
 - name: El bind_address tiene que incluir el loopback
   ansible.builtin.assert:
     that:
