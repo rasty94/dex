@@ -538,12 +538,26 @@ func (d *dashboard) handleUserForm(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Email    string
 		Username string
+		Groups   []string
 		Editing  bool
-	}{Email: email, Username: r.URL.Query().Get("username"), Editing: email != ""}
+	}{Email: email, Editing: email != ""}
 
 	title := "New local user"
 	if data.Editing {
-		title = "Change password for " + email
+		// Read from dex rather than the query string: the groups do not fit in a
+		// link, and a form prefilled from a stale link would write stale values.
+		p, err := d.dex.localPasswordFor(r.Context(), email)
+		if err != nil {
+			d.logger.Error("failed to look up local user", "err", err)
+			d.renderResult(w, r, "users", friendlyGRPCError(err))
+			return
+		}
+		if p == nil {
+			d.renderResult(w, r, "users", "No local user with email "+email+".")
+			return
+		}
+		data.Email, data.Username, data.Groups = p.Email, p.Username, p.Groups
+		title = "Edit " + p.Email
 	}
 	d.render(w, r, "user_form.html", page{Title: title, Nav: "users", Data: data})
 }
@@ -553,12 +567,15 @@ func (d *dashboard) handleUserSave(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.FormValue("email"))
 	password := r.FormValue("password")
 	username := strings.TrimSpace(r.FormValue("username"))
+	groups := splitLines(r.FormValue("groups"))
+	editing := r.FormValue("editing") == "1"
 
 	if email == "" {
 		d.renderResult(w, r, "users", "A user needs an email address.")
 		return
 	}
-	if password == "" {
+	// Editing keeps the current password when the box is left empty.
+	if password == "" && !editing {
 		d.renderResult(w, r, "users", "A password is required.")
 		return
 	}
@@ -568,18 +585,35 @@ func (d *dashboard) handleUserSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hashed here, so the plaintext never reaches dex's API or its logs.
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
-	if err != nil {
-		d.logger.Error("failed to hash password", "err", err)
-		d.renderResult(w, r, "users", "Could not hash the password.")
-		return
+	var hash []byte
+	if password != "" {
+		var err error
+		hash, err = bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+		if err != nil {
+			d.logger.Error("failed to hash password", "err", err)
+			d.renderResult(w, r, "users", "Could not hash the password.")
+			return
+		}
 	}
 
-	if r.FormValue("editing") == "1" {
+	if editing {
+		// An empty repeated field does not travel in protobuf, so dex reads an
+		// emptied list as "leave the groups alone". Groups grant access, so
+		// failing loudly beats keeping a group the admin just removed.
+		if len(groups) == 0 && r.FormValue("had_groups") == "1" {
+			d.renderResult(w, r, "users", "dex's API can replace a local user's groups but not remove the last one. "+
+				"To leave "+email+" without groups, delete the user and create it again.")
+			return
+		}
+		if hash == nil && username == "" && len(groups) == 0 {
+			d.renderResult(w, r, "users", "Nothing to change.")
+			return
+		}
 		notFound, err := d.dex.updatePassword(r.Context(), &api.UpdatePasswordReq{
 			Email:       email,
 			NewHash:     hash,
 			NewUsername: username,
+			NewGroups:   groups,
 		})
 		if err != nil {
 			d.logger.Error("failed to update password", "err", err)
@@ -590,8 +624,9 @@ func (d *dashboard) handleUserSave(w http.ResponseWriter, r *http.Request) {
 			d.renderResult(w, r, "users", "No local user with email "+email+".")
 			return
 		}
-		d.logger.Info("local user password changed", "actor", sess.Email, "user", email)
-		redirectWith(w, r, "/users", "Changed the password for "+email+".")
+		d.logger.Info("local user updated", "actor", sess.Email, "user", email,
+			"password_changed", hash != nil, "groups", groups)
+		redirectWith(w, r, "/users", "Updated "+email+".")
 		return
 	}
 
@@ -604,6 +639,7 @@ func (d *dashboard) handleUserSave(w http.ResponseWriter, r *http.Request) {
 		Hash:     hash,
 		Username: username,
 		UserId:   userID,
+		Groups:   groups,
 	})
 	if err != nil {
 		d.logger.Error("failed to create password", "err", err)

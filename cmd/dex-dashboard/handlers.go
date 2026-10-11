@@ -236,7 +236,7 @@ func (d *dashboard) handleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		out := make([]*api.Password, 0, len(all))
 		for _, p := range all {
-			if matchesFilter(q, p.Email, p.Username, p.UserId) {
+			if matchesFilter(q, append([]string{p.Email, p.Username, p.UserId}, p.Groups...)...) {
 				out = append(out, p)
 			}
 		}

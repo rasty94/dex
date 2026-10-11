@@ -58,12 +58,12 @@ panel es de solo lectura para todo el mundo.
 | Overview | versión de Dex y recuento de clientes, usuarios locales y conectores |
 | Clients | los clientes OAuth2 de `dex.yaml` |
 | Connectors | los conectores configurados: `mock` y `local` |
-| Local users | los usuarios del password DB |
+| Local users | los usuarios del password DB y sus grupos |
 | Sessions | refresh tokens de un usuario, por `sub` o por usuario + conector |
 | Status | salud de Dex, tráfico por endpoint, errores y logins frenados |
 
 Y con permiso de escritura: alta, edición y baja de clientes OAuth2, conectores y
-usuarios locales, cambio de contraseña, revocación de refresh tokens y recarga de
+usuarios locales, cambio de contraseña y de grupos, revocación de refresh tokens y recarga de
 la configuración de Dex.
 
 Al editar un conector **los secretos aparecen como `__unchanged__`**: déjalos así
