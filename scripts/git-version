@@ -3,8 +3,8 @@
 # parse the current git commit hash
 COMMIT=`git rev-parse --short=8 HEAD`
 
-# check if the current commit has a matching tag (filter for v* tags, excluding api/)
-TAG=$(git describe --exact-match --abbrev=0 --tags --match="v[0-9]*" 2> /dev/null || true)
+# check if the current commit has a matching tag (v* from upstream, fork-v* from this fork; excluding api/)
+TAG=$(git describe --exact-match --abbrev=0 --tags --match="v[0-9]*" --match="fork-v[0-9]*" 2> /dev/null || true)
 
 # use the matching tag as the version, if available
 if [ -z "$TAG" ]; then
