@@ -4,7 +4,7 @@
 > trabajo vivo. La numeración de secciones es la histórica del TODO original, así
 > que las referencias antiguas siguen resolviendo.
 >
-> Última actualización: 2026-09-04
+> Última actualización: 2026-10-11
 
 ---
 
@@ -538,7 +538,14 @@ sentinel.
 - [x] **Bloque C — CI y build.** Quitado el `continue-on-error` del job de lint (el gate era decorativo), los tres pins de golangci-lint alineados en 2.13.1, e imágenes base al día.
 - [x] **Bloque D — P1 y debilidades propias.** Doble decodificación de `redirect_uri`, nil-deref en `CreateConnector`, doble-submit de aprobación, y eliminación del campo oculto con la contraseña en el paso TOTP.
 - [x] **Bloque E — El `sub` plano.** Decidido: cedemos al formato de upstream. El `sub` vuelve a ser el par `(userID, connectorID)` en protobuf-base64, y con él se va el escaneo de conectores de `api.go`, que solo existía para compensarlo. Es un cambio incompatible para quien indexe por `sub`; documentado en el `CHANGELOG`. A cambio quedamos alineados para heredar `sid`, back-channel logout y revocación con alcance de sesión en el bloque F.
-- [x] **Bloque G — Devolver a upstream.** [dexidp/dex#4986](https://github.com/dexidp/dex/pull/4986) enviado: el fixture de `connector/oidc/oidc_test.go` publica `"RSA"` como `alg` y `kty`, lo que les romperá los tests en cuanto suban a go-oidc 3.20. El otro candidato (nuestro fix de token exchange, `21c99b5e`) resultó innecesario: el refactor de upstream a `server/grants/tokenexchange.go` ya no persiste refresh token ni offline session, así que el bug murió por el camino.
+- [x] **Bloque G — Devolver a upstream.** [dexidp/dex#4986](https://github.com/dexidp/dex/pull/4986) enviado: el fixture de `connector/oidc/oidc_test.go` publica `"RSA"` como `alg` y `kty`, lo que les romperá los tests en cuanto suban a go-oidc 3.20. El otro candidato (nuestro fix de token exchange, `21c99b5e`) resultó innecesario: el refactor de upstream a `server/grants/tokenexchange.go` ya no persiste refresh token ni offline session, así que el bug murió por el camino. **Cerrado sin entrar** el 2026-10-11: upstream hizo el mismo cambio por su cuenta en `901d6d29`, al subir go-oidc a 3.21; se cerró con una nota que enlaza su commit.
+- [x] **Bloque H — Sincronización de octubre (2026-10-11).** Merge de 53 commits de upstream hasta `ef96b8ad` (base `ab64ed77`), en la rama `sync/upstream-2026-10`. Trae gRPC 1.84, `invalid_grant` en refresh tokens rechazados, `rootCAs` en el conector OIDC con `providerDiscoveryOverrides`, TLS web configurable, grupos en contraseñas, el GC de Kubernetes tolerante a borrados concurrentes y gomplate fijado por digest. Encima: Go 1.27.2 en todo, x/net 0.60.0 (raíz y `api/v2`), golangci-lint 2.14.0, la política TLS en el rol `haproxy` y los grupos en el panel. Verificado con `go test ./...`, `govulncheck` sin hallazgos y contra `Ejemplos/dashboard`: imagen con go1.27.2 y gomplate 5.2.0, `invalid_grant` y `client_id` en el log en vivo, y grupos de punta a punta (sin grupos da 403; `solo-lectura` solo lee; `dex-admins` escribe; vaciarlos se rechaza).
+  Lo que destapó probarlo:
+  - **Un parche de Go rompe el linter.** golangci-lint 2.13.1, tanto el binario oficial como el del hook, está compilado con go1.27.0 y no sabe leer el export data de 1.27.2: falla en cualquier paquete con `export data version 5 is greater than maximum supported version 4`, y con `GOTOOLCHAIN=go1.27.0` da 0 incidencias. Subir el parche de Go obliga a subir el linter, y upstream (en 1.27.1) todavía no se ha topado con ello.
+  - **El re-port había perdido un pin del bloque C.** El `Makefile`, que es lo que usa CI, lintaba con 2.4.0 mientras `pre-commit` iba en 2.13.1. Y el toolchain estaba en tres versiones a la vez (1.25.8 en `go.mod`, 1.25 en CI y 1.26.4 en la imagen): CI nunca había compilado lo que se publicaba.
+  - **`web.tlsCiphers` no sirve en nuestro despliegue.** Con Ansible, dex sirve HTTP detrás de HAProxy, así que la opción de upstream no tenía efecto ahí; el ajuste correspondiente fue `ssl-default-bind-*` en el rol `haproxy`. Además, los nombres de curva de dex son los de Go (`CurveP256`) y los de HAProxy los de OpenSSL (`P-256`).
+  - **Vaciar una lista no se puede tratar igual en grupos que en clientes.** En clientes, el panel acepta con una nota que una lista vaciada no cambie. En grupos eso dejaría un permiso puesto sin avisar, así que se rechaza: es la primera vez que la limitación de protobuf toca autorización (ver la revisión de la API en [TODO.md](TODO.md)).
+  - **El `protoc` de `bin/` es x86_64 y aquí no hay Rosetta.** `api.pb.go` se regeneró con los mismos pins en arm64; que el resto de ficheros generados saliera idéntico confirmó las herramientas. Pendiente que el `Makefile` descargue el binario de la arquitectura de la máquina.
 
 > Nota: era la última contribución prevista al repo público —a partir de ahí los arreglos
 > se quedaban en el fork—, pero la purga RGPD resultó lo bastante grave para hacer una
