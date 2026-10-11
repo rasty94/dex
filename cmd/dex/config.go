@@ -59,6 +59,11 @@ type Config struct {
 	// upstream identity provider.
 	LoginRateLimit LoginRateLimit `json:"loginRateLimit"`
 
+	// MFARateLimit throttles failed TOTP codes, per user and authenticator.
+	// Same shape as LoginRateLimit, but Attempts defaults to 5 and Window to
+	// 15m: a six-digit code needs a far smaller budget than a password.
+	MFARateLimit LoginRateLimit `json:"mfaRateLimit"`
+
 	// MFATrust offers "remember this device" on the second-factor step.
 	MFATrust MFATrust `json:"mfaTrust"`
 
